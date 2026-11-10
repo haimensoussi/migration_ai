@@ -1,0 +1,16 @@
+command:
+  - streamlit
+  - run
+  - app.py
+
+env:
+  # Endpoint de l'agent migrateur, fourni par la ressource de l'App (droit CAN_QUERY)
+  - name: MIGRATOR_ENDPOINT
+    valueFrom: migrator-endpoint
+  # Job de déploiement réel (affiché à l'étape 7 ; le simulateur ne le déclenche pas)
+  - name: DEPLOY_JOB_ID
+    value: "231540374932312"
+  - name: UC_SCHEMA
+    value: "dataops_dev.knowledge"
+  - name: STREAMLIT_BROWSER_GATHER_USAGE_STATS
+    value: "false"
