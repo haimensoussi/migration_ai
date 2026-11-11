@@ -1,0 +1,49 @@
+# Résultats attendus, calculés à la main (servent de référence aux tests de l'agent généré).
+actions:
+  analyser_texte:
+    - name: texte_simple
+      inputs: {texte: "Bonjour à tous. Ça va ?"}
+      # Bonjour / à / tous / Ça / va ; 23 caractères ; ceil(23 / 4) = 6
+      expect: {nb_mots: 5, nb_phrases: 2, nb_caracteres: 23, tokens_estimes: 6}
+    - name: mot_compose
+      inputs: {texte: "Aujourd'hui, le porte-avions part."}
+      expect: {nb_mots: 4, nb_phrases: 1, nb_caracteres: 34, tokens_estimes: 9}
+    - name: texte_vide
+      inputs: {texte: "   "}
+      expect_error: MISSING_TEXT
+  estimer_cout:
+    - name: haiku_1000_500
+      inputs: {model: claude-haiku-4-5, prompt_tokens: 1000, completion_tokens: 500}
+      # 1000 x 0,80 / 1e6 + 500 x 4,00 / 1e6 = 0,0028 USD ; x 1e6 x 0,92 = 2576,00 µ€
+      expect: {cout_usd: 0.0028, cout_micro_eur: 2576.0}
+    - name: sonnet_46_endpoint_1000_500
+      inputs: {model: databricks-claude-sonnet-4-6, prompt_tokens: 1000, completion_tokens: 500}
+      # 1000 x 3 / 1e6 + 500 x 15 / 1e6 = 0,0105 USD ; = 9660,00 µ€
+      expect: {cout_usd: 0.0105, cout_micro_eur: 9660.0, modele: claude-sonnet-4-6}
+    - name: gpt_4o_mini_tarif_exact
+      inputs: {model: gpt-4o-mini, prompt_tokens: 1000000, completion_tokens: 0}
+      # tarif gpt-4o-mini (0,15) et non gpt-4o (2,50) : correspondance exacte
+      expect: {cout_usd: 0.15, cout_micro_eur: 138000.0}
+    - name: modele_inconnu
+      inputs: {model: gpt-99, prompt_tokens: 10}
+      expect_error: INVALID_MODEL
+    - name: tokens_invalides
+      inputs: {model: claude-haiku-4-5, prompt_tokens: "abc"}
+      expect_error: INVALID_TOKENS
+
+conversations:
+  - name: cout_seul
+    question: "Combien coûtent 1 000 tokens en entrée et 500 en sortie avec claude-haiku-4-5 ?"
+    expect_actions: [estimer_cout]
+    expect_in_answer: "2576"
+  - name: analyse_puis_cout
+    question: "Analyse ce texte puis estime son coût en entrée avec claude-sonnet-4-6 : Bonjour à tous. Ça va ?"
+    expect_actions: [analyser_texte, estimer_cout]   # 6 tokens estimés -> 6 x 3 / 1e6 USD = 16,56 µ€
+    expect_in_answer: "16,56"
+  - name: sans_action
+    question: "Quelle est la capitale de la France ?"
+    expect_actions: []
+  - name: modele_non_tarife
+    question: "Estime le coût de 100 tokens avec gpt-99."
+    expect_actions: [estimer_cout]
+    expect_tool_error: INVALID_MODEL

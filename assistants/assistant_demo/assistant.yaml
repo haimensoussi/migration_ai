@@ -1,0 +1,35 @@
+# Manifeste d'assistant HORIZON -> Databricks (format pivot proposé, version 1)
+# Un assistant = un prompt système + une Action LLM (boucle de l'agent) + des Actions métier (outils).
+format_version: 1
+name: assistant_demo
+description: >
+  Assistant de démonstration SNCF Réseau : répond aux questions et sait analyser un texte
+  et estimer le coût d'un appel LLM. Exemple fictif destiné à tester la migration multi-Actions.
+
+system_prompt_file: prompt_system.md
+
+# Action LLM : devient la boucle de l'agent (modèles, FinOps, codes d'erreur conservés).
+# Code SNCF interne : NON copié dans Git, lu dans le workspace Databricks (préfixe workspace:).
+llm:
+  action: workspace:/Users/phsi10251@commun.ad.sncf.fr/horizon2databricks/examples/horizon/llm_call_real/llm_call.py
+  default_model: claude-sonnet-4-6
+  temperature: 0.2
+  max_tokens: 1024
+
+orchestration:
+  mode: llm_tools          # llm_tools : le LLM choisit les Actions | sequence : ordre fixe | user_choice
+  max_tool_calls: 5        # nombre maximal d'appels d'Actions par question
+
+# Actions métier : chacune devient un outil de l'agent. La description est celle vue par le LLM.
+actions:
+  - file: actions/analyser_texte.py
+    description: >
+      Compte les caractères, mots et phrases d'un texte et estime son nombre de tokens
+      (environ 4 caractères par token). À utiliser pour toute question sur la longueur d'un texte.
+  - file: actions/estimer_cout.py
+    description: >
+      Calcule le coût d'un appel LLM (USD et micro-euros) à partir du modèle et des nombres de tokens
+      d'entrée et de sortie, selon la grille FinOps HORIZON.
+
+config_file: config/horizon_config.yaml
+tests_file: tests/cas_attendus.yaml
