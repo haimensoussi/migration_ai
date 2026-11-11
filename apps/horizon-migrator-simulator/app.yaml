@@ -7,9 +7,12 @@ env:
   # Endpoint de l'agent migrateur, fourni par la ressource de l'App (droit CAN_QUERY)
   - name: MIGRATOR_ENDPOINT
     valueFrom: migrator-endpoint
-  # Job de déploiement réel (affiché à l'étape 7 ; le simulateur ne le déclenche pas)
+  # Job de déploiement réel, lancé à l'étape 7 après confirmation (droit CAN_MANAGE_RUN pour l'App)
   - name: DEPLOY_JOB_ID
     value: "231540374932312"
+  # Volume où l'App dépose l'Action et le projet relu (droit WRITE_VOLUME pour l'App)
+  - name: DEPLOY_VOLUME
+    value: "/Volumes/dataops_dev/knowledge/horizon_migrations"
   # Actions HORIZON réelles lues dans le workspace (séparées par des virgules ; droit CAN_READ requis pour l'App)
   - name: WORKSPACE_EXAMPLES
     value: "/Users/phsi10251@commun.ad.sncf.fr/horizon2databricks/examples/horizon/llm_call_real/llm_call.py"

@@ -18,12 +18,17 @@ import yaml
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.core import Config
 
+import deploy_job as DJ
 from h2d_facts import extract_facts
 from mapping import check_model_mapping, config_endpoints, external_services, planned_mapping
 
 MIGRATOR_ENDPOINT = os.getenv("MIGRATOR_ENDPOINT", "agents_dataops_dev-knowledge-horizon_migrator_agent")
 DEPLOY_JOB_ID = os.getenv("DEPLOY_JOB_ID", "231540374932312")
 UC_SCHEMA = os.getenv("UC_SCHEMA", "dataops_dev.knowledge")
+# Volume où l'App dépose l'Action et le projet relu avant de lancer le Job de déploiement
+DEPLOY_VOLUME = os.getenv("DEPLOY_VOLUME", "/Volumes/dataops_dev/knowledge/horizon_migrations")
+DEPLOY_POLL_S = 10
+DEPLOY_MAX_WAIT_S = 40 * 60
 EXAMPLES = Path(__file__).parent / "examples"
 # Actions réelles lues dans le workspace (le code SNCF reste dans Databricks, il n'est pas copié dans Git).
 # L'identité de l'App doit avoir le droit CAN_READ sur chaque fichier.
@@ -38,7 +43,7 @@ STEPS = [
     ("generation", "4. Code généré"),
     ("tests", "5. Tests"),
     ("simulation", "6. Simulation"),
-    ("deploiement", "7. Déploiement à blanc"),
+    ("deploiement", "7. Déploiement"),
     ("historique", "8. Historique"),
 ]
 ORDER = [k for k, _ in STEPS]
@@ -52,7 +57,7 @@ PHASES = [(0, "Envoi de l'Action à l'agent migrateur"),
 st.set_page_config(page_title="Simulateur de migration HORIZON -> Databricks", page_icon="🔁", layout="wide")
 ss = st.session_state
 for _k, _v in {"step": "import", "code": None, "source_name": None, "facts": None, "mapping": None,
-               "result": None, "error": None, "history": []}.items():
+               "result": None, "error": None, "history": [], "deploy": None}.items():
     ss.setdefault(_k, _v)
 
 
@@ -82,7 +87,7 @@ def step_done(key: str) -> bool:
         "generation": bool(r.get("files")),
         "tests": bool(r.get("tests")),
         "simulation": "tests.json" in (r.get("files") or {}),
-        "deploiement": bool(r.get("files")),
+        "deploiement": bool(ss.deploy and ss.deploy["status"].get("result_state") == "SUCCESS"),
         "historique": bool(ss.history),
     }[key]
 
@@ -117,7 +122,7 @@ def load_action(code: str, source_name: str) -> bool:
         return False
     ss.code, ss.source_name, ss.facts = code, source_name, facts
     ss.mapping = planned_mapping(facts)
-    ss.result = ss.error = None
+    ss.result = ss.error = ss.deploy = None
     return True
 
 
@@ -245,7 +250,7 @@ def simulate_all() -> None:
         st.write("Détail des requêtes et des résultats à l'étape 6.")
     v, issues = verdict()
     with st.status(f"{LABEL['deploiement']} — {v}", state="complete" if not issues else "error"):
-        for i in issues or ["Aucun point bloquant."]:
+        for i in issues or ["Aucun point bloquant : le déploiement réel se lance à l'étape 7, après confirmation."]:
             st.write(f"- {i}")
     with st.status(f"{LABEL['historique']} — {len(ss.history)} migration(s) dans la session", state="complete"):
         st.write("Voir l'étape 8.")
@@ -429,9 +434,65 @@ def render_simulation():
             "(mode « simulation » à ajouter à l'agent migrateur, pour ne pas exécuter de code généré dans l'App).")
 
 
+def start_real_deploy(uc_model: str) -> None:
+    w = client()
+    directory = DJ.deposit_dir(DEPLOY_VOLUME, action_name())
+    try:
+        DJ.write_deposit(w, directory, ss.code, ss.result)
+        run_id = DJ.start_deploy(w, DEPLOY_JOB_ID, directory, uc_model)
+        status = DJ.run_status(w, run_id)
+    except Exception as e:  # noqa: BLE001 - droits manquants, Volume absent...
+        st.error(f"Lancement impossible : {type(e).__name__}: {str(e)[:500]}")
+        return
+    ss.deploy = {"run_id": run_id, "directory": directory, "uc_model": uc_model,
+                 "started": time.time(), "status": status, "logged": False}
+
+
+def follow_deploy() -> None:
+    """Suit l'exécution du Job jusqu'à la fin (l'exécution continue même si la page est fermée)."""
+    dep, w = ss.deploy, client()
+    ph = st.empty()
+    while not DJ.is_finished(dep["status"]) and time.time() - dep["started"] < DEPLOY_MAX_WAIT_S:
+        s = dep["status"]
+        el = int(time.time() - dep["started"])
+        ph.info(f"⏳ Déploiement en cours — état du Job : **{s['life_cycle_state']}** — {el // 60} min {el % 60:02d} s  \n"
+                f"Exécution [{dep['run_id']}]({s.get('url')}) — compter 15 à 25 min (enregistrement, création ou "
+                f"mise à jour de l'endpoint, test de fumée).")
+        time.sleep(DEPLOY_POLL_S)
+        try:
+            dep["status"] = DJ.run_status(w, dep["run_id"])
+        except Exception as e:  # noqa: BLE001 - erreur réseau passagère : on réessaie
+            ph.warning(f"Lecture de l'état impossible ({type(e).__name__}), nouvel essai…")
+    ph.empty()
+    if DJ.is_finished(dep["status"]) and not dep["logged"]:
+        s, res = dep["status"], dep["status"].get("result") or {}
+        ss.history.append({
+            "Heure": datetime.now().strftime("%H:%M:%S"), "Action": action_name(), "Source": ss.source_name,
+            "Verdict": "Déployé" if s.get("result_state") == "SUCCESS" else "Échec du déploiement",
+            "Déploiement": f"{dep['uc_model']} v{res.get('version')}" if res.get("version") else s.get("result_state"),
+            "Endpoint": res.get("endpoint"), "Exécution du Job": dep["run_id"],
+        })
+        dep["logged"] = True
+    st.rerun()
+
+
+def show_deploy_result() -> None:
+    dep = ss.deploy
+    s, res = dep["status"], dep["status"].get("result") or {}
+    host = client().config.host
+    if s.get("result_state") == "SUCCESS" and res.get("endpoint"):
+        st.success(f"Déployé : **{dep['uc_model']} v{res.get('version')}** sur l'endpoint "
+                   f"[{res['endpoint']}]({host}/ml/endpoints/{res['endpoint']}) — test de fumée réussi.")
+    elif DJ.is_finished(s):
+        st.error(f"Déploiement en échec ({s.get('result_state')}) : {(s.get('error') or s.get('message') or '')[:800]}")
+    else:
+        st.warning(f"Suivi interrompu après {DEPLOY_MAX_WAIT_S // 60} min : l'exécution continue dans le Job.")
+    st.caption(f"Exécution du Job : [{dep['run_id']}]({s.get('url')}) — dépôt : `{dep['directory']}`")
+
+
 def render_deploiement():
     st.subheader(LABEL["deploiement"])
-    if not need(step_done("deploiement"), "Lancez d'abord la génération (étape 4)."):
+    if not need(bool((ss.result or {}).get("files")), "Lancez d'abord la génération (étape 4)."):
         return
     r = ss.result
     uc_model, endpoint = target_names()
@@ -453,8 +514,25 @@ def render_deploiement():
         st.markdown("**Services externes**")
         st.dataframe(pd.DataFrame(ext), hide_index=True, use_container_width=True)
     host = client().config.host
-    st.info(f"Le simulateur ne crée aucune ressource. Déploiement réel : Job [{DEPLOY_JOB_ID}]({host}/jobs/{DEPLOY_JOB_ID}) "
-            f"avec `action_path` = chemin de l'Action et `deploy` = `true`.")
+    st.markdown("**Déploiement réel**")
+    if ss.deploy and not DJ.is_finished(ss.deploy["status"]) and \
+            time.time() - ss.deploy["started"] < DEPLOY_MAX_WAIT_S:
+        follow_deploy()
+        return
+    if ss.deploy:
+        show_deploy_result()
+    if issues:
+        st.warning("Déploiement impossible tant que les points bloquants ne sont pas levés.")
+        return
+    st.write(f"Le projet relu ci-dessus est déposé dans `{DEPLOY_VOLUME}` puis déployé tel quel par le Job "
+             f"[{DEPLOY_JOB_ID}]({host}/jobs/{DEPLOY_JOB_ID}), qui refait les contrôles bloquants, enregistre le modèle, "
+             f"déploie l'endpoint et exécute un test de fumée. Le Job s'exécute avec l'identité de son propriétaire.")
+    confirmed = st.checkbox(f"Je confirme le déploiement réel : nouvelle version de `{uc_model}` et 100 % du trafic "
+                            f"de `{endpoint}` basculé sur cette version.")
+    if st.button("🚀 Déployer", type="primary", disabled=not confirmed):
+        start_real_deploy(uc_model)
+        if ss.deploy:
+            st.rerun()
 
 
 def render_historique():
@@ -484,12 +562,13 @@ with st.sidebar:
     st.divider()
     if ss.code is not None:
         st.write(f"Action chargée : **{action_name()}**")
-        run_all = st.button("▶ Simuler toutes les étapes", type="primary", use_container_width=True)
+        run_all = st.button("▶ Migrer (étapes 1 à 7)", type="primary", use_container_width=True,
+                            help="Analyse, génère et teste l'agent. Le déploiement réel se confirme ensuite à l'étape 7.")
     else:
         run_all = False
-        st.caption("Chargez une Action pour lancer la simulation.")
+        st.caption("Chargez une Action pour lancer la migration.")
 
-st.title("Simulateur de migration HORIZON → Databricks")
+st.title("Migration HORIZON → Databricks")
 done = sum(step_done(k) for k in ORDER)
 st.progress(done / len(ORDER), text=f"{done}/{len(ORDER)} étapes réalisées")
 
