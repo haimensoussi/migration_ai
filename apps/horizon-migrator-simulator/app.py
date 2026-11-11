@@ -19,6 +19,7 @@ from databricks.sdk import WorkspaceClient
 from databricks.sdk.core import Config
 
 import deploy_job as DJ
+import git_import as GI
 from h2d_facts import extract_facts
 from mapping import check_model_mapping, config_endpoints, external_services, planned_mapping
 
@@ -29,6 +30,10 @@ UC_SCHEMA = os.getenv("UC_SCHEMA", "dataops_dev.knowledge")
 DEPLOY_VOLUME = os.getenv("DEPLOY_VOLUME", "/Volumes/dataops_dev/knowledge/horizon_migrations")
 DEPLOY_POLL_S = 10
 DEPLOY_MAX_WAIT_S = 40 * 60
+# Import depuis GitHub / GitLab : hôtes autorisés (le Job refait le contrôle avec sa propre liste)
+GIT_ALLOWED_HOSTS = [h.strip().lower() for h in os.getenv("GIT_ALLOWED_HOSTS", "github.com,gitlab.com").split(",") if h.strip()]
+GIT_POLL_S = 3
+GIT_MAX_WAIT_S = 30 * 60   # inclut l'attente éventuelle derrière un déploiement (une exécution du Job à la fois)
 EXAMPLES = Path(__file__).parent / "examples"
 # Actions réelles lues dans le workspace (le code SNCF reste dans Databricks, il n'est pas copié dans Git).
 # L'identité de l'App doit avoir le droit CAN_READ sur chaque fichier.
@@ -37,7 +42,7 @@ EXPECTED_FILES = ["agent.py", "model_config.yml", "requirements.txt", "tests.jso
                   "MIGRATION_NOTES.md", "MIGRATION_REPORT.md", "facts.json"]
 
 STEPS = [
-    ("import", "1. Import de l'Action"),
+    ("import", "1. Import"),
     ("analyse", "2. Analyse statique"),
     ("mapping", "3. Correspondance"),
     ("generation", "4. Code généré"),
@@ -57,7 +62,8 @@ PHASES = [(0, "Envoi de l'Action à l'agent migrateur"),
 st.set_page_config(page_title="Simulateur de migration HORIZON -> Databricks", page_icon="🔁", layout="wide")
 ss = st.session_state
 for _k, _v in {"step": "import", "code": None, "source_name": None, "facts": None, "mapping": None,
-               "result": None, "error": None, "history": [], "deploy": None}.items():
+               "result": None, "error": None, "history": [], "deploy": None,
+               "git": None, "git_disc": None, "assistant": None}.items():
     ss.setdefault(_k, _v)
 
 
@@ -81,7 +87,7 @@ def target_names() -> tuple[str, str]:
 def step_done(key: str) -> bool:
     r = ss.result or {}
     return {
-        "import": ss.code is not None,
+        "import": ss.code is not None or ss.assistant is not None,
         "analyse": ss.facts is not None,
         "mapping": ss.mapping is not None,
         "generation": bool(r.get("files")),
@@ -123,6 +129,7 @@ def load_action(code: str, source_name: str) -> bool:
     ss.code, ss.source_name, ss.facts = code, source_name, facts
     ss.mapping = planned_mapping(facts)
     ss.result = ss.error = ss.deploy = None
+    ss.assistant = None
     return True
 
 
@@ -256,11 +263,265 @@ def simulate_all() -> None:
         st.write("Voir l'étape 8.")
 
 
+# ---------------------------------------------------------------- import depuis un dépôt Git (étapes 1 à 4 du parcours)
+def current_user() -> str | None:
+    try:
+        return st.context.headers.get("X-Forwarded-Email")
+    except Exception:  # noqa: BLE001 - version de Streamlit sans st.context
+        return None
+
+
+def git_running() -> bool:
+    g = ss.git
+    return bool(g) and not DJ.is_finished(g["status"]) and time.time() - g["started"] < GIT_MAX_WAIT_S
+
+
+def start_git_fetch(parsed: dict, ref_type: str, ref: str, subpath: str) -> None:
+    w = client()
+    try:
+        directory, run_id = GI.start_fetch(w, DEPLOY_JOB_ID, DEPLOY_VOLUME, parsed["repo_url"], ref_type, ref, subpath,
+                                           current_user())
+        status = DJ.run_status(w, run_id)
+    except Exception as e:  # noqa: BLE001 - droits manquants, Volume absent...
+        st.error(f"Lancement impossible : {type(e).__name__}: {str(e)[:500]}")
+        return
+    ss.git = {"run_id": run_id, "directory": directory, "started": time.time(), "status": status, "parsed": parsed,
+              "ref_type": ref_type, "ref": ref, "subpath": subpath}
+    ss.git_disc = None
+
+
+def load_discovery() -> None:
+    """Lit discovery.json (écrit par le Job, y compris en cas d'échec) et l'ajoute à l'historique."""
+    g, w = ss.git, client()
+    try:
+        ss.git_disc = GI.read_json(w, f"{g['directory']}/discovery.json")
+    except Exception as e:  # noqa: BLE001 - le Job a échoué avant d'écrire le fichier
+        s = g["status"]
+        ss.git_disc = {"ok": False, "error": (s.get("error") or s.get("message") or f"{type(e).__name__}: {e}")[:800]}
+    d = ss.git_disc
+    repo = d.get("repo") or {}
+    ss.history.append({
+        "Heure": datetime.now().strftime("%H:%M:%S"), "Action": f"(dépôt) {g['parsed']['repo']}",
+        "Source": f"{repo.get('url', g['parsed']['repo_url'])}@{(repo.get('commit') or '?')[:7]}",
+        "Verdict": (f"Dépôt récupéré : {len(d.get('packages') or [])} assistant(s), {len(d.get('actions') or [])} Action(s)"
+                    if d.get("ok") else "Échec de la récupération"),
+        "Exécution du Job": g["run_id"],
+    })
+
+
+def follow_git() -> None:
+    """Étape 2 : suit l'exécution du Job (clonage ou mise à jour, relevé du commit, recherche)."""
+    g, w = ss.git, client()
+    ph = st.empty()
+    hints = {"QUEUED": "en file d'attente : une autre exécution du Job est en cours (un déploiement dure 10 à 25 min)",
+             "PENDING": "démarrage du calcul serverless", "RUNNING": "clonage ou mise à jour du dépôt, puis recherche",
+             "TERMINATING": "fin de l'exécution"}
+    while git_running():
+        s = g["status"]
+        el = int(time.time() - g["started"])
+        ph.info(f"⏳ **Étape 2 — Récupération du dépôt** `{g['parsed']['repo']}` — "
+                f"{hints.get(s['life_cycle_state'], s['life_cycle_state'])} — {el // 60} min {el % 60:02d} s  \n"
+                f"Exécution du Job [{g['run_id']}]({s.get('url')}) — habituellement 20 à 60 s.")
+        time.sleep(GIT_POLL_S)
+        try:
+            g["status"] = DJ.run_status(w, g["run_id"])
+        except Exception as e:  # noqa: BLE001 - erreur réseau passagère
+            ph.warning(f"Lecture de l'état impossible ({type(e).__name__}), nouvel essai…")
+    ph.empty()
+    if DJ.is_finished(g["status"]):
+        load_discovery()
+    st.rerun()
+
+
+def open_assistant(summary: dict) -> None:
+    try:
+        pkg = GI.read_json(client(), summary["package_file"])
+    except Exception as e:  # noqa: BLE001
+        st.error(f"Lecture de l'instantané impossible : {type(e).__name__}: {str(e)[:300]}")
+        return
+    ss.assistant = {"pkg": pkg, "summary": summary, "repo": ss.git_disc["repo"]}
+    # Nouvel objet de migration : on oublie l'Action éventuellement chargée auparavant
+    ss.code = ss.source_name = ss.facts = ss.mapping = ss.result = ss.error = ss.deploy = None
+
+
+def open_git_action(a: dict) -> None:
+    repo = ss.git_disc["repo"]
+    try:
+        code = GI.read_text(client(), a["snapshot"])
+    except Exception as e:  # noqa: BLE001
+        st.error(f"Lecture de l'instantané impossible : {type(e).__name__}: {str(e)[:300]}")
+        return
+    if load_action(code, f"{repo['url']}@{repo['commit'][:7]}:{a['path']}"):
+        ss.step = "analyse"
+        st.rerun()
+
+
+def render_git_results() -> None:
+    """Étapes 3 et 4 : résultat de la recherche, puis choix d'un assistant ou d'une Action."""
+    d = ss.git_disc
+    if not d.get("ok"):
+        st.error(f"Récupération en échec : {d.get('error')}")
+        st.caption("Causes fréquentes : lien erroné, dépôt privé sans identifiant Git du propriétaire du Job pour cet hôte, "
+                   "branche ou étiquette inconnue, hôte injoignable depuis Databricks (GitLab interne).")
+        return
+    repo = d["repo"]
+    st.success(f"Dépôt récupéré : **{repo['url']}** — {GI.ref_label(repo)} — commit "
+               f"[`{repo['commit'][:12]}`]({GI.commit_url(repo)}) — {repo['fetched_at']}")
+    st.caption(f"Dossier Git du workspace : `{repo['workspace_path']}` — instantané : `{ss.git['directory']}`. "
+               "La suite de la migration utilise uniquement cet instantané (commit figé).")
+    st.markdown("**Étape 3 — Recherche dans le dépôt**")
+    loose = [a for a in d["actions"] if not a.get("package")]
+    c = st.columns(4)
+    c[0].metric("Assistants (assistant.yaml)", len(d["packages"]))
+    c[1].metric("Actions dans un assistant", len(d["actions"]) - len(loose))
+    c[2].metric("Actions isolées", len(loose))
+    c[3].metric("Fichiers parcourus", d["stats"]["files_scanned"])
+    if d["stats"].get("truncated"):
+        st.warning("Limite de fichiers atteinte : précisez un sous-dossier pour une recherche complète.")
+    if d["packages"]:
+        st.dataframe(pd.DataFrame([{"Dossier": p["path"], "Assistant": p.get("name"), "Actions": p.get("n_actions"),
+                                    "État": "✅ lisible" if p["ok"] else "❌ " + "; ".join(p["problems"])}
+                                   for p in d["packages"]]), hide_index=True, use_container_width=True)
+    if d["actions"]:
+        with st.expander(f"Actions HORIZON trouvées ({len(d['actions'])})"):
+            st.dataframe(pd.DataFrame([{"Fichier": a["path"], "Point d'entrée": a["entrypoint"], "Lignes": a["lines"],
+                                        "Assistant": a.get("package") or "(isolée)"} for a in d["actions"]]),
+                         hide_index=True, use_container_width=True)
+    if not d["packages"] and not d["actions"]:
+        st.warning("Aucun assistant (assistant.yaml) ni Action HORIZON (fonction avec un paramètre RunContext) trouvé.")
+        return
+    st.markdown("**Étape 4 — Choix de l'objet à migrer**")
+    left, right = st.columns(2)
+    with left:
+        usable = [p for p in d["packages"] if p.get("package_file")]
+        if usable:
+            p = st.selectbox("Assistant", usable, format_func=lambda x: f"{x.get('name') or '?'} — {x['path']}")
+            if st.button("Ouvrir cet assistant", type="primary"):
+                open_assistant(p)
+                st.rerun()
+    with right:
+        if d["actions"]:
+            a = st.selectbox("Ou une Action seule", d["actions"], format_func=lambda x: f"{x['entrypoint']} — {x['path']}")
+            if st.button("Migrer cette Action seule"):
+                open_git_action(a)
+
+
+def _facts_row(name, ref, desc, f) -> dict:
+    f = f or {}
+    return {"Outil": name or "—", "Fichier": ref, "Description (lue par le LLM)": desc,
+            "Entrées": ", ".join(f.get("inputs") or []), "Sorties": ", ".join(o["name"] for o in f.get("outputs") or []),
+            "Codes d'erreur": ", ".join(f.get("error_codes") or []), "Appels LLM": len(f.get("llm_calls") or []),
+            "Appels externes": len(f.get("http_calls") or [])}
+
+
+def render_assistant_detail() -> None:
+    """Étape 4 (suite) : contenu de l'assistant choisi et contrôles préliminaires (mêmes règles que le migrateur)."""
+    a = ss.assistant
+    pkg, repo = a["pkg"], a["repo"]
+    m, files = pkg["manifest"], pkg["files"]
+    checks, info = GI.check_package(pkg, extract_facts)
+    st.divider()
+    st.markdown(f"### Assistant `{m.get('name')}`")
+    if m.get("description"):
+        st.write(str(m["description"]).strip())
+    st.caption(f"Source : [{repo['url']}]({repo['url']}) — {GI.ref_label(repo)} — commit "
+               f"[`{repo['commit'][:12]}`]({GI.commit_url(repo)}) — dossier `{a['summary']['path']}`")
+    bad = [c for c in checks if c["Résultat"] != "✅"]
+    if bad:
+        st.error(f"Contrôles préliminaires : {len(bad)} point(s) bloquant(s) — " + " ; ".join(f"{c['Contrôle']} : {c['Détail']}" for c in bad))
+    else:
+        st.success(f"Contrôles préliminaires : {len(checks)}/{len(checks)} conformes")
+    c = st.columns(4)
+    c[0].metric("Actions métier (outils)", len(info["actions"]))
+    c[1].metric("Appels d'outils max", (m.get("orchestration") or {}).get("max_tool_calls", 5))
+    c[2].metric("Tests d'Actions", info["n_tool_tests"])
+    c[3].metric("Conversations de test", info["n_conversations"])
+    tabs = st.tabs(["Prompt système", "Actions", "Action LLM", "Configuration", "Contrôles", "Manifeste"])
+    with tabs[0]:
+        st.caption("Recopié mot pour mot dans l'agent (clé system_prompt de model_config.yml).")
+        st.code(info["prompt"] or "(absent)", language="markdown")
+    with tabs[1]:
+        st.dataframe(pd.DataFrame([_facts_row(x["name"], x["file"], x["description"], x["facts"]) for x in info["actions"]]),
+                     hide_index=True, use_container_width=True)
+        for x in info["actions"]:
+            if x["file"] in files:
+                with st.expander(f"Code de {x['file']}"):
+                    st.code(files[x["file"]], language="python")
+    with tabs[2]:
+        llm = info["llm"]
+        st.write(f"Action LLM : **{llm['name'] or '?'}** — source `{llm['source']}` — devient la boucle de l'agent.")
+        st.dataframe(pd.DataFrame([_facts_row(llm["name"], llm["source"], "", llm["facts"])]).drop(
+            columns=["Description (lue par le LLM)"]), hide_index=True, use_container_width=True)
+        if (m.get("llm") or {}).get("action") in files:
+            with st.expander("Code de l'Action LLM"):
+                st.code(files[m["llm"]["action"]], language="python")
+    with tabs[3]:
+        st.code(info["config_text"] or "(aucune configuration)", language="yaml")
+    with tabs[4]:
+        st.dataframe(pd.DataFrame(checks), hide_index=True, use_container_width=True)
+    with tabs[5]:
+        st.code(yaml.safe_dump(m, allow_unicode=True, sort_keys=False), language="yaml")
+    st.info("Suite du parcours (génération et tests de l'assistant, puis déploiement par le Job) : en cours de développement. "
+            "Une Action seule du dépôt se migre déjà de bout en bout (bouton « Migrer cette Action seule »).")
+
+
+def render_git_import() -> None:
+    """Étape 1 : lien du dépôt ; puis étapes 2 à 4 selon l'avancement."""
+    st.markdown("**Étape 1 — Lien du dépôt GitHub ou GitLab**")
+    url = st.text_input("Lien du dépôt ou d'un dossier", key="git_url",
+                        placeholder="https://github.com/<propriétaire>/<dépôt>  ou  …/tree/<branche>/<dossier>")
+    parsed = None
+    if url.strip():
+        try:
+            parsed = GI.parse_git_url(url, GIT_ALLOWED_HOSTS)
+        except ValueError as e:
+            st.error(str(e))
+    types = list(GI.REF_TYPES)
+    c1, c2, c3 = st.columns([1, 1, 2])
+    ref_type = c1.selectbox("Version", types, index=types.index("branch" if parsed and parsed["ref"] else "default"),
+                            format_func=GI.REF_TYPES.get)
+    ref = c2.text_input("Nom de la branche ou de l'étiquette", value=(parsed or {}).get("ref") or "",
+                        disabled=ref_type == "default")
+    subpath = c3.text_input("Sous-dossier (facultatif)", value=(parsed or {}).get("subpath") or "")
+    problems = GI.validate_request(ref_type, ref, subpath) if parsed else []
+    for p in problems:
+        st.error(p)
+    if parsed:
+        st.caption(f"Dépôt **{parsed['repo']}** ({parsed['provider']}). Le dépôt est récupéré par le Job "
+                   f"[{DEPLOY_JOB_ID}]({client().config.host}/jobs/{DEPLOY_JOB_ID}) avec les identifiants Git de son "
+                   "propriétaire ; le commit exact est relevé pour la traçabilité. Aucun jeton n'est saisi dans l'App.")
+    if st.button("Récupérer le dépôt", type="primary", disabled=not parsed or bool(problems) or git_running()):
+        start_git_fetch(parsed, ref_type, ref.strip(), subpath.strip())
+        st.rerun()
+    if not ss.git:
+        return
+    if git_running():
+        follow_git()
+        return
+    if ss.git_disc is None:
+        if DJ.is_finished(ss.git["status"]):
+            load_discovery()
+        else:
+            st.warning(f"Suivi interrompu après {GIT_MAX_WAIT_S // 60} min : l'exécution [{ss.git['run_id']}]"
+                       f"({ss.git['status'].get('url')}) continue dans le Job.")
+            return
+    st.markdown("**Étape 2 — Récupération du dépôt**")
+    el = (ss.git["status"].get("end_time") or 0) - (ss.git["status"].get("start_time") or 0)
+    st.caption(f"Exécution du Job [{ss.git['run_id']}]({ss.git['status'].get('url')}) — "
+               f"{ss.git['status'].get('result_state')} en {max(el, 0) // 1000} s.")
+    render_git_results()
+    if ss.assistant is not None:
+        render_assistant_detail()
+
+
 # ---------------------------------------------------------------- écrans
 def render_import():
     st.subheader(LABEL["import"])
-    st.caption("L'Action est analysée sans être exécutée. Les Actions réelles sont lues dans le workspace Databricks.")
-    tab_ex, tab_paste, tab_file = st.tabs(["Exemple", "Coller le code", "Déposer un fichier"])
+    st.caption("Le code HORIZON est analysé sans être exécuté. Depuis un dépôt Git : assistants (prompt, configuration et "
+               "Actions) ou Actions seules. Les Actions d'exemple réelles sont lues dans le workspace Databricks.")
+    tab_git, tab_ex, tab_paste, tab_file = st.tabs(["Dépôt Git", "Exemple", "Coller le code", "Déposer un fichier"])
+    with tab_git:
+        render_git_import()
     with tab_ex:
         options = example_options()
         if options:
@@ -560,6 +821,9 @@ with st.sidebar:
         ss.step = choice
         st.rerun()
     st.divider()
+    if ss.assistant is not None:
+        st.write(f"Assistant ouvert : **{ss.assistant['pkg']['manifest'].get('name')}** "
+                 f"(commit `{ss.assistant['repo']['commit'][:7]}`)")
     if ss.code is not None:
         st.write(f"Action chargée : **{action_name()}**")
         run_all = st.button("▶ Migrer (étapes 1 à 7)", type="primary", use_container_width=True,
