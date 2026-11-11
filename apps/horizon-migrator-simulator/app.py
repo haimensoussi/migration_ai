@@ -461,8 +461,260 @@ def render_assistant_detail() -> None:
         st.dataframe(pd.DataFrame(checks), hide_index=True, use_container_width=True)
     with tabs[5]:
         st.code(yaml.safe_dump(m, allow_unicode=True, sort_keys=False), language="yaml")
-    st.info("Suite du parcours (génération et tests de l'assistant, puis déploiement par le Job) : en cours de développement. "
-            "Une Action seule du dépôt se migre déjà de bout en bout (bouton « Migrer cette Action seule »).")
+    render_assistant_generation(info["ok"])
+
+
+# ---------------------------------------------------------------- assistant : génération, tests et déploiement par le Job
+ASSISTANT_POLL_S = 5
+JOB_HINTS = {"QUEUED": "en file d'attente : une autre exécution du Job est en cours",
+             "PENDING": "démarrage du calcul serverless", "RUNNING": "en cours", "TERMINATING": "fin de l'exécution"}
+
+
+def assistant_names() -> tuple[str, str]:
+    uc_model = f"{UC_SCHEMA}.horizon_{ss.assistant['pkg']['manifest']['name']}_agent"
+    return uc_model, "agents_" + uc_model.replace(".", "-")
+
+
+def job_running(job: dict | None, limit_s: int) -> bool:
+    return bool(job) and not DJ.is_finished(job["status"]) and time.time() - job["started"] < limit_s
+
+
+def start_assistant_job(deploy: bool) -> None:
+    """deploy=False : dépose package.json (paquet figé au commit) et lance la génération ;
+    deploy=True : relance le Job sur le MÊME dossier, qui déploie le projet relu tel quel."""
+    a, w = ss.assistant, client()
+    uc_model, _ = assistant_names()
+    try:
+        if deploy:
+            directory = a["gen"]["directory"]
+        else:
+            directory = DJ.deposit_dir(DEPLOY_VOLUME, f"_assistants/{a['pkg']['manifest']['name']}")
+            w.files.upload(f"{directory}/package.json",
+                           io.BytesIO(json.dumps(a["pkg"], ensure_ascii=False).encode("utf-8")), overwrite=True)
+        resp = w.api_client.do("POST", "/api/2.1/jobs/run-now", body={
+            "job_id": int(DEPLOY_JOB_ID),
+            "job_parameters": {"action_path": f"{directory}/package.json", "uc_model": uc_model,
+                               "deploy": "true" if deploy else "false"}})
+        run_id = int(resp["run_id"])
+        status = DJ.run_status(w, run_id)
+    except Exception as e:  # noqa: BLE001 - droits manquants, Volume absent...
+        st.error(f"Lancement impossible : {type(e).__name__}: {str(e)[:500]}")
+        return
+    job = {"run_id": run_id, "directory": directory, "started": time.time(), "status": status, "logged": False}
+    if deploy:
+        a["dep"] = job
+    else:
+        a["gen"], a["result"], a["dep"] = job, None, None
+
+
+def finish_assistant_job(kind: str) -> None:
+    a, w = ss.assistant, client()
+    job = a[kind]
+    s = job["status"]
+    name = a["pkg"]["manifest"]["name"]
+    source = f"{a['repo']['url']}@{a['repo']['commit'][:7]}/{a['summary']['path']}"
+    if kind == "gen":
+        try:
+            meta = GI.read_json(w, f"{job['directory']}/migrator_result.json")
+            files = {n: GI.read_text(w, f"{job['directory']}/project/{n}") for n in meta.get("files") or []}
+            try:
+                cfg = yaml.safe_load(files.get("model_config.yml", "")) or {}
+            except yaml.YAMLError:
+                cfg = {}
+            a["result"] = {"meta": meta, "files": files, "config": cfg, "model_checks": check_model_mapping(cfg)}
+        except Exception as e:  # noqa: BLE001 - le Job a échoué avant d'écrire son résultat
+            a["result"] = {"error": (s.get("error") or s.get("message") or f"{type(e).__name__}: {e}")[:800]}
+        r = a["result"]
+        meta = r.get("meta") or {}
+        tests = meta.get("tests") or []
+        ss.history.append({
+            "Heure": datetime.now().strftime("%H:%M:%S"), "Action": f"(assistant) {name}", "Source": source,
+            "Statut migrateur": meta.get("status") or "Échec du Job", "Tentatives": meta.get("attempts"),
+            "Durée (s)": meta.get("duration_s"), "Tests réussis": f"{sum(bool(t.get('ok')) for t in tests)}/{len(tests)}",
+            "Verdict": "Prêt au déploiement" if r.get("meta") and not assistant_issues() else "Bloqué",
+            "Exécution du Job": job["run_id"]})
+    else:
+        res = s.get("result") or {}
+        ss.history.append({
+            "Heure": datetime.now().strftime("%H:%M:%S"), "Action": f"(assistant) {name}", "Source": source,
+            "Verdict": "Déployé" if s.get("result_state") == "SUCCESS" else "Échec du déploiement",
+            "Déploiement": f"{res.get('uc_model')} v{res.get('version')}" if res.get("version") else s.get("result_state"),
+            "Endpoint": res.get("endpoint"), "Exécution du Job": job["run_id"]})
+    job["logged"] = True
+
+
+def follow_assistant_job(kind: str) -> None:
+    a, w = ss.assistant, client()
+    job = a[kind]
+    title, detail, limit = {
+        "gen": ("Étape 5 — Génération et tests de l'assistant",
+                "compter 3 à 5 min : génération par Claude, validation, tests des Actions, de l'Action LLM et des "
+                "conversations, jusqu'à 2 tentatives", GIT_MAX_WAIT_S),
+        "dep": ("Étape 6 — Déploiement de l'assistant",
+                "compter 10 à 25 min : enregistrement Unity Catalog, création ou mise à jour de l'endpoint, test de fumée",
+                DEPLOY_MAX_WAIT_S)}[kind]
+    ph = st.empty()
+    while job_running(job, limit):
+        s = job["status"]
+        el = int(time.time() - job["started"])
+        ph.info(f"⏳ **{title}** — {JOB_HINTS.get(s['life_cycle_state'], s['life_cycle_state'])} — "
+                f"{el // 60} min {el % 60:02d} s  \nExécution du Job [{job['run_id']}]({s.get('url')}) — {detail}. "
+                "L'exécution continue même si la page est fermée.")
+        time.sleep(ASSISTANT_POLL_S)
+        try:
+            job["status"] = DJ.run_status(w, job["run_id"])
+        except Exception as e:  # noqa: BLE001 - erreur réseau passagère
+            ph.warning(f"Lecture de l'état impossible ({type(e).__name__}), nouvel essai…")
+    ph.empty()
+    if DJ.is_finished(job["status"]) and not job["logged"]:
+        finish_assistant_job(kind)
+    st.rerun()
+
+
+def assistant_issues() -> list[str]:
+    """Points bloquants avant déploiement : ceux du Job et le contrôle des modèles de l'App (même règle)."""
+    r = (ss.assistant or {}).get("result") or {}
+    if not r.get("meta"):
+        return ["Aucun projet généré"]
+    issues = list(r["meta"].get("blocking") or [])
+    bad = [c for c in r.get("model_checks") or [] if not c["Équivalent"]]
+    if bad and not any("modèles" in i for i in issues):
+        issues.append("Correspondances de modèles non équivalentes : "
+                      + ", ".join(f"{c['Modèle source']} -> {c['Endpoint Databricks']}" for c in bad))
+    return issues
+
+
+def _test_group(name: str) -> str:
+    if name.startswith("outil_"):
+        return "Actions (outils)"
+    if name.startswith("conversation_"):
+        return "Conversations"
+    return "Action LLM"
+
+
+def render_assistant_generation(package_ok: bool) -> None:
+    a = ss.assistant
+    st.divider()
+    st.markdown("### Étape 5 — Génération et tests (Job)")
+    gen = a.get("gen")
+    if job_running(gen, GIT_MAX_WAIT_S):
+        follow_assistant_job("gen")
+        return
+    if gen and DJ.is_finished(gen["status"]) and not gen["logged"]:
+        finish_assistant_job("gen")
+    r = a.get("result")
+    if not r:
+        st.write(f"Le paquet figé au commit `{a['repo']['commit'][:12]}` est déposé dans `{DEPLOY_VOLUME}`, puis le Job "
+                 f"[{DEPLOY_JOB_ID}]({client().config.host}/jobs/{DEPLOY_JOB_ID}) génère un agent unique avec un outil par "
+                 "Action, le valide et exécute ses tests (Actions, Action LLM, conversations réelles). Rien n'est déployé à "
+                 "cette étape.")
+        if gen and not DJ.is_finished(gen["status"]):
+            st.warning(f"Suivi interrompu : l'exécution [{gen['run_id']}]({gen['status'].get('url')}) continue dans le Job.")
+        if not package_ok:
+            st.error("Génération impossible tant que les contrôles préliminaires ne sont pas tous conformes.")
+        if st.button("▶ Générer et tester l'assistant", type="primary", disabled=not package_ok):
+            start_assistant_job(deploy=False)
+            st.rerun()
+        return
+    if r.get("error"):
+        st.error(f"Exécution du Job [{gen['run_id']}]({gen['status'].get('url')}) en échec : {r['error']}")
+        if st.button("Relancer la génération", disabled=not package_ok):
+            start_assistant_job(deploy=False)
+            st.rerun()
+        return
+    meta, files = r["meta"], r["files"]
+    tests = meta.get("tests") or []
+    ok = sum(bool(t.get("ok")) for t in tests)
+    (st.success if meta.get("status") == "VALIDÉ" else st.warning)(
+        f"Statut **{meta.get('status')}** — {meta.get('attempts')} tentative(s) — {meta.get('duration_s')} s — "
+        f"tests : {ok}/{len(tests)} — exécution du Job [{gen['run_id']}]({gen['status'].get('url')})")
+    if meta.get("errors"):
+        st.markdown("**Erreurs restantes après la dernière tentative**")
+        for e in meta["errors"]:
+            st.write(f"- {str(e)[:300]}")
+    groups = {}
+    for t in tests:
+        g = groups.setdefault(_test_group(t.get("name", "")), [0, 0])
+        g[0] += bool(t.get("ok"))
+        g[1] += 1
+    cols = st.columns(max(len(groups), 1))
+    for c, (g, (n_ok, n)) in zip(cols, groups.items()):
+        c.metric(g, f"{n_ok}/{n}")
+    st.dataframe(pd.DataFrame([{"Résultat": "✅" if t.get("ok") else "❌", "Groupe": _test_group(t.get("name", "")),
+                                "Test": t.get("name"), "Détail": t.get("detail")} for t in tests]),
+                 hide_index=True, use_container_width=True)
+    if r["model_checks"]:
+        st.markdown("**Contrôle des correspondances de modèles**")
+        st.dataframe(pd.DataFrame(r["model_checks"]), hide_index=True, use_container_width=True)
+    tabs = st.tabs(["agent.py", "model_config.yml", "tests.json", "Notes de migration", "Rapport"])
+    with tabs[0]:
+        st.code(files.get("agent.py", "(absent)"), language="python")
+    with tabs[1]:
+        st.code(files.get("model_config.yml", "(absent)"), language="yaml")
+    with tabs[2]:
+        st.code(files.get("tests.json", "(absent)"), language="json")
+    with tabs[3]:
+        st.markdown(files.get("MIGRATION_NOTES.md", "(absent)"))
+    with tabs[4]:
+        st.markdown(files.get("MIGRATION_REPORT.md", "(absent)"))
+    name = a["pkg"]["manifest"]["name"]
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for fname, content in files.items():
+            z.writestr(f"{name}_agent/{fname}", content)
+    c1, c2 = st.columns(2)
+    c1.download_button("Télécharger le projet (.zip)", buf.getvalue(), f"{name}_agent.zip", "application/zip")
+    if c2.button("Relancer la génération", disabled=not package_ok or job_running(a.get("dep"), DEPLOY_MAX_WAIT_S)):
+        start_assistant_job(deploy=False)
+        st.rerun()
+    render_assistant_deploy()
+
+
+def render_assistant_deploy() -> None:
+    a = ss.assistant
+    st.divider()
+    st.markdown("### Étape 6 — Déploiement (Job)")
+    uc_model, endpoint = assistant_names()
+    issues = assistant_issues()
+    (st.success if not issues else st.error)(f"Verdict : **{'Prêt au déploiement' if not issues else 'Bloqué'}**")
+    for i in issues:
+        st.write(f"- {i}")
+    cfg = a["result"]["config"]
+    st.dataframe(pd.DataFrame([
+        {"Ressource": "Modèle Unity Catalog", "Valeur": uc_model, "Action": "Nouvelle version, tags source_repo et source_commit"},
+        {"Ressource": "Endpoint Model Serving", "Valeur": endpoint, "Action": "Création ou mise à jour (100 % du trafic sur la nouvelle version)"},
+        {"Ressource": "Endpoints LLM utilisés", "Valeur": ", ".join(config_endpoints(cfg)) or "-", "Action": "Déclarés comme ressources de l'agent"},
+        {"Ressource": "Source", "Valeur": f"{a['repo']['url']} @ {a['repo']['commit'][:12]} / {a['summary']['path']}", "Action": "Tracée dans le modèle"},
+    ]), hide_index=True, use_container_width=True)
+    dep = a.get("dep")
+    if job_running(dep, DEPLOY_MAX_WAIT_S):
+        follow_assistant_job("dep")
+        return
+    if dep:
+        if DJ.is_finished(dep["status"]) and not dep["logged"]:
+            finish_assistant_job("dep")
+        s, res = dep["status"], dep["status"].get("result") or {}
+        if s.get("result_state") == "SUCCESS" and res.get("endpoint"):
+            st.success(f"Déployé : **{res.get('uc_model')} v{res.get('version')}** sur l'endpoint "
+                       f"[{res['endpoint']}]({client().config.host}/ml/endpoints/{res['endpoint']}) — test de fumée réussi "
+                       f"(Actions appelées : {', '.join(res.get('smoke_actions') or []) or 'aucune'}).")
+        elif DJ.is_finished(s):
+            st.error(f"Déploiement en échec ({s.get('result_state')}) : {(s.get('error') or s.get('message') or '')[:800]}")
+        else:
+            st.warning(f"Suivi interrompu après {DEPLOY_MAX_WAIT_S // 60} min : l'exécution continue dans le Job.")
+        st.caption(f"Exécution du Job : [{dep['run_id']}]({s.get('url')}) — dossier : `{dep['directory']}`")
+        if s.get("result_state") == "SUCCESS":
+            return  # déjà déployé : un nouveau déploiement passe par une nouvelle génération
+    if issues:
+        st.warning("Déploiement impossible tant que les points bloquants ne sont pas levés.")
+        return
+    st.write("Le projet relu ci-dessus est déployé tel quel (sans régénération) par le Job, qui refait les contrôles "
+             "bloquants. Le Job s'exécute avec l'identité de son propriétaire.")
+    confirmed = st.checkbox(f"Je confirme le déploiement réel : nouvelle version de `{uc_model}` et 100 % du trafic de "
+                            f"`{endpoint}` sur cette version.")
+    if st.button("🚀 Déployer l'assistant", type="primary", disabled=not confirmed):
+        start_assistant_job(deploy=True)
+        st.rerun()
 
 
 def render_git_import() -> None:
