@@ -1,0 +1,11 @@
+command:
+  - streamlit
+  - run
+  - app.py
+
+env:
+  # Endpoint de l'agent llm_call, fourni par la ressource de l'App (droit CAN_QUERY)
+  - name: LLM_CALL_ENDPOINT
+    valueFrom: llm-call-endpoint
+  - name: STREAMLIT_BROWSER_GATHER_USAGE_STATS
+    value: "false"
