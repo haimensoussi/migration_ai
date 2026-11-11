@@ -10,6 +10,9 @@ env:
   # Job de déploiement réel (affiché à l'étape 7 ; le simulateur ne le déclenche pas)
   - name: DEPLOY_JOB_ID
     value: "231540374932312"
+  # Actions HORIZON réelles lues dans le workspace (séparées par des virgules ; droit CAN_READ requis pour l'App)
+  - name: WORKSPACE_EXAMPLES
+    value: "/Users/phsi10251@commun.ad.sncf.fr/horizon2databricks/examples/horizon/llm_call_real/llm_call.py"
   - name: UC_SCHEMA
     value: "dataops_dev.knowledge"
   - name: STREAMLIT_BROWSER_GATHER_USAGE_STATS

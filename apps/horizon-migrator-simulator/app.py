@@ -25,6 +25,9 @@ MIGRATOR_ENDPOINT = os.getenv("MIGRATOR_ENDPOINT", "agents_dataops_dev-knowledge
 DEPLOY_JOB_ID = os.getenv("DEPLOY_JOB_ID", "231540374932312")
 UC_SCHEMA = os.getenv("UC_SCHEMA", "dataops_dev.knowledge")
 EXAMPLES = Path(__file__).parent / "examples"
+# Actions réelles lues dans le workspace (le code SNCF reste dans Databricks, il n'est pas copié dans Git).
+# L'identité de l'App doit avoir le droit CAN_READ sur chaque fichier.
+WORKSPACE_EXAMPLES = [p.strip() for p in os.getenv("WORKSPACE_EXAMPLES", "").split(",") if p.strip()]
 EXPECTED_FILES = ["agent.py", "model_config.yml", "requirements.txt", "tests.json",
                   "MIGRATION_NOTES.md", "MIGRATION_REPORT.md", "facts.json"]
 
@@ -180,6 +183,26 @@ def files_zip(files: dict) -> bytes:
     return buf.getvalue()
 
 
+@st.cache_data(ttl=600, show_spinner=False)
+def read_workspace_file(path: str) -> str:
+    import base64
+    from databricks.sdk.service.workspace import ExportFormat
+    resp = client().workspace.export(path, format=ExportFormat.SOURCE)
+    return base64.b64decode(resp.content).decode("utf-8")
+
+
+def example_options() -> list[tuple[str, str, str]]:
+    """(libellé, origine, chemin) : Actions réelles du workspace d'abord, puis exemples fictifs embarqués."""
+    opts = [(f"{Path(p).stem} — Action réelle HORIZON (workspace)", "workspace", p) for p in WORKSPACE_EXAMPLES]
+    opts += [(f"{p.stem} — exemple fictif", "local", str(p)) for p in sorted(EXAMPLES.glob("*.py"))]
+    return opts
+
+
+def read_example(option: tuple[str, str, str]) -> str:
+    _, origin, path = option
+    return read_workspace_file(path) if origin == "workspace" else Path(path).read_text(encoding="utf-8")
+
+
 def need(condition: bool, message: str) -> bool:
     if not condition:
         st.info(message)
@@ -231,18 +254,25 @@ def simulate_all() -> None:
 # ---------------------------------------------------------------- écrans
 def render_import():
     st.subheader(LABEL["import"])
-    st.caption("L'Action est analysée sans être exécutée. Les exemples fournis sont fictifs.")
+    st.caption("L'Action est analysée sans être exécutée. Les Actions réelles sont lues dans le workspace Databricks.")
     tab_ex, tab_paste, tab_file = st.tabs(["Exemple", "Coller le code", "Déposer un fichier"])
     with tab_ex:
-        examples = sorted(EXAMPLES.glob("*.py"))
-        if examples:
-            choice = st.selectbox("Exemple", examples, format_func=lambda p: p.name)
-            with st.expander("Voir le code"):
-                st.code(choice.read_text(encoding="utf-8"), language="python")
-            if st.button("Charger cet exemple", type="primary"):
-                if load_action(choice.read_text(encoding="utf-8"), f"exemple {choice.name}"):
-                    ss.step = "analyse"
-                    st.rerun()
+        options = example_options()
+        if options:
+            choice = st.selectbox("Exemple", options, format_func=lambda o: o[0])
+            try:
+                example_code = read_example(choice)
+            except Exception as e:  # noqa: BLE001 - droit de lecture manquant, fichier déplacé...
+                st.error(f"Lecture impossible de `{choice[2]}` : {type(e).__name__}: {str(e)[:300]}")
+                st.caption("Vérifiez que l'identité de l'App a le droit CAN_READ sur ce fichier.")
+                example_code = None
+            if example_code is not None:
+                with st.expander(f"Voir le code ({len(example_code.splitlines())} lignes)"):
+                    st.code(example_code, language="python")
+                if st.button("Charger cet exemple", type="primary"):
+                    if load_action(example_code, choice[0]):
+                        ss.step = "analyse"
+                        st.rerun()
     with tab_paste:
         pasted = st.text_area("Code Python de l'Action HORIZON", height=360)
         if st.button("Analyser ce code", disabled=not pasted.strip()):
