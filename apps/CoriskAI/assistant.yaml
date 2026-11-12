@@ -29,6 +29,13 @@ indexing:
   - file: actions/extract_project_pdf.py
     entrypoint: extract_project_pdf
 
+# Ajout de la migration (absent de la source) : projet utilisé pour la recherche quand l'appelant ne fournit pas
+# project_id (ex. AI Playground, qui n'envoie pas de custom_inputs). Un project_id fourni reste prioritaire.
+# Choix de démonstration (document fictif DEMO-001) : à retirer ou à valider avant tout usage réel.
+retrieval:
+  default_filters:
+    project_id: DEMO-001
+
 tests_file: tests/cas_attendus.yaml
 
 # Pas de section dependencies : documents et index vectoriel sont déduits du code d'indexation et de l'agent

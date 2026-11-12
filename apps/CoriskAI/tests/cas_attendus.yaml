@@ -43,8 +43,16 @@ cases:
     expect_count:
       sources: 12
     expect_answer: true
-  - name: projet_requis_pour_la_recherche
-    origin: migration              # recherche ajoutée : sans context_chunks, project_id est obligatoire
-    question: Quels sont les risques ?
+  - name: projet_par_defaut
+    origin: migration              # recherche ajoutée : sans project_id, projet par défaut du manifeste (DEMO-001)
+    question: Quels sont les risques d'approvisionnement ?
     custom_inputs: {}
-    expect_error: project_id requis
+    expect:
+      retrieval: {filters: {project_id: DEMO-001}, default_filters_used: [project_id]}
+    expect_answer: true
+  - name: projet_explicite_prioritaire
+    origin: migration              # un project_id fourni remplace le défaut ; projet sans document : 0 passage
+    question: Quels sont les risques ?
+    custom_inputs: {project_id: PROJET-SANS-DOCUMENT}
+    expect:
+      retrieval: {filters: {project_id: PROJET-SANS-DOCUMENT}, passages: 0, default_filters_used: []}
