@@ -729,8 +729,13 @@ def render_assistant_deploy() -> None:
             st.success(f"Déployé : **{res.get('uc_model')} v{res.get('version')}** sur l'endpoint "
                        f"[{res['endpoint']}]({client().config.host}/ml/endpoints/{res['endpoint']}) — test de fumée réussi "
                        f"(Actions appelées : {', '.join(res.get('smoke_actions') or []) or 'aucune'}).")
+            render_dependency_results(res.get("dependencies") or {})
         elif DJ.is_finished(s):
             st.error(f"Déploiement en échec ({s.get('result_state')}) : {(s.get('error') or s.get('message') or '')[:800]}")
+            try:  # créations et vérifications déjà faites avant l'échec
+                render_dependency_results(GI.read_json(client(), f"{dep['directory']}/dependencies_result.json"))
+            except Exception:  # noqa: BLE001  (échec avant l'étape des dépendances)
+                pass
         else:
             st.warning(f"Suivi interrompu après {DEPLOY_MAX_WAIT_S // 60} min : l'exécution continue dans le Job.")
         st.caption(f"Exécution du Job : [{dep['run_id']}]({s.get('url')}) — dossier : `{dep['directory']}`")
@@ -741,8 +746,16 @@ def render_assistant_deploy() -> None:
         return
     st.write("Le projet relu ci-dessus est déployé tel quel (sans régénération) par le Job, qui refait les contrôles "
              "bloquants. Le Job s'exécute avec l'identité de son propriétaire.")
+    creates = ((a["result"].get("meta") or {}).get("dependencies") or {}).get("auto_create") or []
+    if creates:
+        st.markdown("**Avant le déploiement, le Job crée, indexe les documents déposés puis vérifie :** "
+                    + ", ".join(auto_create_label(c) for c in creates))
+        if any(c.get("type") == "vs_endpoint" for c in creates):
+            st.warning("L'endpoint Vector Search STANDARD est facturé en continu tant qu'il existe ; sa création prend "
+                       "plusieurs minutes.")
     confirmed = st.checkbox(f"Je confirme le déploiement réel : nouvelle version de `{uc_model}` et 100 % du trafic de "
-                            f"`{endpoint}` sur cette version.")
+                            f"`{endpoint}` sur cette version"
+                            + (f", et la création de {len(creates)} objet(s) listé(s) ci-dessus." if creates else "."))
     if st.button("🚀 Déployer l'assistant", type="primary", disabled=not confirmed):
         start_assistant_job(deploy=True)
         st.rerun()
@@ -772,14 +785,52 @@ def need_assistant(generated: bool = False) -> bool:
     return True
 
 
+AUTO_CREATE_LABEL = {"volume": "Volume", "vs_endpoint": "endpoint Vector Search", "chunks_table": "table des segments",
+                     "vs_index": "index Vector Search"}
+
+
+def auto_create_label(a: dict) -> str:
+    name = f"{a['catalog']}.{a['schema']}.{a['name']}" if a.get("type") == "volume" else a.get("name")
+    return f"{AUTO_CREATE_LABEL.get(a.get('type'), a.get('type'))} {name}"
+
+
+def render_dependency_results(res: dict) -> None:
+    """Créations, indexation et vérifications faites par le Job au déploiement."""
+    if not res:
+        return
+    if res.get("created"):
+        st.markdown("**Objets créés**")
+        for c in res["created"]:
+            st.write(f"- {c}")
+    for ix in res.get("indexing") or []:
+        st.markdown(f"**Indexation** `{ix.get('index')}` : {ix.get('files_indexed', 0)}/{ix.get('files_found', 0)} "
+                    f"fichier(s), {ix.get('pages', 0)} page(s), {ix.get('chunks', 0)} segment(s) ; index "
+                    f"{'à jour' if ix.get('synced') else 'NON à jour'} ({ix.get('indexed_rows', 0)} ligne(s)), "
+                    f"{ix.get('duration_s', '?')} s")
+        for w_ in ix.get("warnings") or []:
+            st.warning(w_)
+    checks = res.get("checks") or (res.get("verification") or {}).get("checks") or []
+    if checks:
+        st.markdown("**Vérifications**")
+        st.dataframe(pd.DataFrame(checks), hide_index=True, use_container_width=True)
+    for b in (res.get("verification") or {}).get("blocking") or []:
+        st.error(b)
+
+
 def render_dependency_plan(dep: dict) -> None:
     st.dataframe(pd.DataFrame([{"Bloquant": "❌" if x["Bloquant au déploiement"] else "✅",
                                 **{k: x.get(k) for k in ("Dépendance", "Type", "Cible Databricks", "État", "Action",
                                                          "Responsable", "Droits nécessaires", "Usage")}}
                                for x in dep["rows"]]), hide_index=True, use_container_width=True)
     if dep.get("auto_create"):
-        st.caption("Créé automatiquement par le Job au déploiement : " + ", ".join(
-            f"Volume {v['catalog']}.{v['schema']}.{v['name']}" for v in dep["auto_create"]))
+        st.caption("Créé automatiquement par le Job au déploiement : "
+                   + ", ".join(auto_create_label(a) for a in dep["auto_create"]))
+    if any(a.get("type") == "vs_endpoint" for a in dep.get("auto_create") or []):
+        st.warning("Un endpoint Vector Search STANDARD sera créé : il est facturé en continu tant qu'il existe "
+                   "(à supprimer après la démonstration si l'assistant n'est pas conservé).")
+    for w_ in dep.get("warnings") or []:
+        if "déduite" in w_:
+            st.info(w_)
     if dep.get("resources"):
         st.caption("Ressources déclarées sur l'agent (accès automatique de l'endpoint) : "
                    + ", ".join(f"{x['type']} {x['name']}" for x in dep["resources"]))

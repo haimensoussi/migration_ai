@@ -43,13 +43,19 @@ dependencies:
       volume: dataops_dev.knowledge.corisk_documents
       formats: [pdf]
       create_if_missing: true            # Volume vide créé par le Job ; dépôt des PDF après validation du Data Owner
+      # Rangement : <volume>/<project_id>/<fichier>.pdf (un dossier par projet, comme /data/corisk/<projet>)
   vector_indexes:
     - name: corisk_passages
       from: corisk_documents
       index: dataops_dev.knowledge.corisk_chunks_index
-      chunks_table: dataops_dev.knowledge.corisk_chunks   # produite par ingest_project.py (à compléter)
-      vector_search_endpoint: corisk_vs_endpoint          # à créer ou à choisir par l'administrateur
+      chunks_table: dataops_dev.knowledge.corisk_chunks
+      vector_search_endpoint: corisk_vs_endpoint
       embedding_endpoint: databricks-gte-large-en
       columns: [chunk_id, content, file_name, page, project_id]
       filter_columns: [project_id]       # un projet ne voit que ses documents
       top_k: 8
+      chunk_size: 1200                   # découpage de ingest_project.split_text
+      chunk_overlap: 200
+      # Le Job crée l'endpoint Vector Search (STANDARD, facturé en continu), la table des segments et l'index
+      # synchronisé, indexe les PDF du Volume (ai_parse_document) puis vérifie le tout avant de déployer l'agent.
+      create_if_missing: true
