@@ -1,0 +1,55 @@
+# Manifeste d'assistant HORIZON -> Databricks (format pivot, version 1)
+# DÉMONSTRATION : assistant CORISK.IA reconstitué à partir des modules de ce dossier (agent_risk_chat.py,
+# build_agent_risk.py, ingest_project.py). Ce n'est pas le code HORIZON réel de CORISK.IA.
+format_version: 1
+name: corisk_analyse_risques
+description: >
+  Assistant CORISK.IA d'analyse des risques des projets SNCF Réseau : recherche les passages pertinents des
+  documents d'un projet, identifie les risques étayés avec leurs citations et calcule leur criticité
+  (probabilité x impact) selon une grille de démonstration à valider par le métier.
+
+system_prompt_file: prompt_system.md
+
+# Action LLM : devient la boucle de l'agent (modèles, FinOps, codes d'erreur conservés).
+llm:
+  action: workspace:/Users/phsi10251@commun.ad.sncf.fr/horizon2databricks/examples/horizon/llm_call_real/llm_call.py
+  default_model: claude-sonnet-4-6
+  temperature: 0.1          # repris de agent_risk_chat.py
+  max_tokens: 1500          # repris de agent_risk_chat.py
+
+orchestration:
+  mode: llm_tools
+  max_tool_calls: 8         # une recherche puis un calcul de criticité par risque identifié
+
+actions:
+  - file: actions/rechercher_passages.py
+    description: >
+      Recherche, dans les documents indexés d'UN projet (project_id), les passages les plus proches d'une question
+      et renvoie leur texte avec le fichier et la page. À utiliser avant toute identification de risques :
+      ne jamais citer un risque sans passage qui l'étaye.
+  - file: actions/calculer_criticite.py
+    description: >
+      Calcule la criticité d'un risque (probabilité x impact, notes entières de 1 à 5) et son niveau selon la
+      grille de démonstration (à valider). À utiliser pour chaque risque au lieu de calculer soi-même.
+
+config_file: config/horizon_config.yaml
+tests_file: tests/cas_attendus.yaml
+
+# Objets Databricks dont l'assistant dépend (voir assistants/DEPENDENCIES.md). Noms proposés : à valider.
+dependencies:
+  documents:
+    - name: corisk_documents
+      source: "/data/corisk (HORIZON)"
+      volume: dataops_dev.knowledge.corisk_documents
+      formats: [pdf]
+      create_if_missing: true            # Volume vide créé par le Job ; dépôt des PDF après validation du Data Owner
+  vector_indexes:
+    - name: corisk_passages
+      from: corisk_documents
+      index: dataops_dev.knowledge.corisk_chunks_index
+      chunks_table: dataops_dev.knowledge.corisk_chunks   # produite par ingest_project.py (à compléter)
+      vector_search_endpoint: corisk_vs_endpoint          # à créer ou à choisir par l'administrateur
+      embedding_endpoint: databricks-gte-large-en
+      columns: [chunk_id, content, file_name, page, project_id]
+      filter_columns: [project_id]       # un projet ne voit que ses documents
+      top_k: 8

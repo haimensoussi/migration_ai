@@ -1,0 +1,15 @@
+# Équivalent du contexte HORIZON pour cet assistant (aucun secret ici).
+context:
+  SOCLE_PROXY: null          # lu par llm_call (getattr(context, 'SOCLE_PROXY'))
+
+# Préférences de migration (prioritaires sur les sondes réseau)
+external_services:
+  api.ecologits.ai:
+    enabled: false
+    reason: "Hôte injoignable depuis Databricks (DNS)."
+
+# Modèles autorisés : uniquement ceux qui ont un équivalent exact sur Databricks
+allowed_models:
+  - claude-sonnet-4-6
+  - claude-sonnet-4-5
+  - claude-haiku-4-5
