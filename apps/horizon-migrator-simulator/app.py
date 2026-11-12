@@ -436,7 +436,7 @@ def render_assistant_detail() -> None:
     c[1].metric("Appels d'outils max", (m.get("orchestration") or {}).get("max_tool_calls", 5))
     c[2].metric("Tests d'Actions", info["n_tool_tests"])
     c[3].metric("Conversations de test", info["n_conversations"])
-    tabs = st.tabs(["Prompt système", "Actions", "Action LLM", "Configuration", "Contrôles", "Manifeste"])
+    tabs = st.tabs(["Prompt système", "Actions", "Action LLM", "Configuration", "Dépendances", "Contrôles", "Manifeste"])
     with tabs[0]:
         st.caption("Recopié mot pour mot dans l'agent (clé system_prompt de model_config.yml).")
         st.code(info["prompt"] or "(absent)", language="markdown")
@@ -458,8 +458,19 @@ def render_assistant_detail() -> None:
     with tabs[3]:
         st.code(info["config_text"] or "(aucune configuration)", language="yaml")
     with tabs[4]:
-        st.dataframe(pd.DataFrame(checks), hide_index=True, use_container_width=True)
+        deps = m.get("dependencies") or {}
+        if deps:
+            counts = {k: len(deps.get(k) or []) for k in ("documents", "vector_indexes", "databases", "secrets")}
+            st.write(" | ".join(f"{k} : {v}" for k, v in counts.items()))
+            st.code(yaml.safe_dump(deps, allow_unicode=True, sort_keys=False), language="yaml")
+        else:
+            st.write("Aucune dépendance déclarée (section `dependencies` de assistant.yaml).")
+        st.caption("À l'étape 5, le Job repère dans le code les accès aux fichiers, bases vectorielles, embeddings et bases "
+                   "de données (bloquant s'ils ne sont pas déclarés), puis vérifie l'existence de chaque objet Databricks "
+                   "et indique l'action prévue et son responsable.")
     with tabs[5]:
+        st.dataframe(pd.DataFrame(checks), hide_index=True, use_container_width=True)
+    with tabs[6]:
         st.code(yaml.safe_dump(m, allow_unicode=True, sort_keys=False), language="yaml")
     render_assistant_generation(info["ok"])
 
@@ -646,6 +657,21 @@ def render_assistant_generation(package_ok: bool) -> None:
     if r["model_checks"]:
         st.markdown("**Contrôle des correspondances de modèles**")
         st.dataframe(pd.DataFrame(r["model_checks"]), hide_index=True, use_container_width=True)
+    dep = meta.get("dependencies") or {}
+    if dep.get("rows"):
+        st.markdown("**Plan des dépendances** (existence vérifiée par le Job)")
+        st.dataframe(pd.DataFrame([{"Bloquant": "❌" if x["Bloquant au déploiement"] else "✅",
+                                    **{k: x.get(k) for k in ("Dépendance", "Type", "Cible Databricks", "État", "Action",
+                                                             "Responsable", "Droits nécessaires", "Usage")}}
+                                   for x in dep["rows"]]), hide_index=True, use_container_width=True)
+        if dep.get("auto_create"):
+            st.caption("Créé automatiquement par le Job au déploiement : " + ", ".join(
+                f"Volume {a['catalog']}.{a['schema']}.{a['name']}" for a in dep["auto_create"]))
+        if dep.get("resources"):
+            st.caption("Ressources déclarées sur l'agent (accès automatique de l'endpoint) : "
+                       + ", ".join(f"{x['type']} {x['name']}" for x in dep["resources"]))
+    for wmsg in dep.get("warnings") or []:
+        st.warning(wmsg)
     tabs = st.tabs(["agent.py", "model_config.yml", "tests.json", "Notes de migration", "Rapport"])
     with tabs[0]:
         st.code(files.get("agent.py", "(absent)"), language="python")
