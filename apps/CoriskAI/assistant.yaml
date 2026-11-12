@@ -1,61 +1,36 @@
-# Manifeste d'assistant HORIZON -> Databricks (format pivot, version 1)
-# DÉMONSTRATION : assistant CORISK.IA reconstitué à partir des modules de ce dossier (agent_risk_chat.py,
-# build_agent_risk.py, ingest_project.py). Ce n'est pas le code HORIZON réel de CORISK.IA.
+# Manifeste d'assistant HORIZON -> Databricks (format pivot, version 1), paquet « fonctions ».
+# Construit sur le code d'origine CORISK.IA du dossier actions/ : fonctions Python simples (pas d'Actions HORIZON
+# RunContext). Ce manifeste ne fait que déclarer le rôle de chaque fichier ; tout le reste est lu dans le code.
 format_version: 1
 name: corisk_analyse_risques
 description: >
-  Assistant CORISK.IA d'analyse des risques des projets SNCF Réseau : recherche les passages pertinents des
-  documents d'un projet, identifie les risques étayés avec leurs citations et calcule leur criticité
-  (probabilité x impact) selon une grille de démonstration à valider par le métier.
+  Analyste des risques projets SNCF Réseau (CORISK.IA) : répond à une question à partir des documents PDF d'un
+  projet (risques étayés, probabilité, impact, criticité, mitigation, pages citées).
+source_kind: functions
+objects_prefix: corisk               # préfixe des objets Unity Catalog créés (à valider)
 
-system_prompt_file: prompt_system.md
+# Fonction qui appelle le LLM : devient l'agent (code recopié dans agent.py, transformations tracées)
+agent:
+  file: actions/agent_risk_chat.py
+  entrypoint: agent_risk_chat
+  env:
+    # Variable lue par la source (os.environ) ; sa valeur n'est pas dans le code : à confirmer
+    DATABRICKS_LLM_ENDPOINT: databricks-claude-sonnet-4-6
 
-# Action LLM : devient la boucle de l'agent (modèles, FinOps, codes d'erreur conservés).
-llm:
-  action: workspace:/Users/phsi10251@commun.ad.sncf.fr/horizon2databricks/examples/horizon/llm_call_real/llm_call.py
-  default_model: claude-sonnet-4-6
-  temperature: 0.1          # repris de agent_risk_chat.py
-  max_tokens: 1500          # repris de agent_risk_chat.py
+# Configuration de la source (nom affiché, prompt) : lue pour information
+config:
+  file: actions/build_agent_risk.py
+  entrypoint: build_agent_risk
 
-orchestration:
-  mode: llm_tools
-  max_tool_calls: 8         # une recherche puis un calcul de criticité par risque identifié
+# Chaîne d'indexation : devient l'indexation du Job (analyse des PDF, découpage, table des segments, index)
+indexing:
+  - file: actions/ingest_project.py
+    entrypoint: ingest_project
+  - file: actions/extract_project_pdf.py
+    entrypoint: extract_project_pdf
 
-actions:
-  - file: actions/rechercher_passages.py
-    description: >
-      Recherche, dans les documents indexés d'UN projet (project_id), les passages les plus proches d'une question
-      et renvoie leur texte avec le fichier et la page. À utiliser avant toute identification de risques :
-      ne jamais citer un risque sans passage qui l'étaye.
-  - file: actions/calculer_criticite.py
-    description: >
-      Calcule la criticité d'un risque (probabilité x impact, notes entières de 1 à 5) et son niveau selon la
-      grille de démonstration (à valider). À utiliser pour chaque risque au lieu de calculer soi-même.
-
-config_file: config/horizon_config.yaml
 tests_file: tests/cas_attendus.yaml
 
-# Objets Databricks dont l'assistant dépend (voir assistants/DEPENDENCIES.md). Noms proposés : à valider.
-dependencies:
-  documents:
-    - name: corisk_documents
-      source: "/data/corisk (HORIZON)"
-      volume: dataops_dev.knowledge.corisk_documents
-      formats: [pdf]
-      create_if_missing: true            # Volume vide créé par le Job ; dépôt des PDF après validation du Data Owner
-      # Rangement : <volume>/<project_id>/<fichier>.pdf (un dossier par projet, comme /data/corisk/<projet>)
-  vector_indexes:
-    - name: corisk_passages
-      from: corisk_documents
-      index: dataops_dev.knowledge.corisk_chunks_index
-      chunks_table: dataops_dev.knowledge.corisk_chunks
-      vector_search_endpoint: corisk_vs_endpoint
-      embedding_endpoint: databricks-gte-large-en
-      columns: [chunk_id, content, file_name, page, project_id]
-      filter_columns: [project_id]       # un projet ne voit que ses documents
-      top_k: 8
-      chunk_size: 1200                   # découpage de ingest_project.split_text
-      chunk_overlap: 200
-      # Le Job crée l'endpoint Vector Search (STANDARD, facturé en continu), la table des segments et l'index
-      # synchronisé, indexe les PDF du Volume (ai_parse_document) puis vérifie le tout avant de déployer l'agent.
-      create_if_missing: true
+# Pas de section dependencies : documents et index vectoriel sont déduits du code d'indexation et de l'agent
+# (colonnes, filtre project_id, découpage, 12 passages), créés et vérifiés par le Job au déploiement.
+# Rangement des documents : <Volume>/<project_id>/<fichier>.pdf

@@ -1,78 +1,50 @@
-# Résultats attendus, calculés à la main. Grille de criticité de DÉMONSTRATION (à valider) :
-# 1-4 faible, 5-9 modéré, 10-14 élevé, 15-25 critique.
-actions:
-  calculer_criticite:
-    - name: p3_i4
-      inputs: {probabilite: 3, impact: 4}
-      expect: {criticite: 12, niveau: élevé}
-    - name: minimum
-      inputs: {probabilite: 1, impact: 1}
-      expect: {criticite: 1, niveau: faible}
-    - name: borne_faible
-      inputs: {probabilite: 2, impact: 2}
-      expect: {criticite: 4, niveau: faible}
-    - name: borne_basse_modere
-      inputs: {probabilite: 1, impact: 5}
-      expect: {criticite: 5, niveau: modéré}
-    - name: borne_modere
-      inputs: {probabilite: 3, impact: 3}
-      expect: {criticite: 9, niveau: modéré}
-    - name: borne_basse_eleve
-      inputs: {probabilite: 2, impact: 5}
-      expect: {criticite: 10, niveau: élevé}
-    - name: borne_basse_critique
-      inputs: {probabilite: 3, impact: 5}
-      expect: {criticite: 15, niveau: critique}
-    - name: maximum
-      inputs: {probabilite: 5, impact: 5}
-      expect: {criticite: 25, niveau: critique}
-    - name: notes_en_texte
-      inputs: {probabilite: "4", impact: "2"}
-      expect: {criticite: 8, niveau: modéré}
-    - name: probabilite_zero
-      inputs: {probabilite: 0, impact: 3}
-      expect_error: INVALID_PROBABILITE
-    - name: probabilite_texte
-      inputs: {probabilite: "forte", impact: 3}
-      expect_error: INVALID_PROBABILITE
-    - name: impact_trop_grand
-      inputs: {probabilite: 2, impact: 6}
-      expect_error: INVALID_IMPACT
-    - name: impact_absent
-      inputs: {probabilite: 2}
-      expect_error: INVALID_IMPACT
-  # Contrôles d'entrée uniquement : ils échouent avant tout accès à l'index. Les cas nominaux de recherche seront
-  # ajoutés quand l'index Vector Search existera, avec un PDF de projet de test validé.
-  rechercher_passages:
-    - name: question_vide
-      inputs: {question: "  ", project_id: P001}
-      expect_error: MISSING_QUESTION
-    - name: projet_absent
-      inputs: {question: "Risques de délai"}
-      expect_error: INVALID_PROJECT
-    - name: projet_chemin
-      inputs: {question: "Risques de délai", project_id: "../P001"}
-      expect_error: INVALID_PROJECT
-    - name: top_k_zero
-      inputs: {question: "Risques de délai", project_id: P001, top_k: 0}
-      expect_error: INVALID_TOP_K
-    - name: top_k_texte
-      inputs: {question: "Risques de délai", project_id: P001, top_k: "beaucoup"}
-      expect_error: INVALID_TOP_K
-
-conversations:
-  - name: criticite_seule
-    question: "Un risque a une probabilité de 3 et un impact de 4. Quelle est sa criticité et son niveau ?"
-    expect_actions: [calculer_criticite]
-    expect_in_answer: "12"
-  - name: deux_risques
-    question: "Calcule la criticité de deux risques : A (probabilité 2, impact 5) et B (probabilité 5, impact 4)."
-    expect_actions: [calculer_criticite, calculer_criticite]
-    expect_in_answer: "20"
-  - name: note_invalide
-    question: "Quelle est la criticité d'un risque de probabilité 7 et d'impact 2 ? Utilise l'outil de calcul."
-    expect_actions: [calculer_criticite]
-    expect_tool_error: INVALID_PROBABILITE
-  - name: sans_projet
-    question: "Bonjour, que sais-tu faire ?"
-    expect_actions: []
+# Tests de l'agent migré, issus du comportement du code d'origine (origin: source) ou d'un ajout de la migration
+# (origin: migration). Les passages sont fournis directement (context_chunks), comme le fait l'appelant de
+# agent_risk_chat : ces cas ne demandent pas d'index. Contenus FICTIFS, pour test uniquement.
+# expect : égalité sur les sorties ; expect_count : nombre d'éléments ; expect_answer : réponse du LLM non vide ;
+# expect_error : message d'erreur attendu.
+cases:
+  - name: question_vide
+    origin: source                 # agent_risk_chat : ValueError('Question vide')
+    question: "   "
+    custom_inputs:
+      context_chunks: [{file_name: test_fictif.pdf, page: 1, content: "Texte fictif."}]
+    expect_error: Question vide
+  - name: sources_et_question
+    origin: source                 # sortie : question reprise, sources = file_name et page de chaque passage
+    question: Quels risques ressortent de ce projet ?
+    custom_inputs:
+      context_chunks:
+        - {file_name: test_fictif.pdf, page: 1, content: "Document fictif de test. Les travaux de nuit sont limités à trois semaines."}
+        - {file_name: test_fictif.pdf, page: 3, content: "Document fictif de test. La livraison des rails est annoncée avec un mois de retard."}
+    expect:
+      question: Quels risques ressortent de ce projet ?
+      sources: [{file_name: test_fictif.pdf, page: 1}, {file_name: test_fictif.pdf, page: 3}]
+    expect_answer: true
+  - name: limite_12_passages
+    origin: source                 # context_chunks[:12] : 12 passages au plus envoyés au LLM et cités
+    question: Résume les informations disponibles.
+    custom_inputs:
+      context_chunks:
+        - {file_name: test_fictif.pdf, page: 1, content: "Passage fictif 1."}
+        - {file_name: test_fictif.pdf, page: 2, content: "Passage fictif 2."}
+        - {file_name: test_fictif.pdf, page: 3, content: "Passage fictif 3."}
+        - {file_name: test_fictif.pdf, page: 4, content: "Passage fictif 4."}
+        - {file_name: test_fictif.pdf, page: 5, content: "Passage fictif 5."}
+        - {file_name: test_fictif.pdf, page: 6, content: "Passage fictif 6."}
+        - {file_name: test_fictif.pdf, page: 7, content: "Passage fictif 7."}
+        - {file_name: test_fictif.pdf, page: 8, content: "Passage fictif 8."}
+        - {file_name: test_fictif.pdf, page: 9, content: "Passage fictif 9."}
+        - {file_name: test_fictif.pdf, page: 10, content: "Passage fictif 10."}
+        - {file_name: test_fictif.pdf, page: 11, content: "Passage fictif 11."}
+        - {file_name: test_fictif.pdf, page: 12, content: "Passage fictif 12."}
+        - {file_name: test_fictif.pdf, page: 13, content: "Passage fictif 13."}
+        - {file_name: test_fictif.pdf, page: 14, content: "Passage fictif 14."}
+    expect_count:
+      sources: 12
+    expect_answer: true
+  - name: projet_requis_pour_la_recherche
+    origin: migration              # recherche ajoutée : sans context_chunks, project_id est obligatoire
+    question: Quels sont les risques ?
+    custom_inputs: {}
+    expect_error: project_id requis

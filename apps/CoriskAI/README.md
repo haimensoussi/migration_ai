@@ -1,41 +1,43 @@
-# CoriskAI — paquet d'assistant HORIZON (démonstration)
+# CoriskAI — paquet d'assistant (code d'origine CORISK.IA)
 
-**Démonstration.** Assistant CORISK.IA d'analyse des risques projets, reconstitué au format HORIZON à partir des
-modules de ce dossier pour tester le migrateur sur un cas RAG. Ce n'est pas le code HORIZON réel de CORISK.IA.
+Analyste des risques projets SNCF Réseau. Le paquet repose **uniquement sur le code d'origine** du dossier
+`actions/` (fonctions Python simples, pas d'Actions HORIZON `RunContext`) : `assistant.yaml` déclare le rôle de
+chaque fichier, le migrateur lit tout le reste dans le code (paquet `source_kind: functions`).
 
-## Contenu
+## Rôle des fichiers
 
-| Fichier | Rôle |
-| --- | --- |
-| `assistant.yaml` | Manifeste : prompt, Action LLM, orchestration, Actions, configuration, tests, **dépendances** |
-| `prompt_system.md` | Prompt de `agent_risk_chat.py` (mot pour mot) + consignes d'utilisation des outils |
-| `actions/rechercher_passages.py` | Outil : recherche des passages d'un projet (HORIZON : index FAISS + segments sur disque) |
-| `actions/calculer_criticite.py` | Outil : criticité = probabilité x impact et niveau (**grille de démonstration, à valider**) |
-| `config/horizon_config.yaml` | Contexte, services externes désactivés, modèles autorisés |
-| `tests/cas_attendus.yaml` | 18 cas d'Actions + 4 conversations |
-| `extract_project_pdf.py`, `ingest_project.py` | **Hors paquet** : chaîne d'indexation (PDF -> segments), à compléter |
-| `agent_risk_chat.py`, `build_agent_risk.py` | **Hors paquet** : version d'origine, remplacée par l'agent généré |
-
-L'Action LLM est l'Action `llm_call` réelle, lue dans le workspace (non copiée dans Git).
-
-## Dépendances (à valider)
-
-| Objet | Nom proposé | Créé par |
+| Fichier | Rôle dans la source | Devient dans Databricks |
 | --- | --- | --- |
-| Volume des PDF | `dataops_dev.knowledge.corisk_documents` | Job (Volume vide) ; PDF déposés après validation du Data Owner |
-| Table des segments | `dataops_dev.knowledge.corisk_chunks` | Chaîne d'indexation (Data Engineer) |
-| Index Vector Search | `dataops_dev.knowledge.corisk_chunks_index`, filtré par `project_id` | Data Engineer |
-| Endpoint Vector Search | `corisk_vs_endpoint` | Administrateur |
-| Endpoint d'embedding | `databricks-gte-large-en` (existant) | — |
+| `actions/agent_risk_chat.py` | Agent : prompt, appel LLM (temperature 0.1, max_tokens 1500), 12 passages au plus, sources | `agent.py` (code recopié, ResponsesAgent) |
+| `actions/ingest_project.py` | Découpage 1200/200, `chunk_id` sha256 `projet:fichier:page:n` (enregistrement « à faire ») | Indexation du Job : table des segments + index Vector Search |
+| `actions/extract_project_pdf.py` | Texte par page d'un PDF du Volume (`fitz`) | `ai_parse_document` dans l'indexation du Job |
+| `actions/build_agent_risk.py` | Configuration (nom « CORISK Risk Analyst », endpoint, prompt) | `model_config.yml` |
+| `tests/cas_attendus.yaml` | — | 4 cas : 3 issus du comportement source, 1 de l'ajout de la migration |
 
-Tant que la table et l'index n'existent pas, la génération et les tests sont possibles mais le **déploiement
-est refusé** (étape « 4. Dépendances » de l'App).
+Les fichiers `*.py` à la racine du dossier sont des copies identiques de ceux de `actions/` (non utilisés).
+
+## Transformations et ajouts de la migration
+
+* `os.environ.get('DATABRICKS_LLM_ENDPOINT')` -> configuration (`agent.env` dans `assistant.yaml`).
+* Messages en dictionnaires -> `ChatMessage` (`serving_endpoints.query` refuse les dictionnaires).
+* **Ajout** : recherche des passages dans Vector Search, filtrée par `project_id`, quand l'appelant ne fournit pas
+  `context_chunks` (la source reçoit toujours les passages de l'appelant).
+
+## Dépendances (déduites du code, créées et vérifiées par le Job au déploiement)
+
+| Objet | Nom (préfixe `corisk`, à valider) |
+| --- | --- |
+| Volume des PDF | `dataops_dev.knowledge.corisk_documents`, rangement `<project_id>/<fichier>.pdf` |
+| Table des segments | `dataops_dev.knowledge.corisk_chunks` (colonnes du dictionnaire de `ingest_project`) |
+| Index Vector Search | `dataops_dev.knowledge.corisk_chunks_index`, filtre `project_id`, 12 résultats |
+| Endpoint Vector Search | `corisk_vs` (STANDARD, facturé en continu tant qu'il existe) |
+| Endpoint d'embedding | `databricks-gte-large-en` (existant ; modèle anglais, à évaluer pour du français) |
 
 ## Points à valider
 
-* Grille de criticité (niveaux et seuils) : démonstration `demo-0`, à valider par le métier.
-* Noms et emplacement des objets Unity Catalog.
-* PDF de projet de test (non confidentiel) et risques attendus, pour les cas nominaux de recherche.
+* Valeur de `DATABRICKS_LLM_ENDPOINT` (absente du code) : `databricks-claude-sonnet-4-6` proposé.
+* Filtre par `project_id` de la recherche ajoutée, modèle d'embedding, noms des objets.
+* PDF de projet de test non confidentiel, pour un test de recherche de bout en bout.
 
 ## Migration
 

@@ -451,27 +451,54 @@ def render_assistant_detail() -> None:
         st.error(f"Contrôles préliminaires : {len(bad)} point(s) bloquant(s) — " + " ; ".join(f"{c['Contrôle']} : {c['Détail']}" for c in bad))
     else:
         st.success(f"Contrôles préliminaires : {len(checks)}/{len(checks)} conformes")
+    functions_kind = info.get("kind") == "functions"
     c = st.columns(4)
-    c[0].metric("Actions métier (outils)", len(info["actions"]))
-    c[1].metric("Appels d'outils max", (m.get("orchestration") or {}).get("max_tool_calls", 5))
-    c[2].metric("Tests d'Actions", info["n_tool_tests"])
-    c[3].metric("Conversations de test", info["n_conversations"])
-    tabs = st.tabs(["Prompt système", "Actions", "Action LLM", "Configuration", "Dépendances", "Contrôles", "Manifeste"])
+    if functions_kind:
+        st.info("Paquet « fonctions » : code Python simple (pas d'Actions HORIZON RunContext). Le manifeste déclare le "
+                "rôle de chaque fichier ; le Job lit le reste dans le code (prompt, appel LLM, découpage, clé des "
+                "segments, colonnes, filtre) et déduit les dépendances.")
+        c[0].metric("Fichiers de code", len(info["actions"]))
+        c[1].metric("Fonctions d'indexation", sum(r.get("role") == "indexing" for r in info["actions"]))
+        c[2].metric("Cas de test", info["n_tool_tests"])
+        c[3].metric("Variables d'environnement", len((m.get("agent") or {}).get("env") or {}))
+        cited = {r["file"] for r in info["actions"]}
+        others = sorted(p for p in a["summary"].get("action_files") or [] if p.split("/", 2)[-1] not in cited)
+        if others:
+            st.caption("Fichiers du dossier non cités par le manifeste (ignorés) : " + ", ".join(others))
+    else:
+        c[0].metric("Actions métier (outils)", len(info["actions"]))
+        c[1].metric("Appels d'outils max", (m.get("orchestration") or {}).get("max_tool_calls", 5))
+        c[2].metric("Tests d'Actions", info["n_tool_tests"])
+        c[3].metric("Conversations de test", info["n_conversations"])
+    tabs = st.tabs(["Prompt système", "Rôle des fichiers" if functions_kind else "Actions",
+                    "Fonction agent" if functions_kind else "Action LLM", "Configuration", "Dépendances", "Contrôles",
+                    "Manifeste"])
     with tabs[0]:
-        st.caption("Recopié mot pour mot dans l'agent (clé system_prompt de model_config.yml).")
+        st.caption("Lu dans le code de la fonction agent, recopié tel quel dans agent.py." if functions_kind else
+                   "Recopié mot pour mot dans l'agent (clé system_prompt de model_config.yml).")
         st.code(info["prompt"] or "(absent)", language="markdown")
     with tabs[1]:
-        st.dataframe(pd.DataFrame([_facts_row(x["name"], x["file"], x["description"], x["facts"]) for x in info["actions"]]),
-                     hide_index=True, use_container_width=True)
+        if functions_kind:
+            st.dataframe(pd.DataFrame([{"Fichier": x["file"], "Fonction": x["name"], "Rôle -> Databricks": x["description"]}
+                                       for x in info["actions"]]), hide_index=True, use_container_width=True)
+        else:
+            st.dataframe(pd.DataFrame([_facts_row(x["name"], x["file"], x["description"], x["facts"])
+                                       for x in info["actions"]]), hide_index=True, use_container_width=True)
         for x in info["actions"]:
             if x["file"] in files:
                 with st.expander(f"Code de {x['file']}"):
                     st.code(files[x["file"]], language="python")
     with tabs[2]:
         llm = info["llm"]
-        st.write(f"Action LLM : **{llm['name'] or '?'}** — source `{llm['source']}` — devient la boucle de l'agent.")
-        st.dataframe(pd.DataFrame([_facts_row(llm["name"], llm["source"], "", llm["facts"])]).drop(
-            columns=["Description (lue par le LLM)"]), hide_index=True, use_container_width=True)
+        if functions_kind:
+            st.write(f"Fonction agent : **{llm['name'] or '?'}** — `{llm['source']}` — recopiée dans agent.py "
+                     "(variables d'environnement -> configuration, messages -> ChatMessage).")
+            if llm["source"] in files:
+                st.code(files[llm["source"]], language="python")
+        else:
+            st.write(f"Action LLM : **{llm['name'] or '?'}** — source `{llm['source']}` — devient la boucle de l'agent.")
+            st.dataframe(pd.DataFrame([_facts_row(llm["name"], llm["source"], "", llm["facts"])]).drop(
+                columns=["Description (lue par le LLM)"]), hide_index=True, use_container_width=True)
         if (m.get("llm") or {}).get("action") in files:
             with st.expander("Code de l'Action LLM"):
                 st.code(files[m["llm"]["action"]], language="python")

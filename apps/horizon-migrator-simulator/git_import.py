@@ -110,9 +110,77 @@ def ref_label(repo: dict) -> str:
 
 
 # ------------------------------------------------------------------ contrôles préliminaires d'un assistant
+FUNCTION_ROLES = {"agent": "agent (appel LLM) -> agent.py, code recopié",
+                  "indexing": "indexation -> indexation du Job (table des segments + index Vector Search)",
+                  "config": "configuration -> model_config.yml"}
+
+
+def check_functions_package(pkg: dict) -> tuple[list[dict], dict]:
+    """Paquet « fonctions » (source_kind: functions) : code Python simple, rôles agent / indexing / config.
+    Contrôles préliminaires ; l'analyse complète (faits, comparaisons, dépendances) est faite par le Job."""
+    import ast
+    m, files = pkg.get("manifest") or {}, pkg.get("files") or {}
+    checks = []
+
+    def check(label, ok, detail=""):
+        checks.append({"Contrôle": label, "Résultat": "✅" if ok else "❌", "Détail": detail})
+
+    for p in pkg.get("problems") or []:
+        check("Fichier cité par le manifeste", False, p)
+    check("Version du format", m.get("format_version") == 1, f"format_version = {m.get('format_version')!r} (1 attendu)")
+    check("Nom de l'assistant", isinstance(m.get("name"), str) and bool(NAME_RE.match(m["name"])), f"{m.get('name')!r}")
+    rows, prompt = [], ""
+    entries = [("agent", m.get("agent"))] + [("indexing", i) for i in m.get("indexing") or []] \
+        + ([("config", m["config"])] if m.get("config") else [])
+    for role, e in entries:
+        e = e if isinstance(e, dict) else {}
+        ref, fn = e.get("file"), e.get("entrypoint")
+        code, err, params = files.get(ref or ""), None, []
+        if not code:
+            err = f"fichier introuvable : {ref!r}"
+        else:
+            try:
+                tree = ast.parse(code)
+                node = next((n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+                             and n.name == fn), None)
+                if node is None:
+                    err = f"fonction {fn!r} introuvable"
+                else:
+                    params = [a.arg for a in node.args.args]
+                if role == "agent" and not err:
+                    if not any(isinstance(n, ast.Call) and ast.unparse(n.func).endswith("serving_endpoints.query")
+                               for n in ast.walk(node)):
+                        err = "aucun appel serving_endpoints.query"
+                    prompt = next((n.value.value for n in tree.body if isinstance(n, ast.Assign)
+                                   and isinstance(n.value, ast.Constant) and isinstance(n.value.value, str)
+                                   and any(isinstance(t, ast.Name) and "PROMPT" in t.id for t in n.targets)), "")
+            except SyntaxError as ex:
+                err = f"erreur de syntaxe ligne {ex.lineno} : {ex.msg}"
+        check(f"{role.capitalize()} {ref}", err is None, err or f"{fn}({', '.join(params)})")
+        rows.append({"name": fn, "file": ref, "description": FUNCTION_ROLES[role], "facts": None, "role": role})
+    check("Fonction agent", isinstance(m.get("agent"), dict), "clé agent (file, entrypoint, env)")
+    check("Chaîne d'indexation", bool(m.get("indexing")), f"{len(m.get('indexing') or [])} fonction(s)")
+    tests = {}
+    if m.get("tests_file"):
+        try:
+            tests = yaml.safe_load(files.get(m["tests_file"], "")) or {}
+            check(f"YAML {m['tests_file']}", bool(tests.get("cases")), f"{len(tests.get('cases') or [])} cas")
+        except yaml.YAMLError as ex:
+            check(f"YAML {m['tests_file']}", False, str(ex)[:200])
+    agent = m.get("agent") if isinstance(m.get("agent"), dict) else {}
+    info = {"prompt": prompt, "config": {}, "config_text": yaml.safe_dump({"env": agent.get("env") or {}},
+                                                                           allow_unicode=True, sort_keys=False),
+            "tests": tests, "n_tool_tests": len(tests.get("cases") or []), "n_conversations": 0,
+            "llm": {"name": agent.get("entrypoint"), "source": agent.get("file"), "facts": None},
+            "actions": rows, "kind": "functions", "ok": all(c["Résultat"] == "✅" for c in checks)}
+    return checks, info
+
+
 def check_package(pkg: dict, extract_facts) -> tuple[list[dict], dict]:
     """Contrôles du paquet (mêmes règles que migrator.assistant.validate_package) et analyse de chaque Action.
     Renvoie (contrôles [{Contrôle, Résultat, Détail}], infos {prompt, config, tests, llm, actions})."""
+    if (pkg.get("manifest") or {}).get("source_kind") == "functions":
+        return check_functions_package(pkg)
     m, files = pkg.get("manifest") or {}, pkg.get("files") or {}
     checks = []
 
