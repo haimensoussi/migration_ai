@@ -22,7 +22,7 @@ except Exception as e:  # noqa: BLE001
 
 st.write("")
 a, b, c2, d = st.columns(4)
-if a.button("Créer un agent", type="primary", icon=":material/add:", use_container_width=True):
+if a.button("Créer un agent", type="primary", use_container_width=True):
     st.session_state.pop("builder", None)
     st.switch_page("views/agent_builder.py")
 b.page_link("views/mes_agents.py", label="Mes agents", icon=":material/smart_toy:")

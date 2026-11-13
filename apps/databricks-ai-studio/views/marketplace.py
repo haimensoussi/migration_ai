@@ -12,7 +12,7 @@ cols = st.columns(3)
 for i, a in enumerate(items):
     with cols[i % 3].container(border=True):
         agent_card(a)
-        if st.button("Utiliser", key=f"m_{a['agent_id']}", icon=":material/forum:"):
+        if st.button("Utiliser", key=f"m_{a['agent_id']}"):
             st.session_state["chat_agent_id"] = a["agent_id"]
             st.switch_page("views/chat.py")
 if not items:

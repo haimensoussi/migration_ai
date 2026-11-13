@@ -97,7 +97,7 @@ with st.container(border=True):
         c1, c2, c3 = st.columns([2, 2, 1])
         cat = c1.text_input("Catalogue", "dataops_dev")
         sch = c2.text_input("Schéma", "description_du_reseau_bronze")
-        if c3.button("Lister", icon=":material/search:"):
+        if c3.button("Lister"):
             try:
                 from tools.uc_tools import list_tables
                 from backend.tool_registry import ToolContext
@@ -126,10 +126,10 @@ with st.container(border=True):
             render_chat(cfg, key="builder", persist=False)
 
 c1, c2, c3, c4 = st.columns(4)
-if c1.button("Précédent", disabled=b["step"] == 0, icon=":material/arrow_back:"):
+if c1.button("Précédent", disabled=b["step"] == 0):
     b["step"] -= 1
     st.rerun()
-if c2.button("Suivant", disabled=b["step"] == len(STEPS) - 1, icon=":material/arrow_forward:"):
+if c2.button("Suivant", disabled=b["step"] == len(STEPS) - 1):
     errs = errors_for(b["step"])
     if errs:
         st.warning(" ".join(errs))
@@ -159,7 +159,7 @@ def save(status: str):
         st.error(f"Enregistrement impossible : {e}")
 
 
-if c3.button("Enregistrer en brouillon", icon=":material/save:"):
+if c3.button("Enregistrer en brouillon"):
     save("brouillon")
-if c4.button("Enregistrer et publier", type="primary", icon=":material/publish:"):
+if c4.button("Enregistrer et publier", type="primary"):
     save("publie")

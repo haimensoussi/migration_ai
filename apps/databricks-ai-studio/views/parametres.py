@@ -23,14 +23,14 @@ if user.mode == "jeton absent":
 
 st.subheader("Initialisation")
 c1, c2 = st.columns(2)
-if c1.button("Synchroniser le catalogue d'outils", icon=":material/sync:"):
+if c1.button("Synchroniser le catalogue d'outils"):
     try:
         n = seed_tools(state.repository())
         state.refresh_data()
         st.success(f"{n} outils synchronisés.")
     except Exception as e:  # noqa: BLE001
         st.error(str(e))
-if c2.button("Créer les agents d'exemple", icon=":material/auto_awesome:"):
+if c2.button("Créer les agents d'exemple"):
     try:
         ids = seed_example_agents(state.repository(), user.email, s.default_model)
         state.refresh_data()

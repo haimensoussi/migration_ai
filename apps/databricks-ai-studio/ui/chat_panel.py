@@ -16,7 +16,7 @@ STATUS_TXT = {"succes": "succès", "erreur": "erreur", "refuse": "refusé"}
 
 def _show_event(ev: dict):
     title = f"Outil `{ev['tool_id']}` : {STATUS_TXT.get(ev['status'], ev['status'])} ({ev['duration_ms']} ms)"
-    with st.expander(title, icon=STATUS_ICON.get(ev["status"])):
+    with st.expander(f'{STATUS_ICON.get(ev["status"], "")} {title}'):
         st.caption("Arguments")
         st.json(ev["arguments"])
         if ev["status"] == "succes":
@@ -49,7 +49,7 @@ def render_chat(cfg: AgentConfig, key: str, persist: bool = True):
     top = st.columns([4, 1])
     top[0].caption(f"Modèle `{cfg.model_endpoint}` · outils : {', '.join(cfg.tool_ids) or 'aucun'} · "
                    f"identité : {user.email} ({user.mode})")
-    if top[1].button("Nouvelle conversation", key=f"reset_{key}", icon=":material/restart_alt:"):
+    if top[1].button("Nouvelle conversation", key=f"reset_{key}"):
         del st.session_state[sk]
         st.rerun()
 
