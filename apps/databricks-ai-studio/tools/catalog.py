@@ -81,4 +81,35 @@ BUILTIN_TOOLS: list[ToolSpec] = [
         input_schema={"type": "object", "properties": {"table": _TABLE}, "required": ["table"]},
         output_schema={"type": "object", "properties": {"amont": {"type": "array"}, "aval": {"type": "array"}}},
         executor="tools.planned:not_available", status="indisponible"),
+    ToolSpec(
+        tool_id="office_read", name="Smart Office : consulter", category="Automatisation",
+        description=("Appelle le flux Power Automate Smart Office pour une opération de consultation "
+                     "(recherche ou lecture de messages). Renseigner technology, operation et query ou message_id."),
+        input_schema={"type": "object", "properties": {
+            "technology": {"type": "string", "description": "Technologie cible du flux (ex. outlook)"},
+            "operation": {"type": "string", "description": "Opération de consultation attendue par le flux"},
+            "query": {"type": "string", "description": "Critère de recherche"},
+            "message_id": {"type": "string", "description": "Identifiant du message à lire"},
+            "question": {"type": "string", "description": "Demande de l'utilisateur, transmise pour traçabilité"}},
+            "required": ["technology", "operation"]},
+        output_schema={"type": "object", "properties": {"http_status": {"type": "integer"},
+                       "reponse_flux": {}}},
+        executor="tools.power_automate:office_read", identity="application"),
+    ToolSpec(
+        tool_id="office_send", name="Smart Office : envoyer", category="Automatisation",
+        description=("Appelle le flux Power Automate Smart Office pour envoyer ou répondre à un message. "
+                     "L'exécution est suspendue jusqu'à l'approbation de l'utilisateur dans AI Studio."),
+        input_schema={"type": "object", "properties": {
+            "technology": {"type": "string", "description": "Technologie cible du flux (ex. outlook)"},
+            "operation": {"type": "string", "description": "Opération d'envoi attendue par le flux"},
+            "to": {"type": "string", "description": "Destinataire(s), séparés par des virgules"},
+            "subject": {"type": "string"},
+            "body": {"type": "string"},
+            "message_id": {"type": "string", "description": "Message auquel répondre (facultatif)"},
+            "question": {"type": "string", "description": "Demande de l'utilisateur, transmise pour traçabilité"}},
+            "required": ["technology", "operation", "to", "subject", "body"]},
+        output_schema={"type": "object", "properties": {"http_status": {"type": "integer"},
+                       "reponse_flux": {}}},
+        executor="tools.power_automate:office_send", identity="application",
+        requires_confirmation=True, read_only=False),
 ]

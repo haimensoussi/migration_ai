@@ -59,6 +59,8 @@ class ToolContext:
     workspace: Any                 # WorkspaceClient utilisateur
     allowed_tables: list[str] = field(default_factory=list)
     max_rows: int = 200
+    conversation_id: str = ""      # transmis aux outils externes (ex. sessionId Power Automate)
+    user_email: str = ""
 
 
 ALLOWED_EXECUTOR_PREFIX = "tools."

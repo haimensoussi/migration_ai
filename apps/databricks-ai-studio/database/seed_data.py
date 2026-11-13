@@ -30,6 +30,17 @@ EXAMPLE_AGENTS = [
          "avec describe_table. Écris du SQL Databricks en lecture seule, montre la requête utilisée et résume le résultat."),
       "tool_ids": ["list_tables", "describe_table", "execute_sql"], "knowledge_tables": [],
       "temperature": 0.0, "max_iterations": 8}),
+    ({"name": "Smart Office", "icon": "support_agent", "category": "Exploitation",
+      "description": "Assistant bureautique : consulte et envoie des messages via le flux Power Automate Smart Office."},
+     {"instructions": (
+         "Tu es Smart Office, assistant bureautique de SNCF Réseau. Tu traites les demandes de messagerie "
+         "en appelant le flux Power Automate : office_read pour rechercher ou lire, office_send pour envoyer ou répondre. "
+         "Avant un envoi, rédige un message clair et professionnel, vérifie le destinataire, l'objet et le corps, "
+         "et n'invente jamais une adresse : demande-la si elle manque. Chaque envoi est soumis à l'approbation "
+         "de l'utilisateur ; si elle est refusée, n'insiste pas. Rends compte du résultat renvoyé par le flux "
+         "sans l'embellir ; en cas d'erreur, cite le code HTTP et le message."),
+      "tool_ids": ["office_read", "office_send"], "knowledge_tables": [],
+      "temperature": 0.2, "max_iterations": 5}),
 ]
 
 

@@ -98,7 +98,7 @@ def render_chat(cfg: AgentConfig, key: str, persist: bool = True):
             if decision is not None:
                 with st.spinner("Exécution..."):
                     try:
-                        rt = state.build_runtime(on_tool_event=log_event)
+                        rt = state.build_runtime(on_tool_event=log_event, conversation_id=s["conversation_id"])
                         res = rt.resume(cfg, s["pending"]["messages"], {p["call"]["id"]: decision})
                         handle(res, None)
                     except Exception as e:  # noqa: BLE001
@@ -111,7 +111,7 @@ def render_chat(cfg: AgentConfig, key: str, persist: bool = True):
         s["display"].append({"kind": "msg", "role": "user", "content": prompt})
         with st.spinner("L'agent réfléchit..."):
             try:
-                rt = state.build_runtime(on_tool_event=log_event)
+                rt = state.build_runtime(on_tool_event=log_event, conversation_id=s["conversation_id"])
                 res = rt.run(cfg, s["history"] + [user_msg])
                 handle(res, user_msg)
             except state.UserAuthMissing as e:

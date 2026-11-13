@@ -16,5 +16,8 @@ env:
     value: ai_studio
   - name: AI_STUDIO_MAX_ROWS
     value: "200"
+  # URL du flux Power Automate Smart Office (ressource secret, lecture seule)
+  - name: POWER_AUTOMATE_SMART_OFFICE_URL
+    valueFrom: smart-office-flow
   - name: STREAMLIT_BROWSER_GATHER_USAGE_STATS
     value: "false"

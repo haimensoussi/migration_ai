@@ -80,9 +80,10 @@ def chat_endpoints() -> list[str]:
     return [e["name"] for e in _chat_endpoints(w, ident.email)]
 
 
-def build_runtime(on_tool_event=None) -> AgentRuntime:
-    w, sql, _ = user_session()
-    ctx = ToolContext(sql=sql, workspace=w, max_rows=settings().max_rows)
+def build_runtime(on_tool_event=None, conversation_id: str = "") -> AgentRuntime:
+    w, sql, ident = user_session()
+    ctx = ToolContext(sql=sql, workspace=w, max_rows=settings().max_rows,
+                      conversation_id=conversation_id, user_email=ident.email)
     return AgentRuntime(ModelClient(w), registry(), ctx, on_tool_event=on_tool_event)
 
 
