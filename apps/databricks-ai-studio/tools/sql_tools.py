@@ -5,7 +5,8 @@ from backend.sql_guard import SqlGuardError, check_read_only, extract_table_refs
 from backend.tool_registry import ToolContext, ToolError, ToolPermissionError
 
 
-def execute_sql(ctx: ToolContext, query: str, limit: int = 100) -> dict:
+def checked_statement(ctx: ToolContext, query: str) -> str:
+    """Contrôles communs : lecture seule, une requête, noms complets, tables autorisées."""
     try:
         statement = check_read_only(query)
     except SqlGuardError as e:
@@ -19,6 +20,11 @@ def execute_sql(ctx: ToolContext, query: str, limit: int = 100) -> dict:
         outside = sorted(r for r in refs if r not in allowed)
         if outside:
             raise ToolPermissionError("Tables hors des connaissances de l'agent : " + ", ".join(outside))
+    return statement
+
+
+def execute_sql(ctx: ToolContext, query: str, limit: int = 100) -> dict:
+    statement = checked_statement(ctx, query)
     n = max(1, min(int(limit), ctx.max_rows))
     r = ctx.sql.query(statement, row_limit=n)
     return {"colonnes": r["columns"], "lignes": r["rows"], "nombre_lignes": len(r["rows"]),

@@ -150,7 +150,9 @@ class AgentRepository:
         return start_index + len(rows)
 
     def log_tool_call(self, conversation_id: str, agent_id: str, user: str, ev: ToolEvent) -> None:
-        preview = json.dumps(ev.result, ensure_ascii=False, default=str)[:4000] if ev.result is not None else None
+        res = ({k: v for k, v in ev.result.items() if not str(k).startswith("_ui")}   # points de carte non journalisés
+               if isinstance(ev.result, dict) else ev.result)
+        preview = json.dumps(res, ensure_ascii=False, default=str)[:4000] if res is not None else None
         self.sql.execute(f"""
             INSERT INTO {self.s.table('tool_calls')} (call_id, conversation_id, agent_id, tool_id, arguments, status,
               result_preview, error, duration_ms, user_name, created_at)

@@ -142,7 +142,9 @@ class AgentRuntime:
                          duration_ms=int((time.monotonic() - t0) * 1000))
 
     def _record(self, ev: ToolEvent, messages: list[dict], events: list[ToolEvent]) -> None:
-        payload = {"status": ev.status, "result": ev.result} if ev.status == "succes" else {"status": ev.status, "error": ev.error}
+        result = ({k: v for k, v in ev.result.items() if not str(k).startswith("_ui")}   # données d'affichage exclues
+                  if isinstance(ev.result, dict) else ev.result)
+        payload = {"status": ev.status, "result": result} if ev.status == "succes" else {"status": ev.status, "error": ev.error}
         content = json.dumps(payload, ensure_ascii=False, default=str)
         if len(content) > MAX_TOOL_RESULT_CHARS:
             content = content[:MAX_TOOL_RESULT_CHARS] + "... [résultat tronqué]"

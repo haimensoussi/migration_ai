@@ -32,6 +32,7 @@ L'interface DISCOVERY se charge de l'affichage des icônes métier.
 # Outils -> (icône, libellé) ; l'ordre de la liste fixe la priorité d'affichage
 TOOL_CHIPS = [
     ({"ask_agent"}, "play", "Orchestration multi-agents"),
+    ({"render_map"}, "train_line", "Carte interactive"),
     ({"list_tables", "describe_table"}, "database", "Exploration des données"),
     ({"execute_sql", "get_table_profile", "generate_sql"}, "chart", "Analyse des données"),
     ({"run_job", "get_job_status"}, "clock", "Suivi des Jobs"),
@@ -41,6 +42,7 @@ TOOL_CHIPS = [
 CAPABILITIES = [
     ({"list_tables", "describe_table"}, "database", "Explorer les catalogues, schémas et tables Unity Catalog."),
     ({"execute_sql"}, "code", "Générer et exécuter des requêtes SQL autorisées."),
+    ({"render_map"}, "train_line", "Afficher les résultats sur une carte interactive."),
     ({"get_table_profile", "execute_sql"}, "chart", "Analyser les résultats et identifier les anomalies."),
     ({"get_job_status", "run_job"}, "clock", "Suivre l'état des Jobs Databricks."),
     ({"office_read", "office_send", "search_documents"}, "document", "Rechercher et préparer des documents et messages."),

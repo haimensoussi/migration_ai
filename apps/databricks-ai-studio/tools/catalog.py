@@ -42,6 +42,25 @@ BUILTIN_TOOLS: list[ToolSpec] = [
                        "tronque": {"type": "boolean"}}},
         executor="tools.sql_tools:execute_sql"),
     ToolSpec(
+        tool_id="render_map", name="Afficher une carte", category="Visualisation",
+        description=("Exécute UNE requête SQL en lecture seule et affiche le résultat sur une carte interactive dans le "
+                     "chat. Le résultat doit contenir une colonne latitude et une colonne longitude (WGS84). "
+                     "Renvoie un résumé (nombre de points, emprise, aperçu, légende) ; la carte est affichée à "
+                     "l'utilisateur. 5 000 points au plus."),
+        input_schema={"type": "object", "properties": {
+            "query": {"type": "string", "description": "Requête SQL en lecture seule renvoyant latitude et longitude"},
+            "title": {"type": "string", "description": "Titre de la carte"},
+            "layer": {"type": "string", "enum": ["points", "heatmap"], "description": "Points (défaut) ou densité"},
+            "color_by": {"type": "string", "description": "Colonne du résultat utilisée pour la couleur"},
+            "tooltip": {"type": "array", "items": {"type": "string"}, "description": "Colonnes affichées au survol"},
+            "lat_column": {"type": "string", "description": "Nom de la colonne latitude si elle n'est pas latitude/lat"},
+            "lon_column": {"type": "string", "description": "Nom de la colonne longitude si elle n'est pas longitude/lon"},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 5000, "description": "Points maximum (défaut 5000)"}},
+            "required": ["query"]},
+        output_schema={"type": "object", "properties": {"nombre_points": {"type": "integer"},
+                       "emprise": {"type": "object"}, "apercu": {"type": "array"}, "legende": {"type": "object"}}},
+        executor="tools.map_tools:render_map"),
+    ToolSpec(
         tool_id="get_job_status", name="Suivre un Job", category="Jobs",
         description="Donne l'état d'une exécution de Job (run_id) ou des 5 dernières exécutions d'un Job (job_id).",
         input_schema={"type": "object", "properties": {"run_id": {"type": "integer"}, "job_id": {"type": "integer"}}},

@@ -40,6 +40,9 @@ def _show_delegation(ev: dict):
 def _show_event(ev: dict):
     if ev["tool_id"] == "ask_agent":
         return _show_delegation(ev)
+    if ev["tool_id"] == "render_map" and ev["status"] == "succes":
+        from ui import map_view
+        return map_view.render(ev)
     title = f"Outil `{ev['tool_id']}` : {STATUS_TXT.get(ev['status'], ev['status'])} ({ev['duration_ms']} ms)"
     with st.expander(f'{STATUS_ICON.get(ev["status"], "")} {title}'):
         st.caption("Arguments")
