@@ -6,7 +6,7 @@ from backend.tool_registry import ToolContext, ToolError, ToolRegistry
 from ui import state
 from ui.components import badge
 
-st.title("Tool Catalog")
+st.title("Catalogue d'outils")
 tools = state.cached_tools()
 if not tools:
     st.warning("Catalogue vide : initialisez-le dans Paramètres.")
