@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<style>
+  :root { --primary:#B0124F; --plum:#4A1942; --border:#E6E3EA; --text:#2B1B33; --muted:#6B6475; --soft:#FBF2F7; }
+  html, body { margin:0; padding:0; background:transparent; font-family:"Source Sans Pro","Segoe UI",Arial,sans-serif; }
+  #wrap { padding:4px 2px 6px; }
+  #list { display:none; margin:0 0 6px; background:#fff; border:1px solid var(--border); border-radius:10px;
+          box-shadow:0 6px 18px rgba(43,27,51,.12); max-height:240px; overflow-y:auto; }
+  #list.open { display:block; }
+  .hd { font-size:12px; color:var(--muted); padding:7px 12px 4px; }
+  .it { display:flex; align-items:center; gap:10px; padding:7px 12px; cursor:pointer; }
+  .it.active, .it:hover { background:var(--soft); }
+  .av { width:26px; height:26px; border-radius:8px; background:var(--soft); color:var(--primary); border:1px solid #EAD3E0;
+        font-weight:700; font-size:11px; display:flex; align-items:center; justify-content:center; flex:none; }
+  .nm { color:var(--text); font-size:14px; font-weight:600; }
+  .ct { color:var(--muted); font-size:12px; }
+  .empty { padding:8px 12px; color:var(--muted); font-size:13px; }
+  #field { position:relative; display:flex; align-items:flex-end; gap:8px; background:#fff; border:1px solid var(--border);
+           border-radius:12px; padding:8px 8px 8px 12px; }
+  #field:focus-within { border-color:var(--primary); box-shadow:0 0 0 2px rgba(176,18,79,.12); }
+  #box { position:relative; flex:1; min-height:24px; }
+  #backdrop, #ta { font:inherit; font-size:15px; line-height:22px; padding:1px 0; margin:0; border:0;
+                   white-space:pre-wrap; word-wrap:break-word; overflow-wrap:break-word; letter-spacing:normal; }
+  #backdrop { position:absolute; inset:0; color:var(--text); pointer-events:none; overflow:hidden; }
+  #backdrop mark { background:transparent; color:var(--primary); font-weight:600; }
+  #ta { position:relative; width:100%; resize:none; outline:none; background:transparent; color:transparent;
+        caret-color:var(--text); display:block; max-height:132px; overflow-y:auto; }
+  #ta::placeholder { color:#9A93A3; }
+  #send { flex:none; width:34px; height:34px; border-radius:10px; border:0; background:var(--primary); cursor:pointer;
+          display:flex; align-items:center; justify-content:center; }
+  #send:disabled, body.disabled #send { background:#D9D3DE; cursor:not-allowed; }
+  .hint { font-size:11px; color:var(--muted); padding:4px 4px 0; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="list" role="listbox" aria-label="Agents"></div>
+  <div id="field">
+    <div id="box"><div id="backdrop" aria-hidden="true"></div>
+      <textarea id="ta" rows="1" aria-label="Message"></textarea></div>
+    <button id="send" title="Envoyer (Entrée)" aria-label="Envoyer">
+      <svg width="16" height="16" viewBox="0 0 16 16"><path d="M5 3.2 L12.2 8 L5 12.8 Z" fill="#fff"/></svg>
+    </button>
+  </div>
+  <div class="hint">@ pour interroger un agent · Tab pour compléter · Entrée pour envoyer · Maj+Entrée pour aller à la ligne</div>
+</div>
+<script src="mention_logic.js"></script>
+<script>
+(function () {
+  const L = window.MentionLogic;
+  const ta = document.getElementById("ta"), bd = document.getElementById("backdrop");
+  const list = document.getElementById("list"), send = document.getElementById("send");
+  let agents = [], disabled = false, items = [], active = 0, mention = null, lastHeight = 0;
+
+  function post(type, extra) {
+    window.parent.postMessage(Object.assign({ isStreamlitMessage: true, type: type }, extra || {}), "*");
+  }
+  function resize() {
+    ta.style.height = "auto";
+    ta.style.height = Math.min(ta.scrollHeight, 132) + "px";
+    const h = Math.ceil(document.getElementById("wrap").getBoundingClientRect().height) + 4;
+    if (h !== lastHeight) { lastHeight = h; post("streamlit:setFrameHeight", { height: h }); }
+  }
+  function paint() { bd.innerHTML = L.highlight(ta.value, agents); bd.scrollTop = ta.scrollTop; }
+  function initials(n) { return n.split(/\s+/).filter(Boolean).slice(0, 2).map(function (w) { return w[0]; }).join("").toUpperCase(); }
+
+  function closeList() { list.classList.remove("open"); list.innerHTML = ""; items = []; mention = null; resize(); }
+  function renderList() {
+    list.innerHTML = '<div class="hd">Agents disponibles</div>';
+    if (!items.length) { list.insertAdjacentHTML("beforeend", '<div class="empty">Aucun agent ne correspond</div>'); }
+    items.forEach(function (a, i) {
+      const el = document.createElement("div");
+      el.className = "it" + (i === active ? " active" : "");
+      el.setAttribute("role", "option");
+      el.innerHTML = '<div class="av">' + L.escapeHtml(initials(a.name)) + '</div><div><div class="nm">' +
+        L.escapeHtml(a.name) + '</div>' + (a.category ? '<div class="ct">' + L.escapeHtml(a.category) + '</div>' : "") + "</div>";
+      el.addEventListener("mousedown", function (e) { e.preventDefault(); choose(i); });
+      list.appendChild(el);
+    });
+    list.classList.add("open");
+    const cur = list.querySelector(".it.active"); if (cur) cur.scrollIntoView({ block: "nearest" });
+    resize();
+  }
+  function refresh() {
+    paint();
+    mention = (disabled || !agents.length) ? null : L.activeMention(ta.value, ta.selectionStart);
+    if (!mention) { if (list.classList.contains("open")) closeList(); else resize(); return; }
+    items = L.filterAgents(agents, mention.query);
+    if (active >= items.length) active = 0;
+    if (!items.length && mention.query.indexOf(" ") >= 0) { closeList(); return; }
+    renderList();
+  }
+  function apply(r) { ta.value = r.text; ta.setSelectionRange(r.caret, r.caret); active = 0; closeList(); paint(); }
+  function choose(i) { if (mention && items[i]) apply(L.insertMention(ta.value, ta.selectionStart, mention, items[i].name)); ta.focus(); }
+  function submit() {
+    const text = ta.value.trim();
+    if (!text || disabled) return;
+    post("streamlit:setComponentValue", { value: { id: Date.now() + "-" + Math.random().toString(36).slice(2), text: text }, dataType: "json" });
+    ta.value = ""; closeList(); paint();
+  }
+
+  ta.addEventListener("input", function () { active = 0; refresh(); });
+  ta.addEventListener("click", refresh);
+  ta.addEventListener("scroll", function () { bd.scrollTop = ta.scrollTop; });
+  ta.addEventListener("blur", function () { setTimeout(closeList, 120); });
+  ta.addEventListener("keydown", function (e) {
+    if (e.isComposing) return;
+    const open = list.classList.contains("open") && items.length;
+    if (open && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+      e.preventDefault(); active = (active + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length; renderList(); return;
+    }
+    if (open && (e.key === "Enter" || e.key === "Tab") && !e.shiftKey) { e.preventDefault(); choose(active); return; }
+    if (e.key === "Escape" && list.classList.contains("open")) { e.preventDefault(); closeList(); return; }
+    if (e.key === "Tab" && !e.shiftKey) {
+      const r = L.tabComplete(ta.value, ta.selectionStart, agents);
+      if (r) { e.preventDefault(); apply(r); }
+      return;
+    }
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
+  });
+  send.addEventListener("click", submit);
+
+  window.addEventListener("message", function (ev) {
+    const d = ev.data || {};
+    if (d.type !== "streamlit:render") return;
+    const args = d.args || {};
+    agents = Array.isArray(args.agents) ? args.agents : [];
+    disabled = !!(args.disabled || d.disabled);
+    ta.placeholder = args.placeholder || "Écrivez votre message...";
+    ta.disabled = disabled; send.disabled = disabled;
+    document.body.classList.toggle("disabled", disabled);
+    paint(); resize();
+  });
+  if (window.ResizeObserver) new ResizeObserver(resize).observe(document.getElementById("wrap"));
+  post("streamlit:componentReady", { apiVersion: 1 });
+  resize();
+})();
+</script>
+</body>
+</html>

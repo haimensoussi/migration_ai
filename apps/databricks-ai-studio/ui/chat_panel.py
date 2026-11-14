@@ -266,7 +266,7 @@ def render_chat(cfg: AgentConfig, key: str, persist: bool = True, category: str 
 
     # Boutons de mention : le prochain message est adressé à l'agent choisi
     if mentionables and not s["pending"]:
-        st.caption("Adresser le prochain message à un agent (ou écrivez @nom dans votre message) :")
+        st.caption("Adresser le prochain message à un agent (ou tapez @ dans votre message) :")
         cols = st.columns(min(len(mentionables), 5))
         for i, a in enumerate(mentionables[:5]):
             if cols[i].button(f"@{a['name']}", key=f"mention_{key}_{a['agent_id']}", use_container_width=True):
@@ -279,8 +279,18 @@ def render_chat(cfg: AgentConfig, key: str, persist: bool = True, category: str 
                 s.pop("mention_prefix", None)
                 st.rerun()
 
-    prompt = st.chat_input("Écrivez votre message... (@agent pour interroger un autre agent)", key=f"input_{key}",
-                           disabled=bool(s["pending"]))
+    placeholder = "Écrivez votre message... (@ pour interroger un autre agent)"
+    prompt, use_mention_field = None, False
+    try:
+        from ui import mention_input as mention_ui
+        if mention_ui.enabled():
+            st.markdown(mention_ui.STICKY_CSS, unsafe_allow_html=True)
+            prompt = mention_ui.mention_input(mentionables, key, placeholder, disabled=bool(s["pending"]))
+            use_mention_field = True
+    except Exception:  # noqa: BLE001 - composant indisponible : saisie Streamlit standard
+        use_mention_field = False
+    if not use_mention_field:
+        prompt = st.chat_input(placeholder, key=f"input_{key}", disabled=bool(s["pending"]))
     if prompt:
         prefix = s.pop("mention_prefix", None)
         if prefix and "@" not in prompt:
