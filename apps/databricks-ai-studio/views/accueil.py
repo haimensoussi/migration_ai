@@ -2,9 +2,10 @@ import pandas as pd
 import streamlit as st
 
 from ui import state
-from ui.components import hero, kpi
+from ui.components import esc, hero, kpi
+from ui.theme import SIGNATURE
 
-hero("Databricks AI Studio", "Créez, testez et publiez des agents IA gouvernés par Unity Catalog.")
+hero("DISCOVERY — SNCF Réseau", "Créez, testez et publiez des agents IA gouvernés par Unity Catalog.")
 user = state.current_user()
 st.caption(f"Connecté : {user.email} · mode d'identité : {user.mode}")
 
@@ -35,3 +36,5 @@ if rows:
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 else:
     st.info("Aucune exécution pour l'instant. Testez un agent dans « Chat & Test ».")
+
+st.markdown(f'<div class="ais-signature">{esc(SIGNATURE)}</div>', unsafe_allow_html=True)

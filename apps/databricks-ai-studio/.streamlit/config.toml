@@ -7,3 +7,10 @@ font = "sans serif"
 
 [server]
 headless = true
+
+[client]
+# Barre d'outils réduite (pas d'options de développement dans le menu)
+toolbarMode = "minimal"
+
+[browser]
+gatherUsageStats = false

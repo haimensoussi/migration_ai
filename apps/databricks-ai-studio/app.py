@@ -1,7 +1,7 @@
 """Databricks AI Studio - point d'entrée Streamlit (Databricks Apps)."""
 import streamlit as st
 
-st.set_page_config(page_title="Databricks AI Studio", page_icon=":material/smart_toy:", layout="wide")
+st.set_page_config(page_title="DISCOVERY — SNCF Réseau", page_icon=":material/smart_toy:", layout="wide")
 
 from ui.theme import apply_theme  # noqa: E402
 
