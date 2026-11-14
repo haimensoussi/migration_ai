@@ -14,7 +14,7 @@ ASSETS = Path(__file__).resolve().parent.parent / "assets"
 ICON_DIR = ASSETS / "icons"
 MAX_CHIPS = 3
 
-AVATAR_ASSISTANT = str(ICON_DIR / "discovery_train.svg")
+AVATAR_ASSISTANT = str(ICON_DIR / "assistant_play.svg")   # discovery_train.svg conservé en alternative
 AVATAR_USER = str(ICON_DIR / "user.svg")
 AVATAR_TOOL = str(ICON_DIR / "tool.svg")
 

@@ -11,7 +11,7 @@ from ui import discovery_icons as di
 
 
 def test_svg_assets_are_valid_and_present():
-    for name in ["discovery_train", "user", "tool", "database", "chart", "shield", "document", "alert", "success",
+    for name in ["assistant_play", "discovery_train", "user", "tool", "database", "chart", "shield", "document", "alert", "success",
                  "play", "clock", "code", "settings"]:
         ET.fromstring((di.ICON_DIR / f"{name}.svg").read_text())
     assert (di.ASSETS / "css" / "chat.css").is_file()
@@ -141,7 +141,7 @@ def test_welcome_then_turn_with_icons_and_safe_markdown(panel):
     assert head and head[0][2] is True and "Analyse des données" in head[0][1]
     assert any(c[1] == "Combien ?" and c[2] is False for c in md)
     avatars = [c[2].get("avatar") for c in fake.calls if c[0] == "ctx" and c[2].get("avatar")]
-    assert any(str(a).endswith("discovery_train.svg") for a in avatars)
+    assert any(str(a).endswith("assistant_play.svg") for a in avatars)
     assert any(str(a).endswith("user.svg") for a in avatars) and any(str(a).endswith("tool.svg") for a in avatars)
 
 
