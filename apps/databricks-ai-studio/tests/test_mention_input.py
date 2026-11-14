@@ -1,35 +1,16 @@
+import re
 import shutil
 import subprocess
-import sys
-import types
 from pathlib import Path
 
 import pytest
 
+from ui import mention_input as m
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
-@pytest.fixture
-def mi(monkeypatch):
-    fake = types.ModuleType("streamlit")
-    fake.session_state = {}
-    monkeypatch.setitem(sys.modules, "streamlit", fake)
-    sys.modules.pop("ui.mention_input", None)
-    import ui.mention_input as m
-    return m, fake
-
-
-def test_accept_once_per_id(mi):
-    m, fake = mi
-    v = {"id": "1-a", "text": "  @Sentinelle DQ Réseau bonjour "}
-    assert m.accept(v, "k") == "@Sentinelle DQ Réseau bonjour"
-    assert m.accept(v, "k") is None                     # page rejouée : pas de second envoi
-    assert m.accept({"id": "2-b", "text": "suite"}, "k") == "suite"
-    assert m.accept(None, "k") is None and m.accept({"id": "3", "text": "   "}, "k") is None
-
-
-def test_payload_and_toggle(mi, monkeypatch):
-    m, _ = mi
+def test_payload_and_toggle(monkeypatch):
     assert m.agents_payload([{"agent_id": "x", "name": "SQL Assistant", "owner": "a@b", "category": "Analyse"},
                              {"agent_id": "y", "name": ""}]) == [{"name": "SQL Assistant", "category": "Analyse"}]
     monkeypatch.delenv("AI_STUDIO_MENTION_INPUT", raising=False)
@@ -38,14 +19,30 @@ def test_payload_and_toggle(mi, monkeypatch):
     assert not m.enabled()
 
 
-def test_frontend_files_present():
-    fe = ROOT / "ui" / "mention_input" / "frontend"
-    html = (fe / "index.html").read_text()
-    assert 'src="mention_logic.js"' in html and "streamlit:componentReady" in html and "setComponentValue" in html
-    assert (fe / "mention_logic.js").exists()
+def test_autocomplete_html_is_safe_and_complete():
+    html = m.autocomplete_html([{"name": "Agent </script><b>x</b>", "category": "Qualité"},
+                                {"name": "Sentinelle DQ Réseau"}])
+    assert html.startswith("<script>") and html.endswith("</script>")
+    assert html.count("</script>") == 1                      # aucun nom ni code ne ferme la balise
+    assert "__dscAgents" in html and "Sentinelle DQ Réseau" in html
+    assert "stChatInputTextArea" in html and "MentionLogic" in html
+
+
+def test_no_custom_send_path_left():
+    src = (ROOT / "ui" / "chat_panel.py").read_text()
+    assert "st.chat_input(placeholder" in src and "mention_input(" not in src and "STICKY_CSS" not in src
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="Node indisponible")
-def test_js_logic_with_node():
+def test_js_logic_and_syntax_with_node(tmp_path):
     r = subprocess.run(["node", str(ROOT / "tests" / "js" / "test_mention_logic.js")], capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
+    for f in ["mention_logic.js", "chat_autocomplete.js"]:
+        c = subprocess.run(["node", "--check", str(ROOT / "ui" / "mention_input" / "frontend" / f)],
+                           capture_output=True, text=True)
+        assert c.returncode == 0, c.stderr
+    # Le script généré s'exécute sans erreur de syntaxe
+    js = re.sub(r"^<script>|</script>$", "", m.autocomplete_html([{"name": "A"}]))
+    p = tmp_path / "boot.js"
+    p.write_text(js)
+    assert subprocess.run(["node", "--check", str(p)], capture_output=True, text=True).returncode == 0

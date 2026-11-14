@@ -30,3 +30,8 @@ assert.strictEqual(L.highlight("@sql assistant <b>", A), "<mark>@sql assistant</
 assert.strictEqual(L.highlight("@Data Quality Advisor, ok", A), "<mark>@Data Quality Advisor</mark>, ok");
 assert.strictEqual(L.highlight("@Data Quality Advisors", A), "@Data Quality Advisors");
 console.log("OK mention_logic");
+
+// Mention déjà complète suivie d'un espace : liste fermée
+assert.strictEqual(L.isComplete("Sentinelle DQ Réseau ", L.filterAgents(A, "Sentinelle DQ Réseau ")), true);
+assert.strictEqual(L.isComplete("Sentinelle", L.filterAgents(A, "Sentinelle")), false);
+console.log("OK isComplete");

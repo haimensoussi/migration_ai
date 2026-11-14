@@ -78,7 +78,13 @@
     return out + (text.endsWith("\n") ? " " : "");
   }
 
-  const api = { norm, slug, activeMention, filterAgents, insertMention, tabComplete, highlight, escapeHtml };
+  /* Vrai si la saisie correspond déjà exactement au nom d'un agent proposé (liste à fermer). */
+  function isComplete(query, hits) {
+    const q = norm(query).trim();
+    return hits.some(function (a) { return norm(a.name) === q; }) && /\s$/.test(query);
+  }
+
+  const api = { norm, slug, activeMention, filterAgents, insertMention, tabComplete, highlight, escapeHtml, isComplete };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.MentionLogic = api;
 })(typeof window !== "undefined" ? window : this);

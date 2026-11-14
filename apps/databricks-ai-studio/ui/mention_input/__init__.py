@@ -1,25 +1,20 @@
-"""Champ de saisie avec liste d'agents à la frappe de @ et complétion par Tab (composant Streamlit statique)."""
+"""Liste d'agents sur @ et complétion Tab ajoutées à la zone de saisie standard (st.chat_input).
+
+L'envoi des messages reste celui de Streamlit : si l'ajout échoue (version de Streamlit, politique du navigateur),
+le chat continue de fonctionner sans la liste.
+"""
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
 FRONTEND = Path(__file__).parent / "frontend"
-COMPONENT_NAME = "discovery_mention_input"
-_component = None
 
 
 def enabled() -> bool:
-    """Réglage de secours : AI_STUDIO_MENTION_INPUT=0 revient à la saisie Streamlit standard."""
+    """AI_STUDIO_MENTION_INPUT=0 désactive la liste @ (saisie standard seule)."""
     return os.environ.get("AI_STUDIO_MENTION_INPUT", "1").strip().lower() not in ("0", "false", "off", "non")
-
-
-def _get_component():
-    global _component
-    if _component is None:
-        import streamlit.components.v1 as components
-        _component = components.declare_component(COMPONENT_NAME, path=str(FRONTEND))
-    return _component
 
 
 def agents_payload(agents: list[dict]) -> list[dict]:
@@ -27,27 +22,21 @@ def agents_payload(agents: list[dict]) -> list[dict]:
     return [{"name": a["name"], "category": a.get("category") or ""} for a in agents if a.get("name")]
 
 
-def accept(value, key: str) -> str | None:
-    """Un même envoi (même id) n'est traité qu'une fois, même si la page est rejouée."""
-    import streamlit as st          # import tardif : module testable sans Streamlit réel
-    if not isinstance(value, dict) or not str(value.get("text", "")).strip():
-        return None
-    seen = f"_mention_seen_{key}"
-    if st.session_state.get(seen) == value.get("id"):
-        return None
-    st.session_state[seen] = value.get("id")
-    return str(value["text"]).strip()
+def _js_string(src: str) -> str:
+    return json.dumps(src, ensure_ascii=False).replace("</", "<\\/")
 
 
-def mention_input(agents: list[dict], key: str, placeholder: str, disabled: bool = False) -> str | None:
-    value = _get_component()(agents=agents_payload(agents), placeholder=placeholder, disabled=disabled,
-                             key=f"mi_{key}", default=None)
-    return accept(value, key)
+def autocomplete_html(agents: list[dict]) -> str:
+    logic = (FRONTEND / "mention_logic.js").read_text(encoding="utf-8")
+    install = (FRONTEND / "chat_autocomplete.js").read_text(encoding="utf-8")
+    payload = json.dumps(agents_payload(agents), ensure_ascii=False).replace("</", "<\\/")
+    return ("<script>(function(){var P=window.parent;try{"
+            f"P.__dscAgents={payload};"
+            "if(!P.__dscMentionInstalled){var D=P.document,s=D.createElement('script');s.id='dsc-mention-script';"
+            f"s.textContent={_js_string(logic + chr(10) + install)};D.head.appendChild(s);}}"
+            "}catch(e){if(window.console){console.warn('DISCOVERY : liste @ indisponible',e);}}})();</script>")
 
 
-STICKY_CSS = f"""<style>
-div[data-testid="stElementContainer"]:has(iframe[title*="{COMPONENT_NAME}"]),
-div.element-container:has(iframe[title*="{COMPONENT_NAME}"]) {{
-  position: sticky; bottom: 0; z-index: 20; background: #F6F6F8; padding-top: 6px;
-}}
-</style>"""
+def inject(agents: list[dict]) -> None:
+    import streamlit.components.v1 as components
+    components.html(autocomplete_html(agents), height=0)

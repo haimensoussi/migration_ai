@@ -249,3 +249,18 @@ def test_mention_button_prefix_is_applied(mention_panel):
     s = fake.session_state["chat_m4"]
     assert s["display"][0]["content"] == "@Data Quality Advisor combien d'anomalies ?"
     assert s["display"][-1]["agent"] == "Data Quality Advisor" and "mention_prefix" not in s
+
+
+
+def test_three_successive_questions_are_all_answered(mention_panel):
+    """Non-régression : chaque nouvelle question saisie est traitée, pas seulement la première."""
+    cp, fake, log = mention_panel("question 1", {"a1": "réponse"})
+    for i in (1, 2, 3):
+        fake._prompt = f"question {i}"
+        with pytest.raises(Rerun):
+            cp.render_chat(CFG, key="multi")
+    s = fake.session_state["chat_multi"]
+    users = [d["content"] for d in s["display"] if d["kind"] == "msg" and d["role"] == "user"]
+    answers = [d for d in s["display"] if d["kind"] == "msg" and d["role"] == "assistant"]
+    assert users == ["question 1", "question 2", "question 3"] and len(answers) == 3
+    assert [m["role"] for m in s["history"]] == ["user", "assistant"] * 3

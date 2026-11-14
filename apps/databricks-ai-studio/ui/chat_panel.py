@@ -283,17 +283,14 @@ def render_chat(cfg: AgentConfig, key: str, persist: bool = True, category: str 
                 st.rerun()
 
     placeholder = "Écrivez votre message... (@ pour interroger un autre agent)"
-    prompt, use_mention_field = None, False
-    try:
-        from ui import mention_input as mention_ui
-        if mention_ui.enabled():
-            st.markdown(mention_ui.STICKY_CSS, unsafe_allow_html=True)
-            prompt = mention_ui.mention_input(mentionables, key, placeholder, disabled=bool(s["pending"]))
-            use_mention_field = True
-    except Exception:  # noqa: BLE001 - composant indisponible : saisie Streamlit standard
-        use_mention_field = False
-    if not use_mention_field:
-        prompt = st.chat_input(placeholder, key=f"input_{key}", disabled=bool(s["pending"]))
+    if mentionables:
+        try:   # liste @ et Tab ajoutées à la saisie standard ; en cas d'échec, la saisie reste utilisable
+            from ui import mention_input as mention_ui
+            if mention_ui.enabled():
+                mention_ui.inject(mentionables)
+        except Exception:  # noqa: BLE001
+            pass
+    prompt = st.chat_input(placeholder, key=f"input_{key}", disabled=bool(s["pending"]))
     if prompt:
         prefix = s.pop("mention_prefix", None)
         if prefix and "@" not in prompt:
