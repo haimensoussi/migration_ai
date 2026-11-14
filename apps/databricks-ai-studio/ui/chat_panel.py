@@ -35,6 +35,13 @@ def _show_delegation(ev: dict):
                                                         for o in res["outils"]))
         else:
             st.error(ev["error"])
+    # Cartes produites par l'agent consulté : affichées hors du panneau, comme celles de l'agent principal
+    maps = res.get("_ui_maps") or []
+    if maps:
+        from ui import map_view
+        for i, m in enumerate(maps):
+            st.caption(f"Carte produite par « {res.get('agent') or args.get('agent', '?')} »")
+            map_view.render({"result": m, "arguments": {"query": m.get("_ui_query", "")}}, key=f"{id(ev)}_{i}")
 
 
 def _show_event(ev: dict):

@@ -77,7 +77,7 @@ def map_style() -> str:
     return CARTO_DARK if v in ("dark", "sombre") else CARTO_LIGHT
 
 
-def render(ev: dict) -> None:
+def render(ev: dict, key: str | None = None) -> None:
     import pandas as pd
     import streamlit as st
 
@@ -130,6 +130,6 @@ def render(ev: dict) -> None:
         st.code(ev.get("arguments", {}).get("query", ""), language="sql")
         c1, c2 = st.columns(2)
         c1.download_button("Exporter en CSV", df.to_csv(index=False).encode("utf-8"), "carte.csv", "text/csv",
-                           key=f"csv_{id(ev)}")
+                           key=f"csv_{key or id(ev)}")
         c2.download_button("Exporter en GeoJSON", to_geojson(points).encode("utf-8"), "carte.geojson",
-                           "application/geo+json", key=f"geo_{id(ev)}")
+                           "application/geo+json", key=f"geo_{key or id(ev)}")

@@ -186,3 +186,38 @@ def test_time_budget_stops_new_exchanges():
     rt, run_cfg, _ = orch.prepare(sup)
     res = rt.run(run_cfg, [{"role": "user", "content": "go"}])
     assert res.events[0].status == "erreur" and "Temps maximal" in res.events[0].error
+
+
+
+def test_partner_map_is_propagated_but_hidden_from_supervisor_model():
+    from tools.catalog import BUILTIN_TOOLS as TOOLS
+
+    class GeoSql:
+        def query(self, statement, params=None, row_limit=None):
+            return {"columns": ["Nom_Gare", "latitude", "longitude"],
+                    "rows": [{"Nom_Gare": "Rennes", "latitude": 48.103, "longitude": -1.672}], "truncated": False}
+    carto = cfg("carto", "Carto Réseau", ["render_map"])
+    agents = {**AGENTS, "carto": ({"agent_id": "carto", "name": "Carto Réseau", "status": "publie",
+                                   "description": "Cartes des gares"}, carto)}
+    sup = cfg("sup", "Superviseur", ["agent:carto"])
+    model = Model({
+        "sup": [{"role": "assistant", "content": "", "tool_calls": [call("a", ASK_AGENT, {"agent": "Carto Réseau", "question": "Carte de Rennes"})]},
+                {"role": "assistant", "content": "Carte affichée"}],
+        "Carto Réseau": [{"role": "assistant", "content": "", "tool_calls": [call("m", "render_map", {"query": "SELECT * FROM a.b.c", "title": "Rennes"})]},
+                         {"role": "assistant", "content": "Voici la carte"}]})
+    seen = []
+    orig = model.chat
+
+    def spy(endpoint, messages, tools=None, temperature=None, max_tokens=None):
+        if "Rôle de superviseur" in messages[0]["content"]:
+            seen.append([m.get("content") for m in messages if m["role"] == "tool"])
+        return orig(endpoint, messages, tools, temperature, max_tokens)
+    model.chat = spy
+    orch = Orchestrator(model, ToolRegistry(TOOLS), lambda: ToolContext(sql=GeoSql(), workspace=None), agents.get)
+    rt, run_cfg, _ = orch.prepare(sup)
+    res = rt.run(run_cfg, [{"role": "user", "content": "go"}])
+    out = res.events[0].result
+    assert out["cartes"] == [{"titre": "Rennes", "nombre_points": 1}]
+    assert out["_ui_maps"][0]["_ui_points"][0]["_lat"] == 48.103 and out["_ui_maps"][0]["_ui_query"] == "SELECT * FROM a.b.c"
+    supervisor_tool_msg = seen[-1][0]
+    assert "_ui_maps" not in supervisor_tool_msg and "_ui_points" not in supervisor_tool_msg and '"cartes"' in supervisor_tool_msg

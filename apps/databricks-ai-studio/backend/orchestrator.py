@@ -30,6 +30,7 @@ SUPERVISOR_GUIDE = """
 - Tu échanges avec des agents partenaires grâce à l'outil ask_agent ; n'utilise que les agents proposés.
 - Découpe la demande et pose à chaque agent une question autonome et précise, avec le contexte utile.
 - Tu peux relancer un agent pour préciser sa réponse : il garde le fil de vos échanges pendant cette demande.
+- Si un agent a produit une carte (champ « cartes »), elle est affichée à l'utilisateur : mentionne-la (titre, nombre de points) sans recopier les coordonnées.
 - Au plus {max_delegations} échanges par demande ; ne repose pas une question déjà traitée.
 - Rédige une synthèse unique en indiquant, pour chaque partie, l'agent qui l'a produite (« Selon <agent> »).
 - N'invente aucun résultat. Si un agent échoue, est indisponible ou demande une validation humaine, dis-le tel quel.
@@ -137,8 +138,13 @@ class Orchestrator:
                                     f"{res.pending['tool']} : cette action n'est pas exécutée par délégation. "
                                     "Utilisez directement cet agent dans Chat & Test.")}
             threads[agent] = [m for m in res.messages if m["role"] != "system"]
-            return {"agent": sub.cfg.name, "statut": "succes", "reponse": res.final_text or "",
-                    "outils": outils, "latence_ms": res.latency_ms, "echange": rounds[agent]}
+            out = {"agent": sub.cfg.name, "statut": "succes", "reponse": res.final_text or "",
+                   "outils": outils, "latence_ms": res.latency_ms, "echange": rounds[agent]}
+            maps = [e for e in res.events if e.tool_id == "render_map" and e.status == "succes" and isinstance(e.result, dict)]
+            if maps:   # cartes du partenaire : résumé pour le modèle, données complètes pour l'affichage (_ui)
+                out["cartes"] = [{"titre": m.result.get("titre"), "nombre_points": m.result.get("nombre_points")} for m in maps]
+                out["_ui_maps"] = [{**m.result, "_ui_query": m.arguments.get("query", "")} for m in maps]
+            return out
 
         ctx = self.ctx_factory()
         ctx.delegate = delegate
