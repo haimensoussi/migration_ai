@@ -56,6 +56,24 @@ footer, [data-testid="stFooter"] { display: none !important; }
             border-radius: 16px; padding: 26px 30px; margin-bottom: 16px; }
 .ais-hero h2 { color: #fff; margin: 0 0 6px 0; font-size: 2.1rem; font-weight: 800; }
 .ais-hero div { font-size: 1.02rem; max-width: 620px; }
+.dsc-banner { position: relative; overflow: hidden; min-height: 128px; padding: 0 !important;
+              background: linear-gradient(100deg, #3D1559 0%, #5A1F78 40%, #6E2A8C 100%); }
+.dsc-banner-art { position: absolute; top: 0; right: 0; bottom: 0; width: 50%; background-size: cover;
+                  background-position: right center;
+                  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 28%);
+                  mask-image: linear-gradient(90deg, transparent 0%, #000 28%); }
+.dsc-banner-slash { position: absolute; bottom: -10px; left: 52%; width: 26px; height: 70px;
+                    background: #E0177A; transform: skewX(-32deg); opacity: .9;
+                    box-shadow: 18px 8px 0 -6px rgba(224,23,122,.55); }
+.dsc-banner-left { position: relative; display: flex; align-items: center; gap: 22px; padding: 18px 28px; }
+.dsc-banner-left > div { max-width: 520px; }
+.dsc-banner-train { width: 84px; height: auto; flex: none; }
+.dsc-banner h2 { font-style: italic; font-size: 2.3rem !important; font-weight: 800; margin: 0 0 4px 0 !important;
+                 padding: 0 !important; color: #FFFFFF !important; }
+.dsc-banner-left > div > div { font-size: 1.05rem; line-height: 1.35; color: #FFFFFF; }
+.dsc-banner-full { margin-bottom: 16px; }
+.dsc-banner-full img { width: 100%; height: auto; border-radius: 16px; display: block; }
+@media (max-width: 900px) { .dsc-banner-art, .dsc-banner-slash { display: none; } }
 
 /* --- Cartes et indicateurs --- */
 .ais-card { background: $CARD; border: 1px solid $BORDER; border-radius: 14px; padding: 14px 16px;

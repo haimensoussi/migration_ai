@@ -23,7 +23,14 @@ def kpi(col, label: str, value, help_text: str = ""):
 
 
 def hero(title: str, subtitle: str):
-    st.markdown(f'<div class="ais-hero"><h2>{esc(title)}</h2><div>{esc(subtitle)}</div></div>', unsafe_allow_html=True)
+    """Bandeau DISCOVERY : pictogramme train, titre, sous-titre et illustration.
+
+    Images facultatives (dossier assets/img) :
+    - hero_full.(png|jpg|webp) : bandeau complet fourni par la charte, affiché tel quel ;
+    - hero_photo.(png|jpg|webp) : photo affichée à droite à la place de l'illustration dessinée.
+    """
+    from ui.banner import banner_html
+    st.markdown(banner_html(title, subtitle), unsafe_allow_html=True)
 
 
 ICONS = ["smart_toy", "verified", "terminal", "savings", "description", "policy", "query_stats", "support_agent"]
