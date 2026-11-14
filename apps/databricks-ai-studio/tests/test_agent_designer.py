@@ -87,3 +87,36 @@ def test_exploration_tool_outside_scope_is_refused():
         {"role": "assistant", "content": "", "tool_calls": [call("p", "propose_agent", {**PROPOSAL, "knowledge_tables": []})]}])
     res = d.design("Un agent SQL pour explorer les données.")
     assert res.events[0].status == "erreur" and "non disponible" in res.events[0].error
+
+
+def test_improve_keeps_model_and_lists_changes():
+    from backend.agent_designer import config_diff
+    current = {"name": "DQ Advisor", "description": "d", "category": "Qualité des données", "icon": "verified",
+               "model_endpoint": "modele-choisi", "instructions": "Tu es un conseiller qualité des données.",
+               "tool_ids": ["describe_table"], "knowledge_tables": [], "temperature": 0.1, "max_iterations": 6}
+    improved = {**PROPOSAL, "name": "DQ Advisor", "tool_ids": ["describe_table", "get_table_profile"],
+                "knowledge_tables": [], "temperature": 0.1, "max_iterations": 6,
+                "changes": ["Ajout de get_table_profile pour mesurer les nulls"]}
+    d = designer([{"role": "assistant", "content": "", "tool_calls": [call("p", "propose_agent", improved)]}])
+    res = d.improve(current, "", [{"tool_id": "execute_sql", "status": "erreur", "error": "TABLE_OR_VIEW_NOT_FOUND"}])
+    assert res.draft["model_endpoint"] == "modele-choisi"            # le copilote ne change pas le modèle
+    assert res.changes == ["Ajout de get_table_profile pour mesurer les nulls"]
+    diff = {x["cle"]: x for x in config_diff(current, res.draft)}
+    assert diff["tool_ids"]["ajouts"] == ["get_table_profile"] and "model_endpoint" not in diff
+    assert "instructions" in diff and "name" not in diff
+
+
+def test_improve_sends_config_and_errors_to_model():
+    class Spy(Model):
+        def chat(self, endpoint, messages, tools=None, temperature=None, max_tokens=None):
+            self.last = messages
+            return super().chat(endpoint, messages, tools, temperature, max_tokens)
+    p = {**PROPOSAL, "knowledge_tables": [], "changes": []}
+    d = AgentDesigner(Spy([{"role": "assistant", "content": "", "tool_calls": [call("p", "propose_agent", p)]}]),
+                      ToolRegistry(BUILTIN_TOOLS), ToolContext(FakeSql(), None), "m")
+    res = d.improve({"name": "X", "instructions": "Tu es X, assistant de test.", "model_endpoint": "m"}, "",
+                    [{"tool_id": "execute_sql", "error": "TABLE_OR_VIEW_NOT_FOUND"}])
+    user_msg = d.model.last[1]["content"]
+    assert "Configuration actuelle" in user_msg and "TABLE_OR_VIEW_NOT_FOUND" in user_msg
+    assert "Mode amélioration" in d.model.last[0]["content"]
+    assert any("aucune modification" in w for w in res.warnings)    # changes vide signalé

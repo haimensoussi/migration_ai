@@ -68,6 +68,79 @@ if not b["agent_id"]:
                 except Exception:  # noqa: BLE001
                     pass
 
+# -- Amélioration assistée (agents existants) ---------------------------------
+FIELDS = ("name", "description", "icon", "category", "model_endpoint", "instructions", "tool_ids",
+          "knowledge_tables", "temperature", "max_iterations")
+if b["agent_id"]:
+    with st.expander(":material/auto_fix_high: Améliorer cet agent avec l'IA",
+                     expanded=st.session_state.pop("builder_improve", False) or bool(b.get("ai_improve"))):
+        st.caption("Le copilote relit la configuration en cours, peut tenir compte des erreurs récentes de "
+                   "l'agent et propose une version complète. Vous comparez puis appliquez ; l'enregistrement "
+                   "crée une nouvelle version.")
+        imp_req = st.text_area("Que voulez-vous améliorer ? (facultatif)", key="ai_improve_request", height=90,
+                               placeholder="Ex. : réponses plus courtes avec un tableau, ajouter le profilage, "
+                                           "mieux gérer les tables vides.")
+        use_errors = st.checkbox("Tenir compte des erreurs récentes de l'agent", value=True, key="ai_improve_err")
+        if st.button("Proposer des améliorations", type="primary", key="ai_improve_go"):
+            repo = state.repository()
+            current = {k: b[k] for k in FIELDS}
+            try:
+                signals = repo.recent_agent_errors(b["agent_id"]) if use_errors else []
+                with st.spinner("Le copilote analyse l'agent..."):
+                    res = state.build_designer().improve(current, imp_req, signals)
+                from backend.agent_designer import config_diff
+                b["ai_improve"] = {"draft": res.draft, "changes": res.changes, "warnings": res.warnings,
+                                   "hypotheses": res.hypotheses, "test_questions": res.test_questions,
+                                   "diff": config_diff(current, res.draft), "latency_ms": res.latency_ms,
+                                   "signals": len(signals)}
+                try:
+                    repo.log_generation("amelioration", user.email, imp_req or "(amélioration générale)", b["agent_id"],
+                                        s_cfg.default_model, proposal=res.raw_proposal, draft=res.draft,
+                                        warnings=res.warnings, latency_ms=res.latency_ms)
+                except Exception as e:  # noqa: BLE001
+                    st.warning(f"Génération non journalisée : {e}")
+                st.rerun()
+            except Exception as e:  # noqa: BLE001
+                st.error(f"Amélioration impossible : {e}")
+
+        imp = b.get("ai_improve")
+        if imp:
+            st.markdown(f"**Proposition du copilote** ({imp['latency_ms'] / 1000:.1f} s, "
+                        f"{imp['signals']} erreur(s) récente(s) prise(s) en compte)")
+            for c in imp["changes"]:
+                st.markdown(f"- {c}")
+            for wmsg in imp["warnings"]:
+                st.warning(wmsg)
+            if not imp["diff"]:
+                st.info("Aucune différence avec la configuration actuelle.")
+            for d in imp["diff"]:
+                if d["cle"] == "instructions":
+                    import difflib
+                    st.markdown("**Instructions**")
+                    st.code("\n".join(difflib.unified_diff((d["actuel"] or "").splitlines(),
+                                                           (d["propose"] or "").splitlines(),
+                                                           "actuel", "propose", lineterm="")), language="diff")
+                elif "ajouts" in d:
+                    st.markdown(f"**{d['champ']}** : ajouts {d['ajouts'] or 'aucun'} · retraits {d['retraits'] or 'aucun'}")
+                else:
+                    st.markdown(f"**{d['champ']}** : `{d['actuel']}` devient `{d['propose']}`")
+            if imp["hypotheses"]:
+                with st.expander("Hypothèses du copilote"):
+                    for h in imp["hypotheses"]:
+                        st.markdown(f"- {h}")
+            c_ok, c_no = st.columns(2)
+            if c_ok.button("Appliquer au brouillon", type="primary", key="ai_improve_apply", disabled=not imp["diff"]):
+                b.update({k: v for k, v in imp["draft"].items() if k in FIELDS})
+                b["ai_result"] = {"warnings": [], "hypotheses": imp["hypotheses"],
+                                  "test_questions": imp["test_questions"], "latency_ms": imp["latency_ms"],
+                                  "explored": []}
+                b.pop("ai_improve", None)
+                b["step"] = 5
+                st.rerun()
+            if c_no.button("Ignorer la proposition", key="ai_improve_drop"):
+                b.pop("ai_improve", None)
+                st.rerun()
+
 ai = b.get("ai_result")
 if ai:
     st.info(f"Brouillon généré par l'IA en {ai['latency_ms'] / 1000:.1f} s : relisez chaque étape, testez, "

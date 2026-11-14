@@ -45,3 +45,9 @@ for i, a in enumerate(items):
             state.repository().set_status(a["agent_id"], target)
             state.refresh_data()
             st.rerun()
+        if st.button(":material/auto_fix_high: Améliorer avec l'IA", key=f"ai_{a['agent_id']}", disabled=not mine,
+                     use_container_width=True):
+            st.session_state["builder_edit_id"] = a["agent_id"]
+            st.session_state["builder_improve"] = True
+            st.session_state.pop("builder", None)
+            st.switch_page("views/agent_builder.py")

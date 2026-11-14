@@ -39,7 +39,9 @@ PROPOSE_AGENT = {"type": "function", "function": {
         "max_iterations": {"type": "integer"},
         "test_questions": {"type": "array", "items": {"type": "string"}},
         "hypotheses": {"type": "array", "items": {"type": "string"},
-                       "description": "Hypothèses faites et points à confirmer par l'utilisateur"}},
+                       "description": "Hypothèses faites et points à confirmer par l'utilisateur"},
+        "changes": {"type": "array", "items": {"type": "string"},
+                    "description": "Mode amélioration : chaque modification apportée et sa raison"}},
         "required": ["name", "description", "category", "icon", "instructions", "tool_ids",
                      "knowledge_tables", "test_questions"]}}}
 
@@ -52,6 +54,7 @@ class DesignResult:
     test_questions: list[str] = field(default_factory=list)
     events: list[ToolEvent] = field(default_factory=list)
     raw_proposal: dict = field(default_factory=dict)
+    changes: list[str] = field(default_factory=list)
     latency_ms: int = 0
     usage: dict = field(default_factory=dict)
 
@@ -90,14 +93,43 @@ class AgentDesigner:
     def design(self, request: str, scope: str | None = None) -> DesignResult:
         if len((request or "").strip()) < 15:
             raise ToolError("Décrivez le besoin en une ou deux phrases (15 caractères minimum).")
+        messages = [{"role": "system", "content": designer_prompt(self.registry.published(), scope)},
+                    {"role": "user", "content": request.strip()}]
+        return self._run(messages)
+
+    def improve(self, current: dict, request: str = "", signals: list[dict] | None = None) -> DesignResult:
+        """Propose une version améliorée d'un agent existant (configuration complète + liste des changements).
+
+        Le modèle de l'agent n'est jamais modifié par le copilote : il reste un choix de l'utilisateur.
+        """
+        request = (request or "").strip() or ("Améliore la clarté et la robustesse des instructions et vérifie "
+                                              "la cohérence entre instructions, outils et tables.")
+        cfg = {k: current.get(k) for k in ("name", "description", "category", "icon", "instructions", "tool_ids",
+                                           "knowledge_tables", "temperature", "max_iterations")}
+        parts = [f"Demande d'amélioration : {request}", "",
+                 "Configuration actuelle (JSON) :", json.dumps(cfg, ensure_ascii=False, indent=1)]
+        if signals:
+            parts += ["", "Erreurs récentes de cet agent (journal tool_calls, à prendre en compte) :"]
+            parts += [f"- {s.get('tool_id')} : {str(s.get('error') or s.get('status'))[:300]}" for s in signals[:15]]
+        system = designer_prompt(self.registry.published(), None) + "\n" + "\n".join([
+            "",
+            "Mode amélioration :",
+            "- Conserve ce qui fonctionne ; ne modifie que ce qui sert la demande ou corrige un défaut constaté.",
+            "- Ne retire ni outil ni table sans le justifier dans changes ; vérifie avec describe_table toute table ajoutée.",
+            "- Renvoie la configuration COMPLÈTE via propose_agent et liste dans changes chaque modification et sa raison.",
+        ])
+        res = self._run([{"role": "system", "content": system}, {"role": "user", "content": "\n".join(parts)}])
+        res.draft["model_endpoint"] = current.get("model_endpoint") or res.draft["model_endpoint"]
+        if not res.changes:
+            res.warnings.append("Le copilote n'a listé aucune modification : comparez les versions avant d'appliquer.")
+        return res
+
+    def _run(self, messages: list[dict]) -> DesignResult:
         t0, usage, events = time.monotonic(), {}, []
         self.ctx.allowed_tables = []  # la conception explore tout ce que l'utilisateur peut lire
-        published = self.registry.published()
         explore = {t: self.registry.specs[t] for t in EXPLORATION_TOOLS
                    if t in self.registry.specs and self.registry.specs[t].status == "publie"}
         payload = [s.to_openai() for s in explore.values()] + [PROPOSE_AGENT]
-        messages = [{"role": "system", "content": designer_prompt(published, scope)},
-                    {"role": "user", "content": request.strip()}]
         nudged = False
         for _ in range(self.max_steps):
             resp = self.model.chat(self.model_endpoint, messages, tools=payload, temperature=0.2, max_tokens=4096)
@@ -201,4 +233,26 @@ class AgentDesigner:
                  "max_iterations": num(p.get("max_iterations"), 1, 12, 6, int)}
         questions = [str(q).strip() for q in (p.get("test_questions") or []) if str(q).strip()][:5]
         hyps = [str(h).strip() for h in (p.get("hypotheses") or []) if str(h).strip()][:10]
-        return DesignResult(draft=draft, warnings=warnings, hypotheses=hyps, test_questions=questions, events=events)
+        changes = [str(c).strip() for c in (p.get("changes") or []) if str(c).strip()][:20]
+        return DesignResult(draft=draft, warnings=warnings, hypotheses=hyps, test_questions=questions,
+                            events=events, changes=changes)
+
+
+FIELDS_LABELS = {"name": "Nom", "description": "Description", "category": "Catégorie", "icon": "Icône",
+                 "tool_ids": "Outils", "knowledge_tables": "Tables", "temperature": "Température",
+                 "max_iterations": "Itérations max", "instructions": "Instructions"}
+
+
+def config_diff(current: dict, proposed: dict) -> list[dict]:
+    """Champs modifiés entre deux configurations (listes comparées comme ensembles ordonnés)."""
+    out = []
+    for k, label in FIELDS_LABELS.items():
+        a, b = current.get(k), proposed.get(k)
+        if isinstance(a, list) or isinstance(b, list):
+            sa, sb = list(a or []), list(b or [])
+            if sa != sb:
+                out.append({"champ": label, "cle": k, "ajouts": [x for x in sb if x not in sa],
+                            "retraits": [x for x in sa if x not in sb], "actuel": sa, "propose": sb})
+        elif (a if a is not None else "") != (b if b is not None else ""):
+            out.append({"champ": label, "cle": k, "actuel": a, "propose": b})
+    return out

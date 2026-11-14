@@ -159,6 +159,12 @@ class AgentRepository:
              "args": json.dumps(ev.arguments, ensure_ascii=False, default=str), "st": ev.status,
              "p": preview, "e": ev.error, "d": int(ev.duration_ms), "u": user})
 
+    def recent_agent_errors(self, agent_id: str, limit: int = 15) -> list[dict]:
+        r = self.sql.query(f"""
+            SELECT tool_id, status, error, created_at FROM {self.s.table('tool_calls')}
+            WHERE agent_id = :a AND status <> 'succes' ORDER BY created_at DESC LIMIT {int(limit)}""", {"a": agent_id})
+        return r["rows"]
+
     def log_generation(self, kind: str, user: str, prompt: str, scope: str | None, model_endpoint: str,
                        proposal: dict | None = None, draft: dict | None = None, warnings: list | None = None,
                        status: str = "propose", error: str | None = None, latency_ms: int | None = None) -> str:
