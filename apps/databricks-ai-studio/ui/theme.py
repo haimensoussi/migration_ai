@@ -122,4 +122,5 @@ CSS = _CSS.substitute(PRIMARY=PRIMARY, PLUM=PLUM, ACCENT=ACCENT, CARD=CARD, BORD
 
 
 def apply_theme():
-    st.markdown(CSS, unsafe_allow_html=True)
+    from ui.banner import logo_css
+    st.markdown(CSS + logo_css(), unsafe_allow_html=True)

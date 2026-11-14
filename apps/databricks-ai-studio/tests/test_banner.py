@@ -50,3 +50,13 @@ def test_photo_replaces_drawn_art(tmp_path, monkeypatch):
     c = parse(banner.banner_html("Discovery", "x"))
     art = next(a for _, a in c.tags if a.get("class") == "dsc-banner-art")
     assert "data:image/jpeg;base64," in art["style"]
+
+
+def test_logo_css_only_when_file_present(tmp_path, monkeypatch):
+    (tmp_path / "img").mkdir()
+    monkeypatch.setattr(banner, "ASSETS", tmp_path)
+    banner._uri.cache_clear()
+    assert banner.logo_css() == ""                       # pas de fichier : marque texte conservée
+    (tmp_path / "img" / "logo_sncf_reseau.png").write_bytes(b"\x89PNG\r\n\x1a\nfake")
+    css = banner.logo_css()
+    assert "stSidebarNav" in css and "data:image/png;base64," in css and css.count("{") == css.count("}")

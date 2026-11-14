@@ -25,6 +25,20 @@ def _find(stem: str) -> Path | None:
     return None
 
 
+def logo_css() -> str:
+    """Remplace la marque texte du menu latéral par le logo officiel s'il est fourni (assets/img/logo_sncf_reseau.*)."""
+    logo = None
+    for ext in (".svg", ".png", ".webp", ".jpg", ".jpeg"):
+        p = ASSETS / "img" / f"logo_sncf_reseau{ext}"
+        if p.is_file():
+            logo = p
+            break
+    if not logo:
+        return ""
+    return ("<style>[data-testid=\"stSidebarNav\"]::before { content: \"\" !important; height: 78px; "
+            f"background: url('{_uri(str(logo))}') center / contain no-repeat; }}</style>")
+
+
 def banner_html(title: str, subtitle: str) -> str:
     full = _find("hero_full")
     if full:
