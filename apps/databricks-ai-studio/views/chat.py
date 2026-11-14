@@ -28,4 +28,5 @@ if cfg is None:
 with st.expander("Configuration de l'agent"):
     st.markdown(f"**Instructions**\n\n{cfg.instructions}")
     st.write("Tables autorisées :", cfg.knowledge_tables or "toutes celles accessibles à l'utilisateur")
-render_chat(cfg, key=f"{agent_id}_v{cfg.version}")
+category = next((a.get("category") for a in agents if a["agent_id"] == agent_id), None)
+render_chat(cfg, key=f"{agent_id}_v{cfg.version}", category=category)

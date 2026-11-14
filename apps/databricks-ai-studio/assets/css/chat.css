@@ -1,0 +1,50 @@
+/* Chat & Test DISCOVERY : règles limitées aux messages de conversation */
+[data-testid="stChatMessage"] {
+    padding: .6rem .85rem !important; margin-bottom: .55rem !important; border-radius: 10px !important;
+    background: #FFFFFF; border: 1px solid #E6E3EA; gap: .7rem !important;
+}
+[data-testid="stChatMessage"]:has(.dsc-msg-user) { background: #F3F4F8; border-color: #F3F4F8; }
+[data-testid="stChatMessage"]:has(.dsc-msg-tool) { background: transparent; border: 1px dashed #E6E3EA;
+    padding: .35rem .7rem !important; }
+
+/* Avatars personnalisés : 30 px, coins arrondis */
+[data-testid="stChatMessage"] [data-testid="stChatMessageAvatarCustom"],
+[data-testid="stChatMessage"] img[alt="user avatar"], [data-testid="stChatMessage"] img[alt="assistant avatar"] {
+    width: 30px !important; height: 30px !important; min-width: 30px !important; border-radius: 8px !important;
+}
+
+/* Texte compact */
+[data-testid="stChatMessage"] p, [data-testid="stChatMessage"] li {
+    font-size: 14.5px !important; line-height: 1.45 !important; color: #2B1B33;
+}
+[data-testid="stChatMessage"] p { margin: 0 0 .32rem 0 !important; }
+[data-testid="stChatMessage"] ul, [data-testid="stChatMessage"] ol {
+    margin: .2rem 0 .35rem 0 !important; padding-left: 1.4rem !important;
+}
+[data-testid="stChatMessage"] li { margin-bottom: .15rem !important; }
+[data-testid="stChatMessage"] h1, [data-testid="stChatMessage"] h2, [data-testid="stChatMessage"] h3,
+[data-testid="stChatMessage"] h4 {
+    font-size: 15px !important; font-weight: 700 !important; color: #4A1942 !important;
+    margin: .55rem 0 .25rem 0 !important; padding: 0 !important;
+}
+[data-testid="stChatMessage"] hr { margin: .5rem 0 !important; }
+
+/* Tableaux Markdown */
+[data-testid="stChatMessage"] table { border-collapse: collapse; font-size: 13.5px; margin: .3rem 0 .5rem 0; }
+[data-testid="stChatMessage"] th { background: #F6F6F8; color: #4A1942; font-weight: 600; }
+[data-testid="stChatMessage"] th, [data-testid="stChatMessage"] td { border: 1px solid #E6E3EA; padding: 4px 8px; }
+
+/* Code et SQL */
+[data-testid="stChatMessage"] pre { border-radius: 8px !important; margin: .3rem 0 .5rem 0 !important; }
+[data-testid="stChatMessage"] code { font-size: 13px !important; }
+
+/* En-tête de réponse et icônes métier (rendus par l'interface) */
+.dsc-agent { font-size: 12.5px; font-weight: 700; color: #A00062; letter-spacing: .02em; margin-bottom: 3px; }
+.dsc-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 6px 0; }
+.dsc-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: #4B4453;
+            background: #FBF2F7; border-radius: 999px; padding: 1px 9px 1px 7px; }
+.discovery-inline-icon { width: 15px; height: 15px; vertical-align: middle; }
+.dsc-cap { display: flex; align-items: flex-start; gap: 8px; margin: 3px 0; font-size: 14.5px; line-height: 1.45;
+           color: #2B1B33; }
+.dsc-cap img { margin-top: 2px; }
+.dsc-cap-title { font-weight: 700; color: #4A1942; margin: 6px 0 2px 0; font-size: 14.5px; }

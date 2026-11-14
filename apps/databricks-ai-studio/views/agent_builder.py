@@ -252,7 +252,7 @@ with st.container(border=True):
                 for q in ai["test_questions"]:
                     st.markdown(f"- {q}")
             st.markdown("**Test de l'agent (non enregistré dans l'historique)**")
-            render_chat(cfg, key="builder", persist=False)
+            render_chat(cfg, key="builder", persist=False, category=b["category"])
 
 c1, c2, c3, c4 = st.columns(4)
 if c1.button("Précédent", disabled=b["step"] == 0):
