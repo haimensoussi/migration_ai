@@ -211,18 +211,18 @@ with st.container(border=True):
         current_agents = [t for t in b["tool_ids"] if str(t).startswith("agent:")]
         sel_tools = st.multiselect("Outils du Tool Catalog", list(labels), [t for t in b["tool_ids"] if t in labels],
                                    format_func=labels.get)
-        st.markdown("**Orchestration multi-agents** (facultatif)")
+        st.markdown("**Agents partenaires** (facultatif)")
         cand = [a for a in state.agents() if a["agent_id"] != b["agent_id"] and a["status"] == "publie"
                 and not any(str(t).startswith("agent:") for t in (a.get("tool_ids") or []))]
         alabels = {f"agent:{a['agent_id']}": a["name"] for a in cand}
         for t in current_agents:
             alabels.setdefault(t, f"{t[6:]} (indisponible)")
-        sel_agents = st.multiselect("Agents délégués : l'agent devient superviseur et leur confie des sous-questions",
+        sel_agents = st.multiselect("Agents consultables : l'agent peut leur poser des questions et les relancer",
                                     list(alabels), current_agents, format_func=alabels.get)
         if sel_agents:
-            st.caption("Un seul niveau de délégation, 4 délégations au plus par demande ; chaque agent délégué "
-                       "garde ses propres outils, tables autorisées et validations. Les actions soumises à "
-                       "validation humaine ne sont jamais exécutées par délégation.")
+            st.caption("Un agent qui a des partenaires ne peut pas lui-même être consulté (pas de boucle). Au plus "
+                       "6 échanges et 120 s par demande ; chaque partenaire garde ses outils, tables autorisées et "
+                       "validations. Les actions soumises à validation humaine ne sont jamais exécutées par un autre agent.")
         b["tool_ids"] = sel_tools + sel_agents
         for t in pub:
             if t.tool_id in b["tool_ids"]:

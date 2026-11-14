@@ -23,7 +23,8 @@ def _show_delegation(ev: dict):
     args = ev.get("arguments") or {}
     res = ev.get("result") if isinstance(ev.get("result"), dict) else {}
     st_txt = "validation requise" if res.get("statut") == "validation_requise" else STATUS_TXT.get(ev["status"], ev["status"])
-    with st.expander(f"Délégation à « {args.get('agent', '?')} » : {st_txt} ({ev['duration_ms']} ms)"):
+    n = f" n° {res['echange']}" if res.get("echange") else ""
+    with st.expander(f"Échange avec « {args.get('agent', '?')} »{n} : {st_txt} ({ev['duration_ms']} ms)"):
         st.caption("Question transmise")
         st.markdown(str(args.get("question", "")))
         if ev["status"] == "succes":
@@ -108,8 +109,7 @@ def _welcome(cfg: AgentConfig):
 
 def render_chat(cfg: AgentConfig, key: str, persist: bool = True, category: str | None = None):
     _inject_css()
-    # Consigne de présentation ajoutée à l'exécution, après les instructions de l'agent (non enregistrée)
-    run_cfg = dataclasses.replace(cfg, instructions=with_presentation(cfg.instructions))
+    # La consigne de présentation est ajoutée à l'exécution (runtime_for), jamais enregistrée
     sk = f"chat_{key}"
     if sk not in st.session_state:
         st.session_state[sk] = {"conversation_id": uuid.uuid4().hex, "history": [], "display": [],
@@ -119,7 +119,7 @@ def render_chat(cfg: AgentConfig, key: str, persist: bool = True, category: str 
 
     top = st.columns([4, 1])
     from backend.orchestrator import plain_tools, sub_agent_ids
-    deleg = f" · agents délégués : {len(sub_agent_ids(cfg.tool_ids))}" if sub_agent_ids(cfg.tool_ids) else ""
+    deleg = f" · agents partenaires : {len(sub_agent_ids(cfg.tool_ids))}" if sub_agent_ids(cfg.tool_ids) else ""
     top[0].caption(f"Modèle `{cfg.model_endpoint}` · outils : {', '.join(plain_tools(cfg.tool_ids)) or 'aucun'}{deleg} · "
                    f"identité : {user.email} ({user.mode})")
     if top[1].button("Nouvelle conversation", key=f"reset_{key}"):
@@ -131,7 +131,9 @@ def render_chat(cfg: AgentConfig, key: str, persist: bool = True, category: str 
     if not s["display"]:
         _welcome(cfg)
     for item in s["display"]:
-        if item["kind"] == "event":
+        if item["kind"] == "notice":
+            st.caption(item["content"])
+        elif item["kind"] == "event":
             with st.chat_message("assistant", avatar=AV["tool"]):
                 st.markdown('<span class="dsc-msg-tool"></span>', unsafe_allow_html=True)
                 _show_event(item["event"])
@@ -139,47 +141,111 @@ def render_chat(cfg: AgentConfig, key: str, persist: bool = True, category: str 
             render_discovery_message(item["role"], item["content"], item.get("agent", ""), item.get("chips"))
 
     repo = state.repository()
+    mentionables = [a for a in (state.mentionable_agents() or []) if a.get("agent_id") != cfg.agent_id]
 
-    def log_event(ev: ToolEvent):
-        if persist:
-            repo.log_tool_call(s["conversation_id"], cfg.agent_id, user.email, ev)
+    def make_logger(agent_id: str):
+        def _log(ev: ToolEvent):
+            if persist:
+                try:
+                    repo.log_tool_call(s["conversation_id"], agent_id, user.email, ev)
+                except Exception:  # noqa: BLE001 - la journalisation ne bloque pas la conversation
+                    pass
+        return _log
 
     def log_sub(agent_id: str, ev: ToolEvent):
-        if persist:
-            try:
-                repo.log_tool_call(s["conversation_id"], agent_id, user.email, ev)
-            except Exception:  # noqa: BLE001 - la journalisation ne bloque pas la conversation
-                pass
+        make_logger(agent_id)(ev)
 
-    def runtime():
-        rt_, exec_cfg, warns = state.build_runtime_for(run_cfg, on_tool_event=log_event,
+    def runtime_for(speaker: AgentConfig):
+        presented = dataclasses.replace(speaker, instructions=with_presentation(speaker.instructions))
+        rt_, exec_cfg, warns = state.build_runtime_for(presented, on_tool_event=make_logger(speaker.agent_id),
                                                        conversation_id=s["conversation_id"], on_sub_event=log_sub)
         s["orch_warnings"] = warns
         return rt_, exec_cfg
 
-    def handle(res: TurnResult, user_msg: dict | None):
+    def log_msgs(speaker: AgentConfig, msgs: list[dict], latency):
+        if not persist:
+            return
+        try:
+            s["next_index"] = repo.log_messages(s["conversation_id"], speaker, user.email, msgs, s["next_index"], latency)
+        except Exception as e:  # noqa: BLE001
+            st.warning(f"Historique non enregistré : {e}")
+
+    def handle(res: TurnResult, log_user: dict | None, speaker: AgentConfig, cat: str | None, main: bool):
+        """Affiche et journalise un tour ; met à jour l'historique de l'agent principal."""
         turn_events = [_ev_dict(ev) for ev in res.events]
         for ev in turn_events:
             s["display"].append({"kind": "event", "event": ev})
         if res.pending:
-            s["pending"] = {"pending": res.pending, "messages": res.messages}
+            s["pending"] = {"pending": res.pending, "messages": res.messages, "speaker": speaker,
+                            "category": cat, "main": main}
         else:
             s["pending"] = None
-            s["history"] = [m for m in res.messages if m["role"] != "system"]
-            s["display"].append({"kind": "msg", "role": "assistant", "content": res.final_text or "(réponse vide)",
-                                 "agent": cfg.name, "chips": chips_for(turn_events, category)})
-        if persist:
+            text = res.final_text or "(réponse vide)"
+            if main:
+                s["history"] = [m for m in res.messages if m["role"] != "system"]
+            else:   # réponse d'un agent mentionné : conservée comme contexte pour l'agent principal
+                block = f"[Réponse de {speaker.name}]\n{text}"
+                last = s["history"][-1] if s["history"] else None
+                if last and last["role"] == "assistant" and str(last.get("content", "")).startswith("[Réponse de "):
+                    last["content"] += "\n\n" + block     # un seul message assistant : alternance préservée
+                else:
+                    s["history"].append({"role": "assistant", "content": block})
+            s["display"].append({"kind": "msg", "role": "assistant", "content": text, "agent": speaker.name,
+                                 "chips": chips_for(turn_events, cat)})
+        log_msgs(speaker, ([log_user] if log_user else []) + [m for m in res.new_messages if m["role"] != "system"],
+                 res.latency_ms)
+        return res
+
+    def fail(speaker_name: str, cat, e: Exception):
+        label = "Accès refusé" if isinstance(e, state.UserAuthMissing) else "Erreur d'exécution"
+        s["display"].append({"kind": "msg", "role": "assistant", "content": f"**{label}** : {e}",
+                             "agent": speaker_name, "chips": chips_for([], cat, error=True)})
+
+    def recent_context(limit: int = 6) -> str:
+        msgs = [d for d in s["display"] if d["kind"] == "msg"][:-1][-limit:]
+        return "\n".join(f"- {'Utilisateur' if d['role'] == 'user' else d.get('agent') or 'Agent'} : "
+                         f"{str(d['content'])[:1500]}" for d in msgs)
+
+    def run_mentions(prompt: str, found) -> None:
+        """L'agent mentionné répond lui-même ; s'il y en a plusieurs, l'agent principal fait la synthèse."""
+        question = found.text or prompt
+        s["history"].append({"role": "user", "content": prompt})
+        first = True
+        answered = 0
+        for a in found.agents:
+            mcfg = repo.get_config(a["agent_id"])
+            if mcfg is None:
+                s["display"].append({"kind": "notice", "content": f"Configuration de « {a['name']} » introuvable."})
+                continue
+            ctx_txt = recent_context()
+            content = (f"Contexte récent de la discussion (pour information) :\n{ctx_txt}\n\n" if ctx_txt else "") + \
+                f"Question qui t'est adressée par l'utilisateur :\n{question}"
             try:
-                to_log = ([user_msg] if user_msg else []) + [m for m in res.new_messages if m["role"] != "system"]
-                s["next_index"] = repo.log_messages(s["conversation_id"], cfg, user.email, to_log,
-                                                    s["next_index"], res.latency_ms)
+                rt, exec_cfg = runtime_for(mcfg)
+                res = rt.run(exec_cfg, [{"role": "user", "content": content}])
+                handle(res, {"role": "user", "content": prompt} if first else None, mcfg, a.get("category"), main=False)
+                first = False
+                answered += 1
+                if res.pending:
+                    s["display"].append({"kind": "notice", "content": "Validation requise : les agents suivants "
+                                         "répondront après votre décision s'ils sont mentionnés de nouveau."})
+                    return
             except Exception as e:  # noqa: BLE001
-                st.warning(f"Historique non enregistré : {e}")
+                fail(a["name"], a.get("category"), e)
+        if answered >= 2:
+            try:
+                rt, exec_cfg = runtime_for(cfg)
+                synth = {"role": "user", "content": "Fais une synthèse courte des réponses des agents mentionnés "
+                                                    "ci-dessus, en citant chaque agent. N'ajoute aucun résultat."}
+                handle(rt.run(exec_cfg, s["history"] + [synth]), None, cfg, category, main=True)
+            except Exception as e:  # noqa: BLE001
+                fail(cfg.name, category, e)
 
     if s["pending"]:
         p = s["pending"]["pending"]
+        speaker = s["pending"].get("speaker") or cfg
         with st.container(border=True):
-            st.warning(f"Validation requise : l'agent veut exécuter `{p['tool']}`.")
+            st.warning(f"Validation requise : l'agent « {speaker.name} » veut exécuter `{p['tool']}`.")
             st.json(p["arguments"])
             c1, c2 = st.columns(2)
             decision = None
@@ -190,26 +256,56 @@ def render_chat(cfg: AgentConfig, key: str, persist: bool = True, category: str 
             if decision is not None:
                 with st.spinner("Exécution..."):
                     try:
-                        rt, exec_cfg = runtime()
-                        res = rt.resume(exec_cfg, s["pending"]["messages"], {p["call"]["id"]: decision})
-                        handle(res, None)
+                        pend = s["pending"]
+                        rt, exec_cfg = runtime_for(speaker)
+                        res = rt.resume(exec_cfg, pend["messages"], {p["call"]["id"]: decision})
+                        handle(res, None, speaker, pend.get("category", category), main=pend.get("main", True))
                     except Exception as e:  # noqa: BLE001
                         st.error(f"Erreur d'exécution : {e}")
                 st.rerun()
 
-    prompt = st.chat_input("Écrivez votre message...", key=f"input_{key}", disabled=bool(s["pending"]))
+    # Boutons de mention : le prochain message est adressé à l'agent choisi
+    if mentionables and not s["pending"]:
+        st.caption("Adresser le prochain message à un agent (ou écrivez @nom dans votre message) :")
+        cols = st.columns(min(len(mentionables), 5))
+        for i, a in enumerate(mentionables[:5]):
+            if cols[i].button(f"@{a['name']}", key=f"mention_{key}_{a['agent_id']}", use_container_width=True):
+                s["mention_prefix"] = a["name"]
+                st.rerun()
+        if s.get("mention_prefix"):
+            c_a, c_b = st.columns([4, 1])
+            c_a.caption(f"Prochain message adressé à @{s['mention_prefix']}")
+            if c_b.button("Annuler", key=f"mention_cancel_{key}"):
+                s.pop("mention_prefix", None)
+                st.rerun()
+
+    prompt = st.chat_input("Écrivez votre message... (@agent pour interroger un autre agent)", key=f"input_{key}",
+                           disabled=bool(s["pending"]))
     if prompt:
-        user_msg = {"role": "user", "content": prompt}
+        prefix = s.pop("mention_prefix", None)
+        if prefix and "@" not in prompt:
+            prompt = f"@{prefix} {prompt}"
+        from backend.mentions import parse_mentions
+        me_agent = {"agent_id": cfg.agent_id, "name": cfg.name}
+        found = parse_mentions(prompt, mentionables + [me_agent]) if "@" in prompt else None
+        if found:
+            found.agents = [a for a in found.agents if a["agent_id"] != cfg.agent_id]   # @agent courant : flux normal
         s["display"].append({"kind": "msg", "role": "user", "content": prompt})
+        if found:
+            for tok, sugg in found.unknown:
+                s["display"].append({"kind": "notice", "content": f"Agent « @{tok} » inconnu ou non accessible"
+                                     + (f" ; vouliez-vous dire : {', '.join(sugg)} ?" if sugg else ".")})
+            if found.truncated:
+                s["display"].append({"kind": "notice", "content": "Au plus 3 agents mentionnés par message : "
+                                     "les suivants sont ignorés."})
         with st.spinner("L'agent réfléchit..."):
-            try:
-                rt, exec_cfg = runtime()
-                res = rt.run(exec_cfg, s["history"] + [user_msg])
-                handle(res, user_msg)
-            except state.UserAuthMissing as e:
-                s["display"].append({"kind": "msg", "role": "assistant", "content": f"**Accès refusé** : {e}",
-                                     "agent": cfg.name, "chips": chips_for([], category, error=True)})
-            except Exception as e:  # noqa: BLE001
-                s["display"].append({"kind": "msg", "role": "assistant", "content": f"**Erreur d'exécution** : {e}",
-                                     "agent": cfg.name, "chips": chips_for([], category, error=True)})
+            if found and found.agents:
+                run_mentions(prompt, found)
+            else:
+                user_msg = {"role": "user", "content": prompt}
+                try:
+                    rt, exec_cfg = runtime_for(cfg)
+                    handle(rt.run(exec_cfg, s["history"] + [user_msg]), user_msg, cfg, category, main=True)
+                except Exception as e:  # noqa: BLE001
+                    fail(cfg.name, category, e)
         st.rerun()

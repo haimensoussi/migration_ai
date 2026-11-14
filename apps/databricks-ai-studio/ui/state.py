@@ -115,6 +115,12 @@ def build_runtime_for(cfg, on_tool_event=None, conversation_id: str = "", on_sub
     return orch.prepare(cfg, on_tool_event)
 
 
+def mentionable_agents() -> list[dict]:
+    """Agents publiés ou dont l'utilisateur est propriétaire (les agents archivés sont déjà exclus)."""
+    email = current_user().email
+    return [a for a in agents() if a.get("status") == "publie" or a.get("owner") == email]
+
+
 def build_designer():
     """Copilote de conception, sous l'identité de l'utilisateur (exploration avec ses droits)."""
     from backend.agent_designer import AgentDesigner

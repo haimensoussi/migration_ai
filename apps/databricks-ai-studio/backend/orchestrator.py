@@ -12,6 +12,7 @@ aux agents délégués valides. Garde-fous :
 """
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, replace
 from typing import Callable
 
@@ -20,14 +21,16 @@ from backend.tool_registry import ToolContext, ToolError, ToolRegistry, ToolSpec
 
 AGENT_PREFIX = "agent:"
 ASK_AGENT = "ask_agent"
-MAX_DELEGATIONS = 4
+MAX_DELEGATIONS = 6        # échanges agent -> agent par demande de l'utilisateur
+MAX_SECONDS = 120          # au-delà, plus aucun nouvel échange n'est lancé
 SUB_MAX_ITERATIONS = 6
 
 SUPERVISOR_GUIDE = """
 ## Rôle de superviseur (orchestration DISCOVERY)
-- Tu coordonnes des agents spécialisés grâce à l'outil ask_agent ; n'utilise que les agents proposés.
-- Découpe la demande et confie à chaque agent une question autonome et précise, avec le contexte utile.
-- Au plus {max_delegations} délégations par demande ; n'interroge pas deux fois un agent pour la même chose.
+- Tu échanges avec des agents partenaires grâce à l'outil ask_agent ; n'utilise que les agents proposés.
+- Découpe la demande et pose à chaque agent une question autonome et précise, avec le contexte utile.
+- Tu peux relancer un agent pour préciser sa réponse : il garde le fil de vos échanges pendant cette demande.
+- Au plus {max_delegations} échanges par demande ; ne repose pas une question déjà traitée.
 - Rédige une synthèse unique en indiquant, pour chaque partie, l'agent qui l'a produite (« Selon <agent> »).
 - N'invente aucun résultat. Si un agent échoue, est indisponible ou demande une validation humaine, dis-le tel quel.
 - Si aucun agent n'est pertinent, réponds avec tes propres outils ou indique la limite.
@@ -56,9 +59,9 @@ class Orchestrator:
     def __init__(self, model, base_registry: ToolRegistry, ctx_factory: Callable[[], ToolContext],
                  load_agent: Callable[[str], tuple[dict, AgentConfig] | None],
                  on_sub_event: Callable[[str, ToolEvent], None] | None = None,
-                 max_delegations: int = MAX_DELEGATIONS):
+                 max_delegations: int = MAX_DELEGATIONS, max_seconds: float = MAX_SECONDS):
         self.model, self.base, self.ctx_factory, self.load_agent = model, base_registry, ctx_factory, load_agent
-        self.on_sub_event, self.max_delegations = on_sub_event, max_delegations
+        self.on_sub_event, self.max_delegations, self.max_seconds = on_sub_event, max_delegations, max_seconds
 
     def _resolve(self, cfg: AgentConfig) -> tuple[dict[str, SubAgent], list[str]]:
         subs, warnings = {}, []
@@ -98,7 +101,8 @@ class Orchestrator:
         catalogue = "; ".join(f"« {k} » : {v.description or 'sans description'}" for k, v in subs.items())
         spec = ToolSpec(
             tool_id=ASK_AGENT, name="Déléguer à un agent", category="Orchestration",
-            description=("Confie une question précise à un agent spécialisé DISCOVERY et renvoie sa réponse. "
+            description=("Pose une question à un agent partenaire DISCOVERY et renvoie sa réponse. Tu peux le "
+                         "relancer : il garde le fil des questions précédentes de cette demande. "
                          f"Agents disponibles : {catalogue}"),
             input_schema={"type": "object", "properties": {
                 "agent": {"type": "string", "enum": list(subs), "description": "Nom exact de l'agent délégué"},
@@ -108,26 +112,33 @@ class Orchestrator:
             identity="utilisateur", requires_confirmation=False, read_only=True)
         registry = ToolRegistry(list(self.base.specs.values()) + [spec])
         count = {"n": 0}
+        threads: dict[str, list[dict]] = {}       # fil de discussion par partenaire, le temps de la demande
+        rounds: dict[str, int] = {}
+        t0 = time.monotonic()
 
         def delegate(agent: str, question: str) -> dict:
             if count["n"] >= self.max_delegations:
-                raise ToolError(f"Limite de {self.max_delegations} délégations atteinte pour cette demande.")
+                raise ToolError(f"Limite de {self.max_delegations} échanges atteinte pour cette demande.")
+            if time.monotonic() - t0 > self.max_seconds:
+                raise ToolError(f"Temps maximal de {int(self.max_seconds)} s atteint : aucun nouvel échange lancé.")
             count["n"] += 1
+            rounds[agent] = rounds.get(agent, 0) + 1
             sub = subs[agent]
             scfg = replace(sub.cfg, tool_ids=plain_tools(sub.cfg.tool_ids),
                            max_iterations=min(sub.cfg.max_iterations or SUB_MAX_ITERATIONS, SUB_MAX_ITERATIONS))
             sid = sub.cfg.agent_id
             log = (lambda ev: self.on_sub_event(sid, ev)) if self.on_sub_event else None
-            res = AgentRuntime(self.model, self.base, self.ctx_factory(), on_tool_event=log).run(
-                scfg, [{"role": "user", "content": question}])
+            history = threads.get(agent, []) + [{"role": "user", "content": question}]
+            res = AgentRuntime(self.model, self.base, self.ctx_factory(), on_tool_event=log).run(scfg, history)
             outils = [{"outil": e.tool_id, "statut": e.status} for e in res.events]
             if res.pending:
-                return {"agent": sub.cfg.name, "statut": "validation_requise", "outils": outils,
+                return {"agent": sub.cfg.name, "statut": "validation_requise", "outils": outils, "echange": rounds[agent],
                         "message": (f"L'agent « {sub.cfg.name} » demande une validation humaine pour l'outil "
                                     f"{res.pending['tool']} : cette action n'est pas exécutée par délégation. "
                                     "Utilisez directement cet agent dans Chat & Test.")}
+            threads[agent] = [m for m in res.messages if m["role"] != "system"]
             return {"agent": sub.cfg.name, "statut": "succes", "reponse": res.final_text or "",
-                    "outils": outils, "latence_ms": res.latency_ms}
+                    "outils": outils, "latence_ms": res.latency_ms, "echange": rounds[agent]}
 
         ctx = self.ctx_factory()
         ctx.delegate = delegate

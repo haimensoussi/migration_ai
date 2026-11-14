@@ -152,3 +152,37 @@ def test_improve_keeps_delegated_agents():
                      "tool_ids": ["describe_table", "agent:dq", "agent:sql"]})
     assert res.draft["tool_ids"] == ["describe_table", "agent:dq", "agent:sql"]
     assert not any("agent:" in w for w in res.warnings)
+
+
+def test_follow_up_keeps_thread_with_partner():
+    sup = cfg("sup", "Superviseur", ["agent:sql"])
+    model = Model({
+        "sup": [{"role": "assistant", "content": "", "tool_calls": [call("a", ASK_AGENT, {"agent": "SQL Assistant", "question": "Combien de lignes ?"})]},
+                {"role": "assistant", "content": "", "tool_calls": [call("b", ASK_AGENT, {"agent": "SQL Assistant", "question": "Et pour la ligne 570 ?"})]},
+                {"role": "assistant", "content": "Synthèse"}],
+        "SQL Assistant": [{"role": "assistant", "content": "6198 lignes"}, {"role": "assistant", "content": "12 pour la ligne 570"}]})
+    seen = []
+    orig = model.chat
+
+    def spy(endpoint, messages, tools=None, temperature=None, max_tokens=None):
+        if "Rôle de superviseur" not in messages[0]["content"]:
+            seen.append([m["content"] for m in messages[1:]])
+        return orig(endpoint, messages, tools, temperature, max_tokens)
+    model.chat = spy
+    orch, _ = make(model)
+    rt, run_cfg, _ = orch.prepare(sup)
+    res = rt.run(run_cfg, [{"role": "user", "content": "go"}])
+    assert [e.result["echange"] for e in res.events] == [1, 2]
+    # La relance reçoit le fil précédent : question 1, réponse 1, question 2
+    assert seen[1] == ["Combien de lignes ?", "6198 lignes", "Et pour la ligne 570 ?"]
+
+
+def test_time_budget_stops_new_exchanges():
+    sup = cfg("sup", "Superviseur", ["agent:sql"])
+    model = Model({"sup": [{"role": "assistant", "content": "", "tool_calls": [call("a", ASK_AGENT, {"agent": "SQL Assistant", "question": "q"})]},
+                           {"role": "assistant", "content": "fin"}], "SQL Assistant": []})
+    orch = Orchestrator(model, ToolRegistry(BUILTIN_TOOLS), lambda: ToolContext(sql=FakeSql(), workspace=None),
+                        AGENTS.get, max_seconds=-1)
+    rt, run_cfg, _ = orch.prepare(sup)
+    res = rt.run(run_cfg, [{"role": "user", "content": "go"}])
+    assert res.events[0].status == "erreur" and "Temps maximal" in res.events[0].error

@@ -93,6 +93,7 @@ def panel(monkeypatch):
             log_messages=lambda conv, cfg, *a: logged.setdefault("cfg", cfg) and 1)
         state.build_runtime = lambda **k: runtime
         state.build_runtime_for = lambda cfg, **k: (runtime, cfg, [])
+        state.mentionable_agents = lambda: []
         monkeypatch.setitem(sys.modules, "ui.state", state)
         import ui
         monkeypatch.setattr(ui, "state", state, raising=False)
@@ -164,3 +165,87 @@ def test_two_agents_have_separate_conversations(panel):
     a, b = fake.session_state["chat_a1_v2"]["display"], fake.session_state["chat_a2_v1"]["display"]
     assert a[-1]["agent"] == "SQL Assistant" and b[-1]["agent"] == "Data Quality Advisor"
     assert b[-1]["chips"] == [("shield", "Qualité des données")]
+
+
+
+@pytest.fixture
+def mention_panel(monkeypatch):
+    """Chat avec deux agents mentionnables ; chaque agent a son runtime scripté."""
+    def load(prompt, answers):
+        fake = FakeSt(prompt)
+        monkeypatch.setitem(sys.modules, "streamlit", fake)
+        state = types.ModuleType("ui.state")
+        state.current_user = lambda: types.SimpleNamespace(email="u@sncf.fr", mode="utilisateur")
+        state.UserAuthMissing = type("UserAuthMissing", (Exception,), {})
+        cfgs = {"se": AgentConfig("se", 1, "Sentinelle DQ Réseau", "m", "Tu es Sentinelle."),
+                "dq": AgentConfig("dq", 1, "Data Quality Advisor", "m", "Tu es DQ.")}
+        log = {"msgs": [], "calls": []}
+        state.mentionable_agents = lambda: [{"agent_id": "se", "name": "Sentinelle DQ Réseau", "category": "Qualité des données"},
+                                            {"agent_id": "dq", "name": "Data Quality Advisor", "category": "Qualité des données"}]
+        state.repository = lambda: types.SimpleNamespace(
+            get_config=lambda aid: cfgs.get(aid), log_tool_call=lambda *a: None,
+            log_messages=lambda conv, c, u, msgs, idx, lat: log["msgs"].append((c.agent_id, [m["content"] for m in msgs])) or idx + len(msgs))
+
+        def build(c, **k):
+            rt = Runtime(answers[c.agent_id])
+            log["calls"].append(rt)
+            return rt, c, []
+        state.build_runtime_for = build
+        monkeypatch.setitem(sys.modules, "ui.state", state)
+        import ui
+        monkeypatch.setattr(ui, "state", state, raising=False)
+        sys.modules.pop("ui.chat_panel", None)
+        import ui.chat_panel as cp
+        return cp, fake, log
+    return load
+
+
+def test_single_mention_answers_directly_with_context(mention_panel):
+    cp, fake, log = mention_panel("@sentinelle la table est-elle à jour ?", {"se": "Oui, à jour.", "a1": "main"})
+    with pytest.raises(Rerun):
+        cp.render_chat(CFG, key="m1")
+    s = fake.session_state["chat_m1"]
+    last = s["display"][-1]
+    assert last["agent"] == "Sentinelle DQ Réseau" and last["content"] == "Oui, à jour."
+    assert len(log["calls"]) == 1                                 # l'agent principal n'a pas été appelé
+    sent = log["calls"][0].seen
+    assert sent.agent_id == "se"
+    # Journalisation sous l'agent mentionné, message utilisateur d'origine conservé
+    assert log["msgs"][0][0] == "se" and log["msgs"][0][1][0] == "@sentinelle la table est-elle à jour ?"
+    # Historique de l'agent principal : question + réponse étiquetée
+    assert s["history"][-1]["content"].startswith("[Réponse de Sentinelle DQ Réseau]")
+
+
+def test_two_mentions_then_main_synthesis(mention_panel):
+    cp, fake, log = mention_panel("@sentinelle et @Data Quality Advisor : état global ?",
+                                  {"se": "Fraîcheur OK", "dq": "6198 anomalies", "a1": "Synthèse : ..."})
+    with pytest.raises(Rerun):
+        cp.render_chat(CFG, key="m2")
+    s = fake.session_state["chat_m2"]
+    speakers = [d["agent"] for d in s["display"] if d["kind"] == "msg" and d["role"] == "assistant"]
+    assert speakers == ["Sentinelle DQ Réseau", "Data Quality Advisor", "SQL Assistant"]
+    assert [c.seen.agent_id for c in log["calls"]] == ["se", "dq", "a1"]
+    # Une seule entrée assistant regroupée avant la synthèse (alternance des rôles)
+    roles = [m["role"] for m in s["history"]]
+    assert roles.count("assistant") >= 1 and "assistant\nassistant" not in "\n".join(roles[:-1])
+
+
+def test_unknown_mention_shows_notice_and_main_answers(mention_panel):
+    cp, fake, log = mention_panel("@sentinel bonjour", {"a1": "réponse principale"})
+    with pytest.raises(Rerun):
+        cp.render_chat(CFG, key="m3")
+    s = fake.session_state["chat_m3"]
+    notes = [d["content"] for d in s["display"] if d["kind"] == "notice"]
+    assert notes and "Sentinelle DQ Réseau" in notes[0]
+    assert s["display"][-1]["agent"] == "SQL Assistant"
+
+
+def test_mention_button_prefix_is_applied(mention_panel):
+    cp, fake, log = mention_panel("combien d'anomalies ?", {"dq": "6198"})
+    fake.session_state["chat_m4"] = {"conversation_id": "c", "history": [], "display": [], "pending": None,
+                                     "next_index": 0, "mention_prefix": "Data Quality Advisor"}
+    with pytest.raises(Rerun):
+        cp.render_chat(CFG, key="m4")
+    s = fake.session_state["chat_m4"]
+    assert s["display"][0]["content"] == "@Data Quality Advisor combien d'anomalies ?"
+    assert s["display"][-1]["agent"] == "Data Quality Advisor" and "mention_prefix" not in s
