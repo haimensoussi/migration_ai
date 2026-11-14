@@ -5,9 +5,13 @@ import html
 import json
 import os
 
-PALETTE = [[176, 18, 79], [74, 25, 66], [122, 62, 157], [0, 122, 153], [230, 126, 34], [39, 174, 96],
-           [52, 73, 94], [192, 57, 43], [142, 68, 173], [22, 160, 133], [243, 156, 18], [127, 140, 141]]
-OTHER = [160, 160, 170]
+# Couleurs contrastées sur fond clair (framboise DISCOVERY puis palette Okabe-Ito, lisible par les daltoniens)
+PALETTE = [[176, 18, 79], [0, 114, 178], [230, 159, 0], [0, 158, 115], [122, 62, 157], [213, 94, 0],
+           [86, 180, 233], [204, 121, 167], [52, 73, 94], [128, 128, 0], [0, 0, 0], [153, 0, 0]]
+OTHER = [150, 150, 160]
+GRADIENT = ([0, 114, 178], [176, 18, 79])        # valeurs numériques : bleu (min) -> framboise (max)
+CARTO_LIGHT = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
+CARTO_DARK = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
 
 
 def _num(v):
@@ -30,8 +34,9 @@ def colorize(points: list[dict], result: dict) -> list[dict]:
         elif col and leg.get("type") == "numerique":
             lo, hi, x = leg.get("min"), leg.get("max"), _num(p.get(col))
             t = 0.0 if x is None or hi == lo else (x - lo) / (hi - lo)
-            c = [int(250 + (176 - 250) * t), int(220 + (18 - 220) * t), int(232 + (79 - 232) * t)]
-        out.append({**p, "_color": c + [200]})
+            lo_c, hi_c = GRADIENT
+            c = [int(lo_c[k] + (hi_c[k] - lo_c[k]) * t) for k in range(3)]
+        out.append({**p, "_color": c + [230]})
     return out
 
 
@@ -63,10 +68,13 @@ def to_geojson(points: list[dict]) -> str:
     return json.dumps({"type": "FeatureCollection", "features": feats}, ensure_ascii=False, default=str)
 
 
-def map_style():
-    """AI_STUDIO_MAP_STYLE=none : carte sans fond (si les fonds de carte Internet sont bloqués)."""
+def map_style() -> str:
+    """Fond clair par défaut (cohérent avec DISCOVERY). AI_STUDIO_MAP_STYLE=dark : fond sombre ;
+    none : carte sans fond (si les fonds de carte Internet sont bloqués)."""
     v = os.environ.get("AI_STUDIO_MAP_STYLE", "").strip().lower()
-    return "" if v in ("none", "aucun", "0") else None
+    if v in ("none", "aucun", "0"):
+        return ""
+    return CARTO_DARK if v in ("dark", "sombre") else CARTO_LIGHT
 
 
 def render(ev: dict) -> None:
@@ -88,14 +96,12 @@ def render(ev: dict) -> None:
             layer = pdk.Layer("HeatmapLayer", data=data, get_position=["_lon", "_lat"], radius_pixels=40, opacity=0.8)
         else:
             layer = pdk.Layer("ScatterplotLayer", data=data, get_position=["_lon", "_lat"], get_fill_color="_color",
-                              get_radius=300, radius_min_pixels=4, radius_max_pixels=14, pickable=True,
-                              stroked=True, get_line_color=[255, 255, 255], line_width_min_pixels=1)
-        kw = {}
-        style = map_style()
-        if style is not None:
-            kw["map_style"] = style
-        deck = pdk.Deck(layers=[layer], initial_view_state=pdk.ViewState(**view_state(res)),
-                        tooltip={"html": tip, "style": {"fontSize": "12px"}} if tip else True, **kw)
+                              get_radius=300, radius_min_pixels=5, radius_max_pixels=14, pickable=True,
+                              stroked=True, get_line_color=[255, 255, 255], line_width_min_pixels=1.5)
+        deck = pdk.Deck(layers=[layer], initial_view_state=pdk.ViewState(**view_state(res)), map_provider="carto",
+                        map_style=map_style(),
+                        tooltip={"html": tip, "style": {"fontSize": "12px", "backgroundColor": "#2B1B33",
+                                                        "color": "#FFFFFF"}} if tip else True)
         st.pydeck_chart(deck, use_container_width=True)
     except Exception:  # noqa: BLE001 - repli : carte Streamlit simple
         st.map(pd.DataFrame({"lat": [p["_lat"] for p in pts], "lon": [p["_lon"] for p in pts]}))

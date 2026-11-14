@@ -99,3 +99,20 @@ def test_map_view_helpers():
     gj = json.loads(map_view.to_geojson(pts))
     assert gj["features"][0]["geometry"]["coordinates"] == [1.0, 49.0]
     assert gj["features"][0]["properties"] == {"Segment(s) DRG": "C"}
+
+
+
+def test_light_basemap_by_default_and_contrast(monkeypatch):
+    monkeypatch.delenv("AI_STUDIO_MAP_STYLE", raising=False)
+    assert map_view.map_style() == map_view.CARTO_LIGHT and "positron" in map_view.CARTO_LIGHT
+    monkeypatch.setenv("AI_STUDIO_MAP_STYLE", "dark")
+    assert map_view.map_style() == map_view.CARTO_DARK
+    monkeypatch.setenv("AI_STUDIO_MAP_STYLE", "none")
+    assert map_view.map_style() == ""
+    # Chaque couleur de catégorie reste visible sur fond clair (luminance < 0,8) et les 12 sont distinctes
+    lum = [(0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 for r, g, b in map_view.PALETTE]
+    assert max(lum) < 0.8 and len({tuple(c) for c in map_view.PALETTE}) == 12
+    # Dégradé numérique : extrémités bleu et framboise, jamais blanc
+    pts = [{"_lat": 48.0, "_lon": 2.0, "v": 0}, {"_lat": 48.1, "_lon": 2.0, "v": 10}]
+    col = map_view.colorize(pts, {"couleur": "v", "legende": {"type": "numerique", "min": 0, "max": 10}})
+    assert col[0]["_color"][:3] == list(map_view.GRADIENT[0]) and col[1]["_color"][:3] == list(map_view.GRADIENT[1])
