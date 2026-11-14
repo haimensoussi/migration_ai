@@ -82,3 +82,21 @@ CREATE TABLE IF NOT EXISTS dataops_dev.ai_studio.tool_calls (
   created_at TIMESTAMP NOT NULL,
   CONSTRAINT tool_calls_pk PRIMARY KEY (call_id)
 ) COMMENT 'Journal des appels d''outils (monitoring, audit)';
+
+-- Grain : 1 ligne par génération assistée par IA (agent, puis outils). Clé : generation_id.
+CREATE TABLE IF NOT EXISTS dataops_dev.ai_studio.generation_log (
+  generation_id STRING NOT NULL,
+  kind STRING NOT NULL COMMENT 'agent | outil',
+  user_name STRING NOT NULL,
+  prompt STRING NOT NULL COMMENT 'Demande en langage naturel',
+  scope STRING COMMENT 'Périmètre de données suggéré',
+  model_endpoint STRING NOT NULL,
+  proposal STRING COMMENT 'Proposition brute du modèle (JSON)',
+  draft STRING COMMENT 'Brouillon validé (JSON)',
+  warnings STRING COMMENT 'Avertissements de validation (JSON)',
+  status STRING NOT NULL COMMENT 'propose | erreur',
+  error STRING,
+  latency_ms BIGINT,
+  created_at TIMESTAMP NOT NULL,
+  CONSTRAINT generation_log_pk PRIMARY KEY (generation_id)
+) COMMENT 'Traçabilité des générations du copilote de conception';

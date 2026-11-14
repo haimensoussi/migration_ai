@@ -87,6 +87,14 @@ def build_runtime(on_tool_event=None, conversation_id: str = "") -> AgentRuntime
     return AgentRuntime(ModelClient(w), registry(), ctx, on_tool_event=on_tool_event)
 
 
+def build_designer():
+    """Copilote de conception, sous l'identité de l'utilisateur (exploration avec ses droits)."""
+    from backend.agent_designer import AgentDesigner
+    w, sql, ident = user_session()
+    ctx = ToolContext(sql=sql, workspace=w, max_rows=settings().max_rows, user_email=ident.email)
+    return AgentDesigner(ModelClient(w), registry(), ctx, settings().default_model)
+
+
 def refresh_data():
     cached_tools.clear()
     st.session_state.pop("_agents_cache", None)

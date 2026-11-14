@@ -159,6 +159,22 @@ class AgentRepository:
              "args": json.dumps(ev.arguments, ensure_ascii=False, default=str), "st": ev.status,
              "p": preview, "e": ev.error, "d": int(ev.duration_ms), "u": user})
 
+    def log_generation(self, kind: str, user: str, prompt: str, scope: str | None, model_endpoint: str,
+                       proposal: dict | None = None, draft: dict | None = None, warnings: list | None = None,
+                       status: str = "propose", error: str | None = None, latency_ms: int | None = None) -> str:
+        gid = uuid.uuid4().hex
+        self.sql.execute(f"""
+            INSERT INTO {self.s.table('generation_log')} (generation_id, kind, user_name, prompt, scope,
+              model_endpoint, proposal, draft, warnings, status, error, latency_ms, created_at)
+            VALUES (:id, :k, :u, :p, CAST(:sc AS STRING), :m, CAST(:pr AS STRING), CAST(:d AS STRING),
+                    CAST(:w AS STRING), :st, CAST(:e AS STRING), CAST(:l AS BIGINT), current_timestamp())""",
+            {"id": gid, "k": kind, "u": user, "p": prompt[:20000], "sc": scope, "m": model_endpoint,
+             "pr": json.dumps(proposal, ensure_ascii=False)[:20000] if proposal is not None else None,
+             "d": json.dumps(draft, ensure_ascii=False)[:20000] if draft is not None else None,
+             "w": json.dumps(warnings or [], ensure_ascii=False), "st": status,
+             "e": (error or "")[:4000] or None, "l": latency_ms})
+        return gid
+
     # -- Indicateurs ----------------------------------------------------------
     def dashboard_stats(self) -> dict:
         r = self.sql.query(f"""

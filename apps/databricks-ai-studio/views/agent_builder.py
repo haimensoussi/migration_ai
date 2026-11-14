@@ -30,6 +30,58 @@ b = st.session_state["builder"]
 
 st.title("Agent Builder")
 st.caption(("Modification de « " + b["name"] + " »") if b["agent_id"] else "Nouvel agent")
+
+# -- Copilote de conception (agents nouveaux uniquement) ---------------------
+if not b["agent_id"]:
+    with st.expander(":material/auto_awesome: Décrire votre agent en langage naturel",
+                     expanded=not b.get("ai_result")):
+        st.caption("Le copilote explore les données avec vos droits, choisit parmi les outils publiés et "
+                   "pré-remplit les 6 étapes. Rien n'est enregistré sans votre action.")
+        req = st.text_area("Votre besoin", key="ai_request", height=110,
+                           placeholder="Ex. : Je veux un agent qui explique les résultats des contrôles qualité "
+                                       "et résume les anomalies par dimension.")
+        scope = st.text_input("Périmètre de données (facultatif, catalog.schema)", key="ai_scope",
+                              placeholder="dataops_dev.description_du_reseau_bronze")
+        if st.button("Générer le brouillon", type="primary", key="ai_go"):
+            repo = state.repository()
+            try:
+                with st.spinner("Le copilote analyse votre besoin et explore les données..."):
+                    res = state.build_designer().design(req, scope.strip() or None)
+                b.update(res.draft)
+                b["step"] = 0
+                b["ai_result"] = {"warnings": res.warnings, "hypotheses": res.hypotheses,
+                                  "test_questions": res.test_questions, "latency_ms": res.latency_ms,
+                                  "explored": [f"{e.tool_id}({', '.join(str(v) for v in e.arguments.values())}) : "
+                                               f"{'ok' if e.status == 'succes' else e.error}" for e in res.events]}
+                try:
+                    repo.log_generation("agent", user.email, req, scope.strip() or None, s_cfg.default_model,
+                                        proposal=res.raw_proposal, draft=res.draft, warnings=res.warnings,
+                                        latency_ms=res.latency_ms)
+                except Exception as e:  # noqa: BLE001
+                    st.warning(f"Génération non journalisée : {e}")
+                st.rerun()
+            except Exception as e:  # noqa: BLE001
+                st.error(f"Génération impossible : {e}")
+                try:
+                    repo.log_generation("agent", user.email, req or "", scope.strip() or None, s_cfg.default_model,
+                                        status="erreur", error=str(e))
+                except Exception:  # noqa: BLE001
+                    pass
+
+ai = b.get("ai_result")
+if ai:
+    st.info(f"Brouillon généré par l'IA en {ai['latency_ms'] / 1000:.1f} s : relisez chaque étape, testez, "
+            "puis enregistrez. Toute règle ou tout seuil proposé reste à valider par le responsable métier.")
+    for wmsg in ai["warnings"]:
+        st.warning(wmsg)
+    if ai["hypotheses"] or ai["explored"]:
+        with st.expander("Hypothèses et exploration du copilote"):
+            for h in ai["hypotheses"]:
+                st.markdown(f"- {h}")
+            if ai["explored"]:
+                st.caption("Outils appelés pendant la conception")
+                for x in ai["explored"]:
+                    st.caption(x)
 st.progress((b["step"] + 1) / len(STEPS), text=f"Étape {b['step'] + 1}/{len(STEPS)} : {STEPS[b['step']]}")
 nav = st.columns(len(STEPS))
 for i, name in enumerate(STEPS):
@@ -122,6 +174,10 @@ with st.container(border=True):
                               model_endpoint=b["model_endpoint"], instructions=b["instructions"],
                               tool_ids=b["tool_ids"], knowledge_tables=b["knowledge_tables"],
                               temperature=b["temperature"], max_iterations=b["max_iterations"])
+            if ai and ai.get("test_questions"):
+                st.markdown("**Questions de test suggérées par le copilote**")
+                for q in ai["test_questions"]:
+                    st.markdown(f"- {q}")
             st.markdown("**Test de l'agent (non enregistré dans l'historique)**")
             render_chat(cfg, key="builder", persist=False)
 
