@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from backend.agent_runtime import ToolEvent, _parse_args
 from backend.tool_registry import ToolContext, ToolError, ToolRegistry, ToolSpec
 
-CATEGORIES = ["Général", "Qualité des données", "Analyse", "FinOps", "Documents", "Gouvernance", "Exploitation"]
+CATEGORIES = ["Général", "Qualité des données", "Analyse", "FinOps", "Documents", "Gouvernance", "Exploitation", "Orchestration"]
 ICONS = ["smart_toy", "verified", "terminal", "savings", "description", "policy", "query_stats", "support_agent"]
 EXPLORATION_TOOLS = ("list_tables", "describe_table")
 DATA_TOOLS = {"describe_table", "get_table_profile", "execute_sql"}
@@ -120,6 +120,11 @@ class AgentDesigner:
         ])
         res = self._run([{"role": "system", "content": system}, {"role": "user", "content": "\n".join(parts)}])
         res.draft["model_endpoint"] = current.get("model_endpoint") or res.draft["model_endpoint"]
+        # Les agents délégués (orchestration) ne sont pas des outils du catalogue : ils sont conservés tels quels
+        keep = [t for t in (current.get("tool_ids") or []) if str(t).startswith("agent:")]
+        if keep:
+            res.draft["tool_ids"] = [t for t in res.draft["tool_ids"] if not str(t).startswith("agent:")] + keep
+            res.warnings = [w for w in res.warnings if "agent:" not in w]
         if not res.changes:
             res.warnings.append("Le copilote n'a listé aucune modification : comparez les versions avant d'appliquer.")
         return res

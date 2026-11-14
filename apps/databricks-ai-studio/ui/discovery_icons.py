@@ -31,6 +31,7 @@ L'interface DISCOVERY se charge de l'affichage des icônes métier.
 
 # Outils -> (icône, libellé) ; l'ordre de la liste fixe la priorité d'affichage
 TOOL_CHIPS = [
+    ({"ask_agent"}, "play", "Orchestration multi-agents"),
     ({"list_tables", "describe_table"}, "database", "Exploration des données"),
     ({"execute_sql", "get_table_profile", "generate_sql"}, "chart", "Analyse des données"),
     ({"run_job", "get_job_status"}, "clock", "Suivi des Jobs"),

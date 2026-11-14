@@ -92,6 +92,7 @@ def panel(monkeypatch):
             log_tool_call=lambda *a: None,
             log_messages=lambda conv, cfg, *a: logged.setdefault("cfg", cfg) and 1)
         state.build_runtime = lambda **k: runtime
+        state.build_runtime_for = lambda cfg, **k: (runtime, cfg, [])
         monkeypatch.setitem(sys.modules, "ui.state", state)
         import ui
         monkeypatch.setattr(ui, "state", state, raising=False)

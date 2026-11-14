@@ -7,7 +7,7 @@ from ui.chat_panel import render_chat
 from ui.components import ICONS
 
 STEPS = ["Informations", "Modèle IA", "Instructions", "Outils", "Connaissances", "Test et publication"]
-CATEGORIES = ["Général", "Qualité des données", "Analyse", "FinOps", "Documents", "Gouvernance", "Exploitation"]
+CATEGORIES = ["Général", "Qualité des données", "Analyse", "FinOps", "Documents", "Gouvernance", "Exploitation", "Orchestration"]
 s_cfg = state.settings()
 user = state.current_user()
 
@@ -208,8 +208,22 @@ with st.container(border=True):
         tools = state.cached_tools()
         pub = [t for t in tools if t.status == "publie"]
         labels = {t.tool_id: f"{t.name} ({t.tool_id})" for t in pub}
-        b["tool_ids"] = st.multiselect("Outils du Tool Catalog", list(labels), [t for t in b["tool_ids"] if t in labels],
-                                       format_func=labels.get)
+        current_agents = [t for t in b["tool_ids"] if str(t).startswith("agent:")]
+        sel_tools = st.multiselect("Outils du Tool Catalog", list(labels), [t for t in b["tool_ids"] if t in labels],
+                                   format_func=labels.get)
+        st.markdown("**Orchestration multi-agents** (facultatif)")
+        cand = [a for a in state.agents() if a["agent_id"] != b["agent_id"] and a["status"] == "publie"
+                and not any(str(t).startswith("agent:") for t in (a.get("tool_ids") or []))]
+        alabels = {f"agent:{a['agent_id']}": a["name"] for a in cand}
+        for t in current_agents:
+            alabels.setdefault(t, f"{t[6:]} (indisponible)")
+        sel_agents = st.multiselect("Agents délégués : l'agent devient superviseur et leur confie des sous-questions",
+                                    list(alabels), current_agents, format_func=alabels.get)
+        if sel_agents:
+            st.caption("Un seul niveau de délégation, 4 délégations au plus par demande ; chaque agent délégué "
+                       "garde ses propres outils, tables autorisées et validations. Les actions soumises à "
+                       "validation humaine ne sont jamais exécutées par délégation.")
+        b["tool_ids"] = sel_tools + sel_agents
         for t in pub:
             if t.tool_id in b["tool_ids"]:
                 st.markdown(f"- **{t.name}** : {t.description}")

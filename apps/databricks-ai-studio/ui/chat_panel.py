@@ -19,7 +19,26 @@ STATUS_ICON = {"succes": ":material/check_circle:", "erreur": ":material/error:"
 STATUS_TXT = {"succes": "succès", "erreur": "erreur", "refuse": "refusé"}
 
 
+def _show_delegation(ev: dict):
+    args = ev.get("arguments") or {}
+    res = ev.get("result") if isinstance(ev.get("result"), dict) else {}
+    st_txt = "validation requise" if res.get("statut") == "validation_requise" else STATUS_TXT.get(ev["status"], ev["status"])
+    with st.expander(f"Délégation à « {args.get('agent', '?')} » : {st_txt} ({ev['duration_ms']} ms)"):
+        st.caption("Question transmise")
+        st.markdown(str(args.get("question", "")))
+        if ev["status"] == "succes":
+            st.caption("Réponse de l'agent")
+            st.markdown(res.get("reponse") or res.get("message") or "(vide)")
+            if res.get("outils"):
+                st.caption("Outils appelés : " + ", ".join(f"{o['outil']} ({STATUS_TXT.get(o['statut'], o['statut'])})"
+                                                        for o in res["outils"]))
+        else:
+            st.error(ev["error"])
+
+
 def _show_event(ev: dict):
+    if ev["tool_id"] == "ask_agent":
+        return _show_delegation(ev)
     title = f"Outil `{ev['tool_id']}` : {STATUS_TXT.get(ev['status'], ev['status'])} ({ev['duration_ms']} ms)"
     with st.expander(f'{STATUS_ICON.get(ev["status"], "")} {title}'):
         st.caption("Arguments")
@@ -99,12 +118,16 @@ def render_chat(cfg: AgentConfig, key: str, persist: bool = True, category: str 
     user = state.current_user()
 
     top = st.columns([4, 1])
-    top[0].caption(f"Modèle `{cfg.model_endpoint}` · outils : {', '.join(cfg.tool_ids) or 'aucun'} · "
+    from backend.orchestrator import plain_tools, sub_agent_ids
+    deleg = f" · agents délégués : {len(sub_agent_ids(cfg.tool_ids))}" if sub_agent_ids(cfg.tool_ids) else ""
+    top[0].caption(f"Modèle `{cfg.model_endpoint}` · outils : {', '.join(plain_tools(cfg.tool_ids)) or 'aucun'}{deleg} · "
                    f"identité : {user.email} ({user.mode})")
     if top[1].button("Nouvelle conversation", key=f"reset_{key}"):
         del st.session_state[sk]
         st.rerun()
 
+    for wmsg in s.get("orch_warnings") or []:
+        st.caption(f"Orchestration : {wmsg}")
     if not s["display"]:
         _welcome(cfg)
     for item in s["display"]:
@@ -120,6 +143,19 @@ def render_chat(cfg: AgentConfig, key: str, persist: bool = True, category: str 
     def log_event(ev: ToolEvent):
         if persist:
             repo.log_tool_call(s["conversation_id"], cfg.agent_id, user.email, ev)
+
+    def log_sub(agent_id: str, ev: ToolEvent):
+        if persist:
+            try:
+                repo.log_tool_call(s["conversation_id"], agent_id, user.email, ev)
+            except Exception:  # noqa: BLE001 - la journalisation ne bloque pas la conversation
+                pass
+
+    def runtime():
+        rt_, exec_cfg, warns = state.build_runtime_for(run_cfg, on_tool_event=log_event,
+                                                       conversation_id=s["conversation_id"], on_sub_event=log_sub)
+        s["orch_warnings"] = warns
+        return rt_, exec_cfg
 
     def handle(res: TurnResult, user_msg: dict | None):
         turn_events = [_ev_dict(ev) for ev in res.events]
@@ -154,8 +190,8 @@ def render_chat(cfg: AgentConfig, key: str, persist: bool = True, category: str 
             if decision is not None:
                 with st.spinner("Exécution..."):
                     try:
-                        rt = state.build_runtime(on_tool_event=log_event, conversation_id=s["conversation_id"])
-                        res = rt.resume(run_cfg, s["pending"]["messages"], {p["call"]["id"]: decision})
+                        rt, exec_cfg = runtime()
+                        res = rt.resume(exec_cfg, s["pending"]["messages"], {p["call"]["id"]: decision})
                         handle(res, None)
                     except Exception as e:  # noqa: BLE001
                         st.error(f"Erreur d'exécution : {e}")
@@ -167,8 +203,8 @@ def render_chat(cfg: AgentConfig, key: str, persist: bool = True, category: str 
         s["display"].append({"kind": "msg", "role": "user", "content": prompt})
         with st.spinner("L'agent réfléchit..."):
             try:
-                rt = state.build_runtime(on_tool_event=log_event, conversation_id=s["conversation_id"])
-                res = rt.run(run_cfg, s["history"] + [user_msg])
+                rt, exec_cfg = runtime()
+                res = rt.run(exec_cfg, s["history"] + [user_msg])
                 handle(res, user_msg)
             except state.UserAuthMissing as e:
                 s["display"].append({"kind": "msg", "role": "assistant", "content": f"**Accès refusé** : {e}",

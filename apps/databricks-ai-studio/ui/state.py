@@ -87,6 +87,34 @@ def build_runtime(on_tool_event=None, conversation_id: str = "") -> AgentRuntime
     return AgentRuntime(ModelClient(w), registry(), ctx, on_tool_event=on_tool_event)
 
 
+def build_runtime_for(cfg, on_tool_event=None, conversation_id: str = "", on_sub_event=None):
+    """(runtime, configuration d'exécution, avertissements) ; orchestre les agents délégués si l'agent est superviseur."""
+    from backend.orchestrator import Orchestrator, is_supervisor
+    if not is_supervisor(cfg):
+        return build_runtime(on_tool_event, conversation_id), cfg, []
+    w, sql, ident = user_session()
+    s = settings()
+    repo = repository()
+
+    def ctx_factory():
+        return ToolContext(sql=sql, workspace=w, max_rows=s.max_rows, conversation_id=conversation_id,
+                           user_email=ident.email)
+
+    def load(aid):
+        a = repo.get_agent(aid)
+        c = repo.get_config(aid) if a else None
+        if not a or not c or a.get("status") == "archive":
+            return None
+        if a.get("status") != "publie" and a.get("owner") != ident.email:
+            return None
+        from dataclasses import replace
+        from ui.discovery_icons import with_presentation
+        return a, replace(c, instructions=with_presentation(c.instructions))
+
+    orch = Orchestrator(ModelClient(w), registry(), ctx_factory, load, on_sub_event=on_sub_event)
+    return orch.prepare(cfg, on_tool_event)
+
+
 def build_designer():
     """Copilote de conception, sous l'identité de l'utilisateur (exploration avec ses droits)."""
     from backend.agent_designer import AgentDesigner
