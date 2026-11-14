@@ -125,9 +125,9 @@ if b["agent_id"]:
                 else:
                     st.markdown(f"**{d['champ']}** : `{d['actuel']}` devient `{d['propose']}`")
             if imp["hypotheses"]:
-                with st.expander("Hypothèses du copilote"):
-                    for h in imp["hypotheses"]:
-                        st.markdown(f"- {h}")
+                st.markdown("**Hypothèses du copilote**")  # pas d'expander : déjà dans un expander
+                for h in imp["hypotheses"]:
+                    st.markdown(f"- {h}")
             c_ok, c_no = st.columns(2)
             if c_ok.button("Appliquer au brouillon", type="primary", key="ai_improve_apply", disabled=not imp["diff"]):
                 b.update({k: v for k, v in imp["draft"].items() if k in FIELDS})
