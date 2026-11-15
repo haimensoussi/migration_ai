@@ -264,3 +264,34 @@ def test_three_successive_questions_are_all_answered(mention_panel):
     answers = [d for d in s["display"] if d["kind"] == "msg" and d["role"] == "assistant"]
     assert users == ["question 1", "question 2", "question 3"] and len(answers) == 3
     assert [m["role"] for m in s["history"]] == ["user", "assistant"] * 3
+
+
+
+def test_team_name_in_response_header(monkeypatch):
+    import ui.chat_panel as cp_mod
+    seen = []
+    monkeypatch.setattr(cp_mod.st, "markdown", lambda body, unsafe_allow_html=False: seen.append((body, unsafe_allow_html)),
+                        raising=False)
+    import contextlib as _c
+    monkeypatch.setattr(cp_mod.st, "chat_message", lambda *a, **k: _c.nullcontext(), raising=False)
+    cp_mod._DISPLAY["Jules"] = "Jules, le coordinateur"
+    cp_mod.render_discovery_message("assistant", "Synthèse", "Jules", [], team="Équipe <Qualité>")
+    head = next(b for b, u in seen if u)
+    assert "Équipe &lt;Qualité&gt; · Jules, le coordinateur · Agent IA" in head    # nom échappé
+    seen.clear()
+    cp_mod.render_discovery_message("assistant", "Réponse", "Jules", [])
+    assert "Équipe" not in next(b for b, u in seen if u)
+
+
+
+def test_team_mention_keeps_team_name_on_lead_answer(mention_panel, monkeypatch):
+    cp, fake, log = mention_panel("@qualite état des déclivités ?", {"se": "Synthèse de l'équipe.", "a1": "main"})
+    import ui
+    team = {"agent_id": "se", "name": "Équipe Qualité des données", "handle": "qualite", "kind": "team",
+            "persona": "2 agents", "category": "Qualité des données"}
+    ui.state.mentionable_agents = lambda: [team]
+    with pytest.raises(Rerun):
+        cp.render_chat(CFG, key="t1")
+    last = fake.session_state["chat_t1"]["display"][-1]
+    assert last["agent"] == "Sentinelle DQ Réseau" and last["team"] == "Équipe Qualité des données"
+    assert log["calls"][0].seen.agent_id == "se"                   # question envoyée au chef

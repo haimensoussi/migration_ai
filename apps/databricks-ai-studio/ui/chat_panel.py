@@ -103,7 +103,8 @@ def _shown(name: str) -> str:
     return f"{_DISPLAY.get(name, name)} · {AI_BADGE}" if name else name
 
 
-def render_discovery_message(role: str, content: str, agent_name: str = "", chips: list | None = None):
+def render_discovery_message(role: str, content: str, agent_name: str = "", chips: list | None = None,
+                             team: str = ""):
     """Affiche un message DISCOVERY : avatar, nom de l'agent, icônes métier (interface) puis Markdown du modèle.
 
     Le contenu produit par l'agent est rendu en Markdown simple (HTML non autorisé) ; seuls l'en-tête et les
@@ -115,7 +116,8 @@ def render_discovery_message(role: str, content: str, agent_name: str = "", chip
             st.markdown(content)
         return
     with st.chat_message("assistant", avatar=AV["assistant"]):
-        head = f'<div class="dsc-agent">{html.escape(_shown(agent_name))}</div>' if agent_name else ""
+        label = f"{team} · {_shown(agent_name)}" if team and agent_name else _shown(agent_name)
+        head = f'<div class="dsc-agent">{html.escape(label)}</div>' if agent_name else ""
         st.markdown(head + chips_html([tuple(c) for c in (chips or [])]), unsafe_allow_html=True)
         st.markdown(content)
 
@@ -163,7 +165,8 @@ def render_chat(cfg: AgentConfig, key: str, persist: bool = True, category: str 
                 st.markdown('<span class="dsc-msg-tool"></span>', unsafe_allow_html=True)
                 _show_event(item["event"])
         else:
-            render_discovery_message(item["role"], item["content"], item.get("agent", ""), item.get("chips"))
+            render_discovery_message(item["role"], item["content"], item.get("agent", ""), item.get("chips"),
+                                     item.get("team", ""))
 
     repo = state.repository()
     from backend import personas
@@ -199,14 +202,15 @@ def render_chat(cfg: AgentConfig, key: str, persist: bool = True, category: str 
         except Exception as e:  # noqa: BLE001
             st.warning(f"Historique non enregistré : {e}")
 
-    def handle(res: TurnResult, log_user: dict | None, speaker: AgentConfig, cat: str | None, main: bool):
+    def handle(res: TurnResult, log_user: dict | None, speaker: AgentConfig, cat: str | None, main: bool,
+               team: str = ""):
         """Affiche et journalise un tour ; met à jour l'historique de l'agent principal."""
         turn_events = [_ev_dict(ev) for ev in res.events]
         for ev in turn_events:
             s["display"].append({"kind": "event", "event": ev})
         if res.pending:
             s["pending"] = {"pending": res.pending, "messages": res.messages, "speaker": speaker,
-                            "category": cat, "main": main}
+                            "category": cat, "main": main, "team": team}
         else:
             s["pending"] = None
             text = res.final_text or "(réponse vide)"
@@ -220,7 +224,7 @@ def render_chat(cfg: AgentConfig, key: str, persist: bool = True, category: str 
                 else:
                     s["history"].append({"role": "assistant", "content": block})
             s["display"].append({"kind": "msg", "role": "assistant", "content": text, "agent": speaker.name,
-                                 "chips": chips_for(turn_events, cat)})
+                                 "team": team, "chips": chips_for(turn_events, cat)})
         log_msgs(speaker, ([log_user] if log_user else []) + [m for m in res.new_messages if m["role"] != "system"],
                  res.latency_ms)
         return res
@@ -252,7 +256,8 @@ def render_chat(cfg: AgentConfig, key: str, persist: bool = True, category: str 
             try:
                 rt, exec_cfg = runtime_for(mcfg)
                 res = rt.run(exec_cfg, [{"role": "user", "content": content}])
-                handle(res, {"role": "user", "content": prompt} if first else None, mcfg, a.get("category"), main=False)
+                handle(res, {"role": "user", "content": prompt} if first else None, mcfg, a.get("category"), main=False,
+                       team=a["name"] if a.get("kind") == "team" else "")
                 first = False
                 answered += 1
                 if res.pending:
@@ -288,7 +293,8 @@ def render_chat(cfg: AgentConfig, key: str, persist: bool = True, category: str 
                         pend = s["pending"]
                         rt, exec_cfg = runtime_for(speaker)
                         res = rt.resume(exec_cfg, pend["messages"], {p["call"]["id"]: decision})
-                        handle(res, None, speaker, pend.get("category", category), main=pend.get("main", True))
+                        handle(res, None, speaker, pend.get("category", category), main=pend.get("main", True),
+                           team=pend.get("team", ""))
                     except Exception as e:  # noqa: BLE001
                         st.error(f"Erreur d'exécution : {e}")
                 st.rerun()
