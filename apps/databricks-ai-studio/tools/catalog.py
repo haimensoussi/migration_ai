@@ -115,6 +115,23 @@ BUILTIN_TOOLS: list[ToolSpec] = [
                        "reponse_flux": {}}},
         executor="tools.power_automate:office_read", identity="application"),
     ToolSpec(
+        tool_id="http_call", name="Appel HTTP", category="Automatisation",
+        description=("Appelle une URL HTTP(S) publique et renvoie le statut, le type et le contenu de la réponse : "
+                     "sert à tester un service web ou un déclencheur (ex. flux Power Automate). Chaque appel est "
+                     "suspendu jusqu'à la validation de l'utilisateur. Adresses privées, redirections et en-têtes "
+                     "d'identification refusés ; valeurs sensibles de l'URL masquées."),
+        input_schema={"type": "object", "properties": {
+            "url": {"type": "string", "description": "URL complète http:// ou https://"},
+            "method": {"type": "string", "enum": ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"]},
+            "body": {"type": "object", "description": "Corps JSON (POST, PUT, PATCH)"},
+            "headers": {"type": "object", "description": "En-têtes supplémentaires, sans identifiants"},
+            "timeout_s": {"type": "integer", "minimum": 1, "maximum": 30}},
+            "required": ["url"]},
+        output_schema={"type": "object", "properties": {"statut_http": {"type": "integer"}, "reponse": {"type": "string"},
+                                                        "json": {}, "duree_ms": {"type": "integer"}}},
+        executor="tools.http_tools:http_call", identity="application",
+        requires_confirmation=True, read_only=False),
+    ToolSpec(
         tool_id="office_send", name="Smart Office : envoyer", category="Automatisation",
         description=("Appelle le flux Power Automate Smart Office pour envoyer ou répondre à un message. "
                      "L'exécution est suspendue jusqu'à l'approbation de l'utilisateur dans AI Studio."),

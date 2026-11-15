@@ -215,12 +215,16 @@ class AgentRepository:
         res = ({k: v for k, v in ev.result.items() if not str(k).startswith("_ui")}   # points de carte non journalisés
                if isinstance(ev.result, dict) else ev.result)
         preview = json.dumps(res, ensure_ascii=False, default=str)[:4000] if res is not None else None
+        args = ev.arguments
+        if ev.tool_id == "http_call" and isinstance(args, dict) and args.get("url"):
+            from tools.http_tools import mask_url        # signature / jeton de l'URL jamais journalisés
+            args = {**args, "url": mask_url(str(args["url"]))}
         self.sql.execute(f"""
             INSERT INTO {self.s.table('tool_calls')} (call_id, conversation_id, agent_id, tool_id, arguments, status,
               result_preview, error, duration_ms, user_name, created_at)
             VALUES (:id, :c, :a, :t, :args, :st, CAST(:p AS STRING), CAST(:e AS STRING), CAST(:d AS BIGINT), :u, current_timestamp())""",
             {"id": ev.call_id, "c": conversation_id, "a": agent_id, "t": ev.tool_id,
-             "args": json.dumps(ev.arguments, ensure_ascii=False, default=str), "st": ev.status,
+             "args": json.dumps(args, ensure_ascii=False, default=str), "st": ev.status,
              "p": preview, "e": ev.error, "d": int(ev.duration_ms), "u": user})
 
     def recent_agent_errors(self, agent_id: str, limit: int = 15) -> list[dict]:
