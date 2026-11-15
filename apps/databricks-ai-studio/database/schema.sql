@@ -124,3 +124,32 @@ CREATE TABLE IF NOT EXISTS dataops_dev.ai_studio.tool_versions (
 ALTER TABLE dataops_dev.ai_studio.agents ADD COLUMNS (handle STRING COMMENT 'Nom d''appel @ (unique)',
   persona STRING COMMENT 'Rôle affiché après le prénom', tagline STRING COMMENT 'Accroche de la liste @',
   call_examples STRING COMMENT 'Liste JSON des exemples', aliases STRING COMMENT 'Liste JSON des anciens noms');
+
+-- Équipes d'agents
+CREATE TABLE IF NOT EXISTS dataops_dev.ai_studio.teams (
+  team_id STRING NOT NULL COMMENT 'Identifiant unique (uuid hex)',
+  name STRING NOT NULL COMMENT 'Nom affiché de l''équipe',
+  handle STRING NOT NULL COMMENT 'Nom d''appel @ (unique avec ceux des agents)',
+  mission STRING COMMENT 'Mission en une phrase (affichée dans la liste @)',
+  filiere STRING COMMENT 'Supply Chain | PTE | UDR | Transverse',
+  icon STRING COMMENT 'Icône Material',
+  lead_agent_id STRING COMMENT 'Agent chef d''équipe (obligatoire au-delà d''un membre)',
+  human_owner STRING COMMENT 'Responsable humain (Data Owner / Data Steward), e-mail ou vide = à désigner',
+  status STRING NOT NULL COMMENT 'brouillon | publie | archive',
+  owner STRING NOT NULL COMMENT 'Créateur de l''équipe dans DISCOVERY',
+  created_at TIMESTAMP NOT NULL, updated_at TIMESTAMP NOT NULL,
+  CONSTRAINT teams_pk PRIMARY KEY (team_id)
+) COMMENT 'Équipes d''agents DISCOVERY (grain : 1 ligne par équipe)';
+CREATE TABLE IF NOT EXISTS dataops_dev.ai_studio.team_members (
+  team_id STRING NOT NULL, agent_id STRING NOT NULL,
+  role STRING NOT NULL COMMENT 'chef | membre',
+  is_primary BOOLEAN COMMENT 'Équipe principale de l''agent',
+  position INT COMMENT 'Ordre d''affichage',
+  added_by STRING, added_at TIMESTAMP,
+  CONSTRAINT team_members_pk PRIMARY KEY (team_id, agent_id)
+) COMMENT 'Appartenance des agents aux équipes (grain : 1 ligne par équipe et agent)';
+CREATE TABLE IF NOT EXISTS dataops_dev.ai_studio.team_history (
+  team_id STRING NOT NULL, changed_at TIMESTAMP NOT NULL, changed_by STRING NOT NULL,
+  action STRING NOT NULL COMMENT 'creation | modification | publication | retrait | archivage',
+  detail STRING COMMENT 'Description lisible du changement', snapshot STRING COMMENT 'État complet après changement (JSON)'
+) COMMENT 'Historique des modifications d''équipes (grain : 1 ligne par changement)';

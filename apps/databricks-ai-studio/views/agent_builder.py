@@ -194,6 +194,18 @@ with st.container(border=True):
             "Appelez-moi pour… (un exemple par ligne, 3 au plus)", "\n".join(b.get("call_examples") or []),
             height=90).splitlines() if x.strip()][:_p.MAX_EXAMPLES]
         st.caption(f"Aperçu : @{b['handle'] or '…'} · {_p.display(b) or '…'} · {_p.AI_BADGE}")
+        _teams = state.teams()
+        _in = [t for t in _teams if b.get("agent_id") and (b["agent_id"] in t["members"] or b["agent_id"] == t.get("lead_agent_id"))]
+        if _in:
+            st.caption("Équipe(s) : " + ", ".join(f"{t['name']} (@{t['handle']})" for t in _in))
+        _can = [t for t in _teams if t.get("owner") == user.email or state.team_repository().is_admin(user.email)]
+        _opts = [""] + [t["team_id"] for t in _can if t not in _in]
+        b["join_team"] = st.selectbox("Rejoindre une équipe (facultatif)", _opts,
+                                      index=_opts.index(b.get("join_team")) if b.get("join_team") in _opts else 0,
+                                      format_func=lambda x: "—" if not x else next(
+                                          f"Équipe {t['name']} (@{t['handle']})" for t in _can if t["team_id"] == x),
+                                      help="L'agent devient membre ; l'équipe repasse en brouillon si vous n'êtes pas "
+                                           "administrateur.")
         b["description"] = st.text_area("Description", b["description"], max_chars=500)
         c1, c2 = st.columns(2)
         b["icon"] = c1.selectbox("Icône", ICONS, index=ICONS.index(b["icon"]) if b["icon"] in ICONS else 0,
@@ -313,6 +325,16 @@ def save(status: str):
         else:
             b["agent_id"] = repo.create_agent(meta, cfg, user.email, status)
             st.success(f"Agent créé ({status}).")
+        if b.get("join_team"):
+            try:
+                _t = next(t for t in state.teams() if t["team_id"] == b["join_team"])
+                state.team_repository().save({**_t, "members": _t["members"] + [b["agent_id"]],
+                                              "primary": _t["primary"] + [b["agent_id"]]}, user.email,
+                                             note=f"Ajout de {b['name']} depuis Agent Builder")
+                st.success(f"{b['name']} a rejoint l'équipe {_t['name']}.")
+                b["join_team"] = ""
+            except Exception as e:  # noqa: BLE001
+                st.warning(f"Agent enregistré, mais l'ajout à l'équipe a échoué : {e}")
         state.refresh_data()
     except Exception as e:  # noqa: BLE001
         st.error(f"Enregistrement impossible : {e}")

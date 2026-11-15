@@ -37,14 +37,14 @@
     let html = '<div style="font-size:12px;color:#6B6475;padding:7px 12px 4px">Agents disponibles</div>';
     items.forEach(function (a, i) {
       const ini = a.name.split(/\s+/).filter(Boolean).slice(0, 1).map(function (w) { return w[0]; }).join("").toUpperCase();
-      const head = (a.handle ? "@" + a.handle + " · " : "") + a.name + (a.persona ? ", " + a.persona : "");
+      const head = (a.handle ? "@" + a.handle + " · " : "") + a.name + (a.persona ? (a.kind === "team" ? " · " : ", ") + a.persona : "");
       const sub = a.tagline || a.category || "";
       html += '<div data-i="' + i + '" style="display:flex;align-items:center;gap:10px;padding:7px 12px;cursor:pointer;' +
         (i === active ? "background:#FBF2F7;" : "") + '">' +
         '<div style="width:26px;height:26px;border-radius:8px;background:#FBF2F7;color:#B0124F;border:1px solid #EAD3E0;' +
         'font-weight:700;font-size:11px;display:flex;align-items:center;justify-content:center;flex:none">' + L.escapeHtml(ini) +
         '</div><div style="min-width:0"><div style="color:#2B1B33;font-size:14px;font-weight:600">' + L.escapeHtml(head) +
-        ' <span style="font-weight:500;font-size:10px;color:#7A3E9D;border:1px solid #E3D3EC;border-radius:6px;padding:0 5px">Agent IA</span></div>' +
+        ' <span style="font-weight:500;font-size:10px;color:#7A3E9D;border:1px solid #E3D3EC;border-radius:6px;padding:0 5px">' + (a.kind === "team" ? "Équipe" : "Agent IA") + '</span></div>' +
         (sub ? '<div style="color:#6B6475;font-size:12px;white-space:normal">' + L.escapeHtml(sub) + "</div>" : "") + "</div></div>";
     });
     b.innerHTML = html;

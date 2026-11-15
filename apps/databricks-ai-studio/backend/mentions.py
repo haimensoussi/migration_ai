@@ -42,7 +42,8 @@ def _keys(agents: list[dict]) -> list[tuple[str, dict]]:
         extra = [a.get("handle")] + list(a.get("aliases") or [])
         for k in {x for e in extra if e for x in (norm(str(e)), slug(str(e)))}:
             keys.append((k, a))
-        firsts.setdefault(slug(name).split("-")[0], []).append(a)
+        if a.get("kind") != "team":
+            firsts.setdefault(slug(name).split("-")[0], []).append(a)
     for first, lst in firsts.items():           # alias court (@sentinelle) seulement s'il est non ambigu
         if len(lst) == 1 and len(first) >= 3:
             keys.append((first, lst[0]))

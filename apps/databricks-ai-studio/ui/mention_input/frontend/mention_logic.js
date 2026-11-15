@@ -19,7 +19,7 @@
   /* Agents correspondant à la saisie : début du nom, du slug ou d'un mot du nom. */
   function filterAgents(agents, query) {
     const q = norm(query).trim();
-    if (!q) return agents.slice(0, 8);
+    if (!q) return agents.slice().sort(function (x, y) { return (x.kind === "team" ? 0 : 1) - (y.kind === "team" ? 0 : 1); }).slice(0, 8);
     const qs = slug(query);
     const scored = [];
     agents.forEach(function (a) {
@@ -33,7 +33,8 @@
       else if (q.length >= 3 && words.some(function (w) { return w.startsWith(q); })) score = 2;
       if (score >= 0) scored.push([score, a]);
     });
-    scored.sort(function (x, y) { return x[0] - y[0] || x[1].name.localeCompare(y[1].name); });
+    const rank = function (a) { return a.kind === "team" ? 0 : 1; };
+    scored.sort(function (x, y) { return x[0] - y[0] || rank(x[1]) - rank(y[1]) || x[1].name.localeCompare(y[1].name); });
     return scored.map(function (x) { return x[1]; }).slice(0, 8);
   }
 

@@ -115,10 +115,33 @@ def build_runtime_for(cfg, on_tool_event=None, conversation_id: str = "", on_sub
     return orch.prepare(cfg, on_tool_event)
 
 
+def team_repository():
+    from backend.team_repository import TeamRepository
+    return TeamRepository(repository())
+
+
+def teams(force: bool = False) -> list[dict]:
+    if force or "_teams_cache" not in st.session_state:
+        try:
+            st.session_state["_teams_cache"] = team_repository().list_teams()
+        except Exception:  # noqa: BLE001  (tables absentes : pas d'équipes)
+            st.session_state["_teams_cache"] = []
+    return st.session_state["_teams_cache"]
+
+
 def mentionable_agents() -> list[dict]:
-    """Agents publiés ou dont l'utilisateur est propriétaire (les agents archivés sont déjà exclus)."""
+    """Équipes publiées (ou à soi) puis agents publiés ou dont l'utilisateur est propriétaire."""
+    from backend import teams as T
     email = current_user().email
-    return [a for a in agents() if a.get("status") == "publie" or a.get("owner") == email]
+    visible = [a for a in agents() if a.get("status") == "publie" or a.get("owner") == email]
+    ids = {a["agent_id"] for a in visible}
+    entries = []
+    for t in teams():
+        if t.get("status") == "publie" or t.get("owner") == email:
+            e = T.mention_entry(T.normalize(t) | {"owner": t.get("owner")}, visible)
+            if e and e["agent_id"] in ids:
+                entries.append(e)
+    return entries + visible
 
 
 def build_designer():
@@ -140,6 +163,7 @@ def build_tool_designer():
 def refresh_data():
     cached_tools.clear()
     st.session_state.pop("_agents_cache", None)
+    st.session_state.pop("_teams_cache", None)
 
 
 def agents(force: bool = False) -> list[dict]:

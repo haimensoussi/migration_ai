@@ -48,7 +48,7 @@ class AgentRepository:
         """Identité de l'agent (prénom = colonne name ; nom d'appel, rôle, accroche, exemples, anciens noms)."""
         from backend import personas
         p = personas.normalize(persona)
-        errs = personas.validate(p, self.list_agents(), agent_id)
+        errs = personas.validate(p, self.list_agents() + self._team_keys(), agent_id)
         if errs:
             raise ValueError(" ".join(errs))
         self.sql.execute(f"""
@@ -104,10 +104,20 @@ class AgentRepository:
             self.set_persona(agent_id, meta)
         return agent_id
 
+    def _team_keys(self) -> list[dict]:
+        """Noms d'appel des équipes actives, réservés face aux agents (table absente : aucune équipe)."""
+        try:
+            rows = self.sql.query(f"SELECT team_id, name, handle FROM {self.s.table('teams')} "
+                                  "WHERE status <> 'archive'")["rows"]
+            return [{"agent_id": "team:" + r["team_id"], "name": f"Équipe {r['name']}", "handle": r["handle"]}
+                    for r in rows if r.get("team_id") and r.get("handle")]
+        except Exception:  # noqa: BLE001
+            return []
+
     def _check_persona(self, meta: dict, agent_id: str) -> None:
         if meta.get("handle"):
             from backend import personas
-            errs = personas.validate(personas.normalize(meta), self.list_agents(), agent_id)
+            errs = personas.validate(personas.normalize(meta), self.list_agents() + self._team_keys(), agent_id)
             if errs:
                 raise ValueError(" ".join(errs))
 

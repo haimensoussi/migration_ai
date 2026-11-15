@@ -17,7 +17,8 @@ class Settings:
     max_rows: int = 200
     sql_timeout_s: int = 120
     max_iterations: int = 6
-    tool_admins: tuple = ()   # e-mails autorisés à publier les outils qui écrivent ou envoient (AI_STUDIO_TOOL_ADMINS)
+    tool_admins: tuple = ()
+    team_admins: tuple = ()   # e-mails autorisés à publier les équipes (AI_STUDIO_TEAM_ADMINS ; défaut : tool_admins)   # e-mails autorisés à publier les outils qui écrivent ou envoient (AI_STUDIO_TOOL_ADMINS)
 
     @property
     def prefix(self) -> str:
@@ -36,6 +37,7 @@ def load_settings() -> Settings:
         default_model=os.environ.get("AI_STUDIO_DEFAULT_MODEL", "databricks-claude-sonnet-4-6"),
         max_rows=int(os.environ.get("AI_STUDIO_MAX_ROWS", "200")),
         sql_timeout_s=int(os.environ.get("AI_STUDIO_SQL_TIMEOUT_S", "120")),
+        team_admins=tuple(e.strip().lower() for e in os.environ.get("AI_STUDIO_TEAM_ADMINS", "").split(",") if e.strip()),
         tool_admins=tuple(e.strip().lower() for e in os.environ.get("AI_STUDIO_TOOL_ADMINS", "").split(",") if e.strip()),
     )
     for v in (s.catalog, s.schema):

@@ -163,9 +163,9 @@ def render_chat(cfg: AgentConfig, key: str, persist: bool = True, category: str 
     repo = state.repository()
     from backend import personas
     everyone = state.mentionable_agents() or []
-    _DISPLAY.update({a["name"]: personas.display(a) for a in everyone if a.get("name")})
+    _DISPLAY.update({a["name"]: personas.display(a) for a in everyone if a.get("name") and a.get("kind") != "team"})
     mentionables = [a for a in everyone if a.get("agent_id") != cfg.agent_id]
-    me_row = next((a for a in everyone if a.get("agent_id") == cfg.agent_id), {})
+    me_row = next((a for a in everyone if a.get("agent_id") == cfg.agent_id and a.get("kind") != "team"), {})
 
     def make_logger(agent_id: str):
         def _log(ev: ToolEvent):
