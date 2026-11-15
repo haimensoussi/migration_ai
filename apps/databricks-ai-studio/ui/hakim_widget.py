@@ -131,6 +131,6 @@ def render(page_title: str) -> None:
     except TypeError:   # version de Streamlit sans clé de conteneur : bouton dans la barre latérale
         box = st.sidebar
     with box:
-        clicked = st.button(label, icon=":material/assistant:", key="hakim_open", help=tip)
+        clicked = st.button(label, key="hakim_open", help=tip)
     if clicked:
         _panel(page_context(page_title))
