@@ -18,6 +18,7 @@ from backend.tool_registry import ToolContext, ToolError
 
 PAGES = {
     "accueil": ("views/accueil.py", "Accueil", "Vue d'ensemble et raccourcis"),
+    "hakimai": ("views/hakim.py", "HakimAI", "Poser une question à l'architecte de la plateforme"),
     "mes_agents": ("views/mes_agents.py", "Mes agents", "Rechercher, ouvrir, archiver ses agents"),
     "equipes": ("views/equipes.py", "Équipes", "Organigramme, création et gestion des équipes d'agents"),
     "agent_builder": ("views/agent_builder.py", "Agent Builder", "Créer ou modifier un agent, avec l'assistant de conception"),
@@ -46,6 +47,8 @@ ACTIONS = {   # actions réellement disponibles sur chaque page (référence pou
     "Catalogue d'outils": ["consulter les outils et leurs statuts", "créer un outil SQL paramétré, une fonction UC ou un "
                            "appel HTTP via connexion UC, avec l'assistant", "tester puis enregistrer un outil, voir ses versions"],
     "Monitoring": ["voir les appels d'outils récents, les taux d'erreur et les latences"],
+    "HakimAI": ["poser une question sur la plateforme", "obtenir un diagnostic ou une visite guidée",
+                "ouvrir la page proposée via le bouton « Ouvrir … »", "recommencer une conversation"],
 }
 
 GUIDE = {

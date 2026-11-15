@@ -12,6 +12,7 @@ apply_theme()
 pages = {
     "Plateforme": [
         st.Page("views/accueil.py", title="Accueil", icon=":material/home:", default=True),
+        st.Page("views/hakim.py", title="HakimAI", icon=":material/assistant:"),
         st.Page("views/mes_agents.py", title="Mes agents", icon=":material/work:"),
         st.Page("views/equipes.py", title="Équipes", icon=":material/groups:"),
         st.Page("views/agent_builder.py", title="Agent Builder", icon=":material/construction:"),
@@ -28,7 +29,4 @@ pages = {
 }
 pg = st.navigation(pages)
 render_header()
-from ui.hakim_widget import render as render_hakim  # noqa: E402
-
-render_hakim(pg.title)
 pg.run()
