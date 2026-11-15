@@ -66,6 +66,7 @@ class ToolContext:
     conversation_id: str = ""      # transmis aux outils externes (ex. sessionId Power Automate)
     user_email: str = ""
     delegate: Any = None           # orchestration : fonction (agent, question) -> résultat, fournie au superviseur
+    platform: Any = None           # copilote HakimAI : accès en lecture à la plateforme, filtré par les droits
 
 
 ALLOWED_EXECUTOR_PREFIX = "tools."

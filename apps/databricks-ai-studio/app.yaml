@@ -22,6 +22,9 @@ env:
   # Administrateurs des outils : seuls habilités à publier un outil qui écrit ou envoie des données
   - name: AI_STUDIO_TOOL_ADMINS
     value: "phsi10251@commun.ad.sncf.fr"
+  # Copilote HakimAI : "false" le désactive sans redéploiement du code
+  - name: AI_STUDIO_HAKIM_ENABLED
+    value: "true"
   # Administrateurs des équipes : seuls habilités à publier une équipe d'agents
   - name: AI_STUDIO_TEAM_ADMINS
     value: "phsi10251@commun.ad.sncf.fr"
