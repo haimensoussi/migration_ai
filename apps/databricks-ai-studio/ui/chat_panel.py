@@ -94,6 +94,11 @@ from backend.personas import AI_BADGE  # noqa: E402
 _DISPLAY: dict[str, str] = {}   # nom de l'agent -> « Prénom, rôle » (alimenté à chaque affichage du chat)
 
 
+def mention_key(key: str, a: dict) -> str:
+    """Clé de bouton unique : une équipe partage l'identifiant de son chef, d'où le type et le nom d'appel."""
+    return f"mention_{key}_{a.get('kind') or 'agent'}_{a.get('handle') or a['agent_id']}"
+
+
 def _shown(name: str) -> str:
     return f"{_DISPLAY.get(name, name)} · {AI_BADGE}" if name else name
 
@@ -293,7 +298,7 @@ def render_chat(cfg: AgentConfig, key: str, persist: bool = True, category: str 
         st.caption("Adresser le prochain message à un agent (ou tapez @ dans votre message) :")
         cols = st.columns(min(len(mentionables), 5))
         for i, a in enumerate(mentionables[:5]):
-            if cols[i].button(f"@{personas.mention(a)}", key=f"mention_{key}_{a['agent_id']}", use_container_width=True,
+            if cols[i].button(f"@{personas.mention(a)}", key=mention_key(key, a), use_container_width=True,
                               help=" — ".join(x for x in (personas.display(a), a.get("tagline")) if x)):
                 s["mention_prefix"] = personas.mention(a)
                 st.rerun()

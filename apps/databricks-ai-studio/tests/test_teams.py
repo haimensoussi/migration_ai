@@ -117,3 +117,19 @@ def test_only_owner_or_admin_edits():
     with pytest.raises(PermissionError, match="créateur"):
         r.save({"team_id": "q", "name": "Qualité", "handle": "qualite", "members": ["c", "v"], "lead_agent_id": "j"},
                "autre@sncf.fr")
+
+
+
+def test_mention_buttons_have_unique_keys_when_team_shares_lead_id():
+    import importlib
+    import sys
+    import types as _t
+    sys.modules.setdefault("streamlit", _t.ModuleType("streamlit"))
+    try:
+        cp = importlib.import_module("ui.chat_panel")
+    except Exception:  # noqa: BLE001  (dépendances Streamlit absentes : on teste la règle directement)
+        pytest.skip("chat_panel non importable hors Streamlit")
+    team = T.mention_entry(T.normalize(Q), AG)            # même agent_id que Jules
+    pool = [team] + AG
+    keys = [cp.mention_key("k", a) for a in pool]
+    assert team["agent_id"] == "j" and len(keys) == len(set(keys))
