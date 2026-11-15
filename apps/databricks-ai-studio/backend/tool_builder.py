@@ -14,10 +14,13 @@ from dataclasses import dataclass, field
 
 from backend.sql_guard import SqlGuardError, check_read_only, extract_table_refs
 from backend.tool_registry import ToolContext, ToolError, ToolRegistry, ToolSpec
-from tools.custom_tools import PARAM_NAME, UC_NAME, placeholders
+from tools.custom_tools import (METHODS, PARAM_NAME, UC_NAME, check_http_config, http_parts, http_placeholders,
+                                placeholders)
 
-EXECUTORS = {"sql_template": "tools.custom_tools:sql_template", "uc_function": "tools.custom_tools:uc_function"}
-TYPE_LABELS = {"sql_template": "Requête SQL paramétrée", "uc_function": "Fonction Unity Catalog"}
+EXECUTORS = {"sql_template": "tools.custom_tools:sql_template", "uc_function": "tools.custom_tools:uc_function",
+             "http_connection": "tools.custom_tools:http_call"}
+TYPE_LABELS = {"sql_template": "Requête SQL paramétrée", "uc_function": "Fonction Unity Catalog",
+               "http_connection": "Connecteur HTTP (connexion Unity Catalog)"}
 TOOL_ID = re.compile(r"^[a-z][a-z0-9_]{2,39}$")
 PARAM_TYPES = ("string", "integer", "number", "boolean")
 CATEGORIES = ["Données", "Analyse", "Qualité des données", "Visualisation", "Exploitation", "Gouvernance",
@@ -27,6 +30,8 @@ MAX_PARAMS = 10
 MAX_ROWS = 1000
 OUTPUT_SCHEMA = {"type": "object", "properties": {"colonnes": {"type": "array"}, "lignes": {"type": "array"},
                                                   "nombre_lignes": {"type": "integer"}, "tronque": {"type": "boolean"}}}
+HTTP_OUTPUT_SCHEMA = {"type": "object", "properties": {"statut_http": {"type": "integer"}, "reponse": {"type": "string"},
+                                                       "json": {}, "tronque": {"type": "boolean"}}}
 _PLAN_ERROR = re.compile(r"error occurred during query planning|AnalysisException", re.I)
 
 
@@ -53,6 +58,18 @@ def _clamp_rows(v) -> int:
         return 100
 
 
+def _json_obj(v, default):
+    if isinstance(v, str):
+        v = v.strip()
+        if not v:
+            return default
+        try:
+            return json.loads(v)
+        except ValueError:
+            return {"__invalide__": v}
+    return default if v is None else v
+
+
 def normalize(p: dict) -> dict:
     """Proposition (copilote ou formulaire) -> brouillon homogène."""
     params = []
@@ -65,8 +82,16 @@ def normalize(p: dict) -> dict:
                        "description": str(x.get("description") or "").strip(),
                        "required": bool(x.get("required", True)),
                        "enum": [str(v) for v in enum] if isinstance(enum, list) and enum else None,
-                       "example": x.get("example")})
-    kind = "uc_function" if p.get("type") == "uc_function" or (p.get("function") and not p.get("sql")) else "sql_template"
+                       "example": None if x.get("example") in (None, "") else str(x.get("example"))})
+    if p.get("type") in EXECUTORS:          # type explicite prioritaire
+        kind = p["type"]
+    elif p.get("connection") and not p.get("sql"):
+        kind = "http_connection"
+    elif p.get("type") == "uc_function" or (p.get("function") and not p.get("sql")):
+        kind = "uc_function"
+    else:
+        kind = "sql_template"
+    http = kind == "http_connection"
     return {"tool_id": str(p.get("tool_id") or "").strip().lower() or slug(p.get("name", "")),
             "name": str(p.get("name") or "").strip()[:80],
             "description": str(p.get("description") or "").strip(),
@@ -75,6 +100,12 @@ def normalize(p: dict) -> dict:
             "sql": str(p.get("sql") or "").strip().rstrip(";").strip() if kind == "sql_template" else "",
             "function": str(p.get("function") or "").strip() if kind == "uc_function" else "",
             "function_kind": "table" if p.get("function_kind") == "table" else "scalar",
+            "connection": str(p.get("connection") or "").strip() if http else "",
+            "method": str(p.get("method") or "GET").strip().upper() if http else "",
+            "path": str(p.get("path") or "/").strip() if http else "",
+            "body": _json_obj(p.get("body"), None) if http else None,
+            "query": _json_obj(p.get("query"), {}) if http else {},
+            "headers": _json_obj(p.get("headers"), {}) if http else {},
             "parameters": params,
             "max_rows": _clamp_rows(p.get("max_rows", 100)),
             "hypotheses": [str(h) for h in p.get("hypotheses") or []]}
@@ -106,7 +137,7 @@ def example_args(draft: dict) -> dict:
 
 def fingerprint(draft: dict) -> str:
     keys = ("tool_id", "name", "description", "category", "type", "sql", "function", "function_kind",
-            "parameters", "max_rows")
+            "connection", "method", "path", "body", "query", "headers", "parameters", "max_rows")
     return hashlib.sha256(json.dumps({k: draft.get(k) for k in keys}, sort_keys=True, default=str).encode()).hexdigest()
 
 
@@ -185,6 +216,44 @@ def check(draft: dict, existing: dict[str, ToolSpec], owner: str, sql=None) -> C
                         c.errors.append("La requête ne compile pas : " + text[:400])
                 except Exception as e:  # noqa: BLE001
                     c.errors.append(f"La requête ne compile pas : {str(e)[:400]}")
+    elif draft["type"] == "http_connection":
+        for k in ("body", "query", "headers"):
+            v = draft.get(k)
+            if isinstance(v, dict) and "__invalide__" in v:
+                c.errors.append(f"{k} : JSON invalide.")
+                return c
+        if not isinstance(draft.get("query"), dict) or not isinstance(draft.get("headers"), dict):
+            c.errors.append("Paramètres de requête et en-têtes : objets JSON attendus.")
+            return c
+        cfg = http_config(draft)
+        try:
+            check_http_config(cfg)
+        except ToolError as e:
+            c.errors.append(str(e))
+            return c
+        used = http_placeholders(cfg)
+        if sorted(set(used) - set(names)):
+            c.errors.append("Paramètres utilisés ({{nom}}) mais non déclarés : " + ", ".join(sorted(set(used) - set(names))))
+        if sorted(set(names) - set(used)):
+            c.errors.append("Paramètres déclarés mais absents du chemin, du corps ou de la requête : "
+                            + ", ".join(sorted(set(names) - set(used))))
+        if draft["method"] != "GET":
+            c.warnings.append(f"Appel {draft['method']} : l'outil enverra ou modifiera des données. Il demandera une "
+                              "validation humaine à chaque appel et seul un administrateur des outils peut le publier.")
+        if sql is not None and c.ok:
+            try:
+                sql.query(f"DESCRIBE CONNECTION {quote(draft['connection'])}", row_limit=20)
+            except Exception as e:  # noqa: BLE001
+                c.errors.append(f"Connexion introuvable ou inaccessible : {draft['connection']} ({str(e)[:200]})")
+            if c.ok:
+                stmt, params = http_parts(cfg, example_args(draft))
+                try:
+                    plan = sql.query("EXPLAIN " + stmt, params=params, row_limit=5)
+                    text = " ".join(str(v) for r in plan.get("rows") or [] for v in r.values())
+                    if _PLAN_ERROR.search(text):
+                        c.errors.append("L'appel ne compile pas : " + text[:400])
+                except Exception as e:  # noqa: BLE001
+                    c.errors.append(f"L'appel ne compile pas : {str(e)[:400]}")
     elif draft["type"] == "uc_function":
         if not UC_NAME.match(draft["function"]):
             c.errors.append("Fonction : nom complet catalog.schema.fonction attendu.")
@@ -194,6 +263,12 @@ def check(draft: dict, existing: dict[str, ToolSpec], owner: str, sql=None) -> C
             except Exception as e:  # noqa: BLE001
                 c.errors.append(f"Fonction inaccessible : {draft['function']} ({str(e)[:200]})")
     return c
+
+
+def http_config(draft: dict) -> dict:
+    return {"type": "http_connection", "connection": draft["connection"], "method": draft["method"],
+            "path": draft["path"], "body": draft.get("body"), "query": draft.get("query") or {},
+            "headers": draft.get("headers") or {}, "max_chars": 4000}
 
 
 def build_spec(draft: dict, owner: str, status: str = "brouillon", version: str = "0") -> ToolSpec:
@@ -210,14 +285,18 @@ def build_spec(draft: dict, owner: str, status: str = "brouillon", version: str 
         stmt = check_read_only(draft["sql"])
         config = {"type": "sql_template", "sql": stmt, "tables": sorted(extract_table_refs(stmt)),
                   "max_rows": draft["max_rows"], "examples": example_args(draft)}
+    elif draft["type"] == "http_connection":
+        config = {**http_config(draft), "examples": example_args(draft)}
     else:
         config = {"type": "uc_function", "function": draft["function"], "kind": draft["function_kind"],
                   "params": names, "max_rows": draft["max_rows"], "examples": example_args(draft)}
+    writes = draft["type"] == "http_connection" and draft["method"] != "GET"
     return ToolSpec(tool_id=draft["tool_id"], name=draft["name"], category=draft["category"],
                     description=draft["description"],
                     input_schema={"type": "object", "properties": props, "required": required},
-                    output_schema=OUTPUT_SCHEMA, executor=EXECUTORS[draft["type"]], identity="utilisateur",
-                    requires_confirmation=False, read_only=True, status=status, version=version,
+                    output_schema=HTTP_OUTPUT_SCHEMA if draft["type"] == "http_connection" else OUTPUT_SCHEMA,
+                    executor=EXECUTORS[draft["type"]], identity="utilisateur",
+                    requires_confirmation=writes, read_only=not writes, status=status, version=version,
                     config=config, owner=owner)
 
 
@@ -227,6 +306,9 @@ def draft_from_spec(spec: ToolSpec) -> dict:
     return normalize({"tool_id": spec.tool_id, "name": spec.name, "description": spec.description,
                       "category": spec.category, "type": cfg.get("type"), "sql": cfg.get("sql", ""),
                       "function": cfg.get("function", ""), "function_kind": cfg.get("kind", "scalar"),
+                      "connection": cfg.get("connection", ""), "method": cfg.get("method", ""),
+                      "path": cfg.get("path", ""), "body": cfg.get("body"), "query": cfg.get("query"),
+                      "headers": cfg.get("headers"),
                       "max_rows": cfg.get("max_rows", 100),
                       "parameters": [{"name": k, "type": v.get("type", "string"), "description": v.get("description", ""),
                                       "required": k in req, "enum": v.get("enum"), "example": ex.get(k)}
@@ -238,6 +320,9 @@ def run_test(spec: ToolSpec, args: dict, ctx: ToolContext) -> dict:
     clean = {k: v for k, v in args.items() if v is not None}
     try:
         out = ToolRegistry([spec]).run(spec, ctx, clean)
+        if "statut_http" in out:
+            return {"ok": True, "arguments": clean, "duree_ms": int((time.monotonic() - t0) * 1000),
+                    "statut_http": out["statut_http"], "reponse": out["reponse"][:2000], "tronque": out["tronque"]}
         return {"ok": True, "arguments": clean, "duree_ms": int((time.monotonic() - t0) * 1000),
                 "nombre_lignes": out.get("nombre_lignes"), "colonnes": out.get("colonnes"),
                 "apercu": (out.get("lignes") or [])[:10], "tronque": out.get("tronque")}

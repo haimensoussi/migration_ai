@@ -126,14 +126,25 @@ class AgentRepository:
 
     # -- Outils créés -----------------------------------------------------------
     def tool_owner(self, tool_id: str) -> tuple[bool, str]:
-        r = self.sql.query(f"SELECT executor, coalesce(owner, '') AS owner FROM {self.s.table('tools')} "
+        exists, owner, _ = self._tool_info(tool_id)
+        return exists, owner
+
+    def _tool_info(self, tool_id: str) -> tuple[bool, str, bool]:
+        r = self.sql.query(f"SELECT executor, coalesce(owner, '') AS owner, read_only FROM {self.s.table('tools')} "
                            "WHERE tool_id = :t", {"t": tool_id})
         if not r["rows"]:
-            return False, ""
+            return False, "", True
         row = r["rows"][0]
+        ro = row["read_only"] if isinstance(row["read_only"], bool) else str(row["read_only"]).lower() == "true"
         if not str(row["executor"]).startswith("tools.custom_tools:"):
-            return True, "__integre__"
-        return True, row["owner"]
+            return True, "__integre__", ro
+        return True, row["owner"], ro
+
+    def _check_publish(self, read_only: bool, user: str) -> None:
+        """Un outil qui écrit ou envoie des données ne peut être publié que par un administrateur des outils."""
+        if not read_only and user.lower() not in set(getattr(self.s, "tool_admins", ()) or ()):
+            raise PermissionError("Cet outil écrit ou envoie des données : seul un administrateur des outils "
+                                  "(AI_STUDIO_TOOL_ADMINS) peut le publier. Enregistrez-le en brouillon.")
 
     def save_custom_tool(self, spec: ToolSpec, user: str, test_result: dict, note: str = "") -> int:
         """Enregistre une nouvelle version d'un outil créé. Refuse d'écraser un outil intégré ou d'un autre utilisateur."""
@@ -142,6 +153,8 @@ class AgentRepository:
         exists, owner = self.tool_owner(spec.tool_id)
         if exists and owner != user:
             raise PermissionError(f"L'identifiant « {spec.tool_id} » appartient à un autre outil.")
+        if spec.status == "publie":
+            self._check_publish(spec.read_only, user)
         r = self.sql.query(f"SELECT coalesce(max(version), 0) + 1 AS v FROM {self.s.table('tool_versions')} "
                            "WHERE tool_id = :t", {"t": spec.tool_id})
         v = int(r["rows"][0]["v"])
@@ -159,9 +172,11 @@ class AgentRepository:
     def set_tool_status(self, tool_id: str, status: str, user: str) -> None:
         if status not in ("brouillon", "publie", "retire"):
             raise ValueError(f"Statut inconnu : {status}")
-        exists, owner = self.tool_owner(tool_id)
+        exists, owner, read_only = self._tool_info(tool_id)
         if not exists or owner != user:
             raise PermissionError("Seul le propriétaire d'un outil créé peut changer son statut.")
+        if status == "publie":
+            self._check_publish(read_only, user)
         self.sql.execute(f"UPDATE {self.s.table('tools')} SET status = :s, updated_at = current_timestamp() "
                          "WHERE tool_id = :t AND owner = :u", {"s": status, "t": tool_id, "u": user})
 

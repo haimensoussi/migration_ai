@@ -36,6 +36,12 @@ PROPOSE_TOOL = {"type": "function", "function": {
         "sql": {"type": "string", "description": "sql_template : une requête SELECT avec des paramètres :nom"},
         "function": {"type": "string", "description": "uc_function : catalog.schema.fonction"},
         "function_kind": {"type": "string", "enum": ["scalar", "table"]},
+        "connection": {"type": "string", "description": "http_connection : nom de la connexion HTTP Unity Catalog"},
+        "method": {"type": "string", "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"]},
+        "path": {"type": "string", "description": "http_connection : chemin relatif, ex. /api/items/{{id}}"},
+        "body": {"type": "object", "description": "http_connection : modèle de corps JSON avec {{nom}}"},
+        "query": {"type": "object", "description": "http_connection : paramètres de requête avec {{nom}}"},
+        "headers": {"type": "object", "description": "http_connection : en-têtes fixes sans identifiants"},
         "parameters": {"type": "array", "items": {"type": "object", "properties": {
             "name": {"type": "string"}, "type": {"type": "string", "enum": list(tb.PARAM_TYPES)},
             "description": {"type": "string"}, "required": {"type": "boolean"},
@@ -74,8 +80,14 @@ def designer_prompt(existing: list[ToolSpec], scope: str | None = None) -> str:
         "Types d'outils disponibles (aucun autre) :",
         "- sql_template : UNE requête SELECT en lecture seule, avec des paramètres nommés :nom.",
         "- uc_function : appel d'une fonction Unity Catalog existante (catalog.schema.fonction), scalar ou table.",
-        "Les écritures (INSERT, UPDATE, MERGE...), les appels HTTP et le lancement de Jobs ne sont pas encore "
-        "disponibles : dans ce cas, appelle propose_tool avec feasible = false et explique ce qui manque.",
+        "- http_connection : appel HTTP via une connexion HTTP Unity Catalog EXISTANTE (liste : execute_sql avec "
+        "SHOW CONNECTIONS ; les connexions system_* sont interdites). Tu fournis connection, method (GET, POST, PUT, "
+        "PATCH, DELETE), path relatif commençant par /, body (objet JSON, pas pour GET), query (objet JSON) et headers "
+        "(objet JSON, jamais d'identifiants : ils restent dans la connexion). Les valeurs variables s'écrivent {{nom}} "
+        "dans path, body ou query. Tout appel autre que GET exigera une validation humaine.",
+        "- Si aucune connexion adaptée n'existe, appelle propose_tool avec feasible = false et indique la connexion "
+        "à demander à un administrateur du metastore (nom proposé, hôte, type d'authentification).",
+        "Les écritures SQL (INSERT, UPDATE, MERGE...) et le lancement de Jobs ne sont pas disponibles : feasible = false.",
         "",
         "Outils déjà publiés (évite les doublons ; si l'un d'eux suffit, dis-le dans hypotheses) :",
         catalog or "- (aucun)",
@@ -119,7 +131,8 @@ class ToolDesigner:
     def improve(self, current: dict, request: str = "", test_result: dict | None = None) -> ToolDesignResult:
         request = (request or "").strip() or "Améliore la description, les paramètres et la robustesse de la requête."
         keep = {k: current.get(k) for k in ("tool_id", "name", "description", "category", "type", "sql", "function",
-                                            "function_kind", "parameters", "max_rows")}
+                                            "function_kind", "connection", "method", "path", "body", "query",
+                                            "headers", "parameters", "max_rows")}
         parts = [f"Demande d'amélioration : {request}", "", "Outil actuel (JSON) :",
                  json.dumps(keep, ensure_ascii=False, indent=1, default=str)]
         if test_result and not test_result.get("ok"):

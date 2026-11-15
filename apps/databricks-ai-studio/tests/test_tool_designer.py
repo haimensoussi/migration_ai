@@ -102,3 +102,10 @@ def test_scope_in_prompt_and_budget_warning():
     assert res.check.ok
     assert "dataops_dev.description_du_reseau_bronze" in d.model.seen[0][0]["content"]
     assert any("Il te reste 2 étapes" in (m.get("content") or "") for m in d.model.seen[-1] if m["role"] == "user")
+
+
+
+def test_prompt_describes_http_connector_rules():
+    from backend.tool_designer import designer_prompt
+    p = designer_prompt(list(BUILTIN_TOOLS))
+    assert "http_connection" in p and "SHOW CONNECTIONS" in p and "system_*" in p and "{{nom}}" in p

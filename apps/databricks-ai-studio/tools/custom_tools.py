@@ -85,3 +85,93 @@ def uc_function(ctx: ToolContext, spec: ToolSpec, **args) -> dict:
 
 
 uc_function.needs_spec = True
+
+
+# --- Connecteur HTTP (connexion Unity Catalog + http_request, exécuté sur l'entrepôt SQL) -------------------------
+import json as _json
+from urllib.parse import quote as _quote
+
+CONN_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
+METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE")
+HEADER_NAME = re.compile(r"^[A-Za-z0-9-]{1,64}$")
+FORBIDDEN_HEADERS = {"authorization", "proxy-authorization", "cookie", "set-cookie", "x-api-key", "host"}
+TEMPLATE = re.compile(r"\{\{([a-z][a-z0-9_]{0,39})\}\}")
+MAX_CHARS = 20000
+
+
+def http_placeholders(cfg: dict) -> list[str]:
+    """Paramètres {{nom}} utilisés dans le chemin, le corps et les paramètres de requête."""
+    text = (cfg.get("path") or "") + _json.dumps(cfg.get("body")) + _json.dumps(cfg.get("query") or {})
+    return list(dict.fromkeys(TEMPLATE.findall(text)))
+
+
+def _render(obj, args: dict):
+    """Remplace {{nom}} dans un modèle JSON déjà analysé (jamais par concaténation de texte JSON)."""
+    if isinstance(obj, str):
+        whole = TEMPLATE.fullmatch(obj)
+        if whole:
+            return args.get(whole.group(1))          # valeur typée (nombre, booléen, texte, null)
+        return TEMPLATE.sub(lambda m: "" if args.get(m.group(1)) is None else str(args.get(m.group(1))), obj)
+    if isinstance(obj, list):
+        return [_render(x, args) for x in obj]
+    if isinstance(obj, dict):
+        return {k: _render(v, args) for k, v in obj.items()}
+    return obj
+
+
+def check_http_config(cfg: dict) -> None:
+    conn, method, path = str(cfg.get("connection") or ""), str(cfg.get("method") or ""), str(cfg.get("path") or "")
+    if not CONN_NAME.match(conn):
+        raise ToolPermissionError("Nom de connexion invalide.")
+    if conn.lower().startswith("system_"):
+        raise ToolPermissionError("Les connexions système de Databricks ne peuvent pas être utilisées.")
+    if method not in METHODS:
+        raise ToolPermissionError(f"Méthode HTTP non autorisée : {method}.")
+    if not path.startswith("/") or "://" in path or "/../" in path + "/" or "\\" in path:
+        raise ToolPermissionError("Chemin invalide : relatif à la connexion, commençant par /.")
+    for k, v in (cfg.get("headers") or {}).items():
+        if not HEADER_NAME.match(str(k)) or str(k).lower() in FORBIDDEN_HEADERS or any(c in str(v) for c in "\r\n"):
+            raise ToolPermissionError(f"En-tête interdit : {k} (les identifiants restent dans la connexion).")
+    if method == "GET" and cfg.get("body") not in (None, {}, ""):
+        raise ToolPermissionError("Une requête GET n'a pas de corps.")
+
+
+def http_parts(cfg: dict, args: dict) -> tuple[str, dict]:
+    check_http_config(cfg)
+    path = TEMPLATE.sub(lambda m: _quote("" if args.get(m.group(1)) is None else str(args.get(m.group(1))), safe=""),
+                        cfg["path"])
+    body = None if cfg["method"] == "GET" or cfg.get("body") is None else _render(cfg["body"], args)
+    query = {k: str(v) for k, v in (_render(cfg.get("query") or {}, args) or {}).items() if v not in (None, "")}
+    stmt = ("SELECT r.status_code AS status_code, r.text AS text FROM (SELECT http_request("
+            f"conn => '{cfg['connection']}', method => '{cfg['method']}', path => :path, json => :json, "
+            "headers => from_json(:headers, 'map<string,string>'), "
+            "params => from_json(:params, 'map<string,string>')) AS r)")
+    params = {"path": path, "json": None if body is None else _json.dumps(body, ensure_ascii=False),
+              "headers": _json.dumps({str(k): str(v) for k, v in (cfg.get("headers") or {}).items()}),
+              "params": _json.dumps(query, ensure_ascii=False)}
+    return stmt, params
+
+
+def http_call(ctx: ToolContext, spec: ToolSpec, **args) -> dict:
+    cfg = spec.config or {}
+    declared = set((spec.input_schema.get("properties") or {}).keys())
+    if set(http_placeholders(cfg)) != declared:
+        raise ToolError("Paramètres du connecteur et de l'outil incohérents : outil à corriger.")
+    stmt, params = http_parts(cfg, args)
+    rows = ctx.sql.query(stmt, params=params, row_limit=1)["rows"]
+    if not rows:
+        raise ToolError("Erreur technique : aucune réponse du connecteur.")
+    code = int(rows[0].get("status_code") or 0)
+    text = str(rows[0].get("text") or "")
+    limit = max(200, min(int(cfg.get("max_chars") or 4000), MAX_CHARS))
+    if code >= 400 or code == 0:
+        raise ToolError(f"Erreur technique : le service a répondu HTTP {code} : {text[:300]}")
+    out = {"statut_http": code, "reponse": text[:limit], "tronque": len(text) > limit}
+    try:
+        out["json"] = _json.loads(text) if len(text) <= limit else None
+    except ValueError:
+        pass
+    return out
+
+
+http_call.needs_spec = True

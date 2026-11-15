@@ -19,5 +19,8 @@ env:
   # URL du flux Power Automate Smart Office (ressource secret, lecture seule)
   - name: POWER_AUTOMATE_SMART_OFFICE_URL
     valueFrom: smart-office-flow
+  # Administrateurs des outils : seuls habilités à publier un outil qui écrit ou envoie des données
+  - name: AI_STUDIO_TOOL_ADMINS
+    value: "phsi10251@commun.ad.sncf.fr"
   - name: STREAMLIT_BROWSER_GATHER_USAGE_STATS
     value: "false"

@@ -125,8 +125,32 @@ with tab_new:
         kind = st.radio("Type", kinds, index=kinds.index(draft["type"]), format_func=tb.TYPE_LABELS.get,
                         horizontal=True, key=f"td_type_{rev}")
         sql_txt, fn, fn_kind = draft["sql"], draft["function"], draft["function_kind"]
+        http = {k: draft.get(k) for k in ("connection", "method", "path", "body", "query", "headers")}
+
+        def _js(v):
+            return "" if v in (None, {}) else json.dumps(v, ensure_ascii=False, indent=1)
         if kind == "sql_template":
             sql_txt = st.text_area("Requête SQL (paramètres :nom)", draft["sql"], height=160, key=f"td_sql_{rev}")
+        elif kind == "http_connection":
+            h1, h2, h3 = st.columns([2, 1, 3])
+            http["connection"] = h1.text_input("Connexion HTTP Unity Catalog", draft.get("connection") or "",
+                                               key=f"td_conn_{rev}", help="Créée par un administrateur du metastore ; "
+                                               "les identifiants restent dans la connexion.")
+            methods = ["GET", "POST", "PUT", "PATCH", "DELETE"]
+            http["method"] = h2.selectbox("Méthode", methods, index=methods.index(draft.get("method") or "GET")
+                                          if (draft.get("method") or "GET") in methods else 0, key=f"td_meth_{rev}")
+            http["path"] = h3.text_input("Chemin (paramètres {{nom}})", draft.get("path") or "/", key=f"td_path_{rev}")
+            if http["method"] != "GET":
+                http["body"] = st.text_area("Corps JSON (paramètres {{nom}})", _js(draft.get("body")), height=140,
+                                            key=f"td_body_{rev}")
+                st.info("Appel en écriture : validation humaine à chaque appel ; publication réservée aux "
+                        "administrateurs des outils.")
+            else:
+                http["body"] = None
+            q1, q2 = st.columns(2)
+            http["query"] = q1.text_area("Paramètres de requête JSON", _js(draft.get("query")), key=f"td_query_{rev}")
+            http["headers"] = q2.text_area("En-têtes fixes JSON (sans identifiants)", _js(draft.get("headers")),
+                                           key=f"td_head_{rev}")
         else:
             f1, f2 = st.columns([3, 1])
             fn = f1.text_input("Fonction Unity Catalog", draft["function"], key=f"td_fn_{rev}")
@@ -149,7 +173,7 @@ with tab_new:
                   for r in edited.to_dict("records") if str(r.get("name") or "").strip()]
         max_rows = st.number_input("Lignes renvoyées au plus", 1, tb.MAX_ROWS, int(draft["max_rows"]), key=f"td_max_{rev}")
         current = tb.normalize({"tool_id": tool_id, "name": name, "category": category, "description": description,
-                                "type": kind, "sql": sql_txt, "function": fn, "function_kind": fn_kind,
+                                "type": kind, "sql": sql_txt, "function": fn, "function_kind": fn_kind, **http,
                                 "parameters": params, "max_rows": max_rows, "hypotheses": draft["hypotheses"]})
         S["td_draft"] = current
         fp = tb.fingerprint(current)
@@ -200,7 +224,10 @@ with tab_new:
             for wn in tst["warnings"]:
                 st.warning(wn)
             r = tst["result"]
-            if r and r["ok"]:
+            if r and r["ok"] and "statut_http" in r:
+                st.success(f"Test réussi : HTTP {r['statut_http']} en {r['duree_ms']} ms")
+                st.code(r.get("reponse") or "", language="json")
+            elif r and r["ok"]:
                 st.success(f"Test réussi : {r['nombre_lignes']} ligne(s) en {r['duree_ms']} ms"
                            + (" (résultat tronqué à la limite)" if r.get("tronque") else ""))
                 if r.get("apercu"):
