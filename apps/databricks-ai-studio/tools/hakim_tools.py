@@ -87,6 +87,10 @@ class Platform:
     user: str
     is_admin: bool = False
     page: dict = field(default_factory=dict)
+    conv: str = ""                                    # conversation HakimAI (journal d'audit)
+    drafts: dict = field(default_factory=dict)        # brouillons conçus pendant la conversation (lot 2)
+    designer: Any = None                              # fabrique AgentDesigner (droits de l'utilisateur)
+    tool_designer: Any = None                         # fabrique ToolDesigner (droits de l'utilisateur)
 
     def t(self, name: str) -> str:
         return self.repo.s.table(name)

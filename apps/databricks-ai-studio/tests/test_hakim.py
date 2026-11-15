@@ -41,12 +41,14 @@ def run(c, tid, **a):
 
 
 def test_lot1_is_read_only_and_executors_resolve():
-    assert len(hakim.TOOLS) == 12
+    lot1 = [t for t in hakim.TOOLS if t.executor.startswith("tools.hakim_tools:")]
+    assert len(lot1) == 12
+    for t in lot1:
+        assert t.read_only and not t.requires_confirmation
     for t in hakim.TOOLS:
-        assert t.read_only and not t.requires_confirmation and t.executor.startswith("tools.hakim_tools:")
         resolve_executor(t.executor)
     cfg = hakim.config("mod")
-    assert cfg.agent_id == "hakimai" and set(cfg.tool_ids) == set(REG.specs) and "ne crées, ne modifies" in cfg.instructions
+    assert cfg.agent_id == "hakimai" and set(cfg.tool_ids) == set(REG.specs) and "Tu ne publies jamais" in cfg.instructions
 
 
 def test_visibility_of_agents():

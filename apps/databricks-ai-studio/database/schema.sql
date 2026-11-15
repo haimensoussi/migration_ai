@@ -153,3 +153,21 @@ CREATE TABLE IF NOT EXISTS dataops_dev.ai_studio.team_history (
   action STRING NOT NULL COMMENT 'creation | modification | publication | retrait | archivage',
   detail STRING COMMENT 'Description lisible du changement', snapshot STRING COMMENT 'État complet après changement (JSON)'
 ) COMMENT 'Historique des modifications d''équipes (grain : 1 ligne par changement)';
+
+
+-- HakimAI lot 2 : journal d'audit des actions écrites et demandes de publication
+CREATE TABLE IF NOT EXISTS dataops_dev.ai_studio.copilot_actions (
+  action_id STRING NOT NULL COMMENT 'Identifiant unique de l action',
+  conversation_id STRING COMMENT 'Conversation HakimAI',
+  user_name STRING NOT NULL COMMENT 'Utilisateur pour qui l action est faite',
+  tool_id STRING NOT NULL COMMENT 'Outil HakimAI (creer_agent, archiver...)',
+  object_type STRING COMMENT 'agent, outil, equipe',
+  object_id STRING COMMENT 'Identifiant de l objet concerne',
+  arguments STRING COMMENT 'Arguments valides par l utilisateur (JSON)',
+  before_state STRING COMMENT 'Etat avant (JSON, si existant)',
+  after_state STRING COMMENT 'Etat apres (JSON)',
+  status STRING NOT NULL COMMENT 'succes, erreur, refuse, en_attente (demande de publication), traitee',
+  error STRING COMMENT 'Message d erreur',
+  created_at TIMESTAMP NOT NULL COMMENT 'Horodatage',
+  CONSTRAINT copilot_actions_pk PRIMARY KEY (action_id)
+) COMMENT 'Journal d audit des actions ecrites par HakimAI (lot 2) et demandes de publication';
