@@ -29,6 +29,8 @@ class ToolSpec:
     read_only: bool = True
     status: str = "publie"
     version: str = "1.0.0"
+    config: dict = field(default_factory=dict)   # outils créés : description déclarative (requête, fonction...)
+    owner: str = ""                              # outils créés : propriétaire ; vide pour les outils intégrés
 
     def to_openai(self) -> dict:
         return {"type": "function",
@@ -39,6 +41,7 @@ class ToolSpec:
         d = asdict(self)
         d["input_schema"] = json.dumps(self.input_schema, ensure_ascii=False)
         d["output_schema"] = json.dumps(self.output_schema, ensure_ascii=False)
+        d["config"] = json.dumps(self.config, ensure_ascii=False)
         return d
 
     @classmethod
@@ -49,7 +52,8 @@ class ToolSpec:
                    input_schema=json.loads(r["input_schema"]), output_schema=json.loads(r["output_schema"]),
                    executor=r["executor"], identity=r["identity"],
                    requires_confirmation=b(r["requires_confirmation"]), read_only=b(r["read_only"]),
-                   status=r["status"], version=r["version"])
+                   status=r["status"], version=r["version"],
+                   config=json.loads(r.get("config") or "{}"), owner=r.get("owner") or "")
 
 
 @dataclass
@@ -119,4 +123,7 @@ class ToolRegistry:
 
     def run(self, spec: ToolSpec, ctx: ToolContext, args: dict) -> Any:
         fn = resolve_executor(spec.executor)
-        return fn(ctx, **validate_args(spec.input_schema, args))
+        args = validate_args(spec.input_schema, args)
+        if getattr(fn, "needs_spec", False):   # exécuteurs génériques : la configuration de l'outil est transmise
+            return fn(ctx, spec, **args)
+        return fn(ctx, **args)

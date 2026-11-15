@@ -124,6 +124,53 @@ class AgentRepository:
             WHEN NOT MATCHED THEN INSERT ({', '.join(cols)}, updated_at)
               VALUES ({', '.join('s.' + c for c in cols)}, s.updated_at)""", row)
 
+    # -- Outils créés -----------------------------------------------------------
+    def tool_owner(self, tool_id: str) -> tuple[bool, str]:
+        r = self.sql.query(f"SELECT executor, coalesce(owner, '') AS owner FROM {self.s.table('tools')} "
+                           "WHERE tool_id = :t", {"t": tool_id})
+        if not r["rows"]:
+            return False, ""
+        row = r["rows"][0]
+        if not str(row["executor"]).startswith("tools.custom_tools:"):
+            return True, "__integre__"
+        return True, row["owner"]
+
+    def save_custom_tool(self, spec: ToolSpec, user: str, test_result: dict, note: str = "") -> int:
+        """Enregistre une nouvelle version d'un outil créé. Refuse d'écraser un outil intégré ou d'un autre utilisateur."""
+        if not spec.executor.startswith("tools.custom_tools:"):
+            raise ValueError("Seuls les outils créés (exécuteurs génériques) peuvent être enregistrés ici.")
+        exists, owner = self.tool_owner(spec.tool_id)
+        if exists and owner != user:
+            raise PermissionError(f"L'identifiant « {spec.tool_id} » appartient à un autre outil.")
+        r = self.sql.query(f"SELECT coalesce(max(version), 0) + 1 AS v FROM {self.s.table('tool_versions')} "
+                           "WHERE tool_id = :t", {"t": spec.tool_id})
+        v = int(r["rows"][0]["v"])
+        from dataclasses import replace
+        spec = replace(spec, version=str(v), owner=user)
+        self.sql.execute(f"INSERT INTO {self.s.table('tool_versions')} "
+                         "(tool_id, version, spec, test_result, note, created_by, created_at) "
+                         "VALUES (:t, :v, :spec, :test, :note, :u, current_timestamp())",
+                         {"t": spec.tool_id, "v": v, "spec": json.dumps(spec.to_row(), ensure_ascii=False),
+                          "test": json.dumps(test_result, ensure_ascii=False, default=str)[:20000],
+                          "note": note[:500], "u": user})
+        self.upsert_tool(spec)
+        return v
+
+    def set_tool_status(self, tool_id: str, status: str, user: str) -> None:
+        if status not in ("brouillon", "publie", "retire"):
+            raise ValueError(f"Statut inconnu : {status}")
+        exists, owner = self.tool_owner(tool_id)
+        if not exists or owner != user:
+            raise PermissionError("Seul le propriétaire d'un outil créé peut changer son statut.")
+        self.sql.execute(f"UPDATE {self.s.table('tools')} SET status = :s, updated_at = current_timestamp() "
+                         "WHERE tool_id = :t AND owner = :u", {"s": status, "t": tool_id, "u": user})
+
+    def tool_versions(self, tool_id: str) -> list[dict]:
+        r = self.sql.query(f"SELECT version, spec, test_result, note, created_by, created_at "
+                           f"FROM {self.s.table('tool_versions')} WHERE tool_id = :t ORDER BY version DESC",
+                           {"t": tool_id})
+        return r["rows"]
+
     # -- Historique -----------------------------------------------------------
     def next_message_index(self, conversation_id: str) -> int:
         r = self.sql.query(f"SELECT coalesce(max(message_index), -1) + 1 AS i FROM {self.s.table('conversations')} "

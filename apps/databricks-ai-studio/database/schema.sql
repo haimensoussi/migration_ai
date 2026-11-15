@@ -100,3 +100,21 @@ CREATE TABLE IF NOT EXISTS dataops_dev.ai_studio.generation_log (
   created_at TIMESTAMP NOT NULL,
   CONSTRAINT generation_log_pk PRIMARY KEY (generation_id)
 ) COMMENT 'Traçabilité des générations du copilote de conception';
+
+
+-- Outils créés dans DISCOVERY (copilote d'outils) : configuration déclarative et propriétaire.
+ALTER TABLE dataops_dev.ai_studio.tools ADD COLUMNS (
+  config STRING COMMENT 'Outils créés : configuration déclarative JSON (requête paramétrée, fonction UC)',
+  owner STRING COMMENT 'Outils créés : propriétaire (e-mail) ; vide pour les outils intégrés');
+
+-- Grain : 1 ligne par version d'outil créé. Clé : (tool_id, version).
+CREATE TABLE IF NOT EXISTS dataops_dev.ai_studio.tool_versions (
+  tool_id STRING NOT NULL,
+  version INT NOT NULL,
+  spec STRING NOT NULL COMMENT 'Définition complète de l''outil (JSON)',
+  test_result STRING COMMENT 'Résultat du test de validation (JSON)',
+  note STRING COMMENT 'Commentaire de version',
+  created_by STRING NOT NULL,
+  created_at TIMESTAMP NOT NULL,
+  CONSTRAINT tool_versions_pk PRIMARY KEY (tool_id, version)
+) COMMENT 'Historique des versions des outils créés dans DISCOVERY (grain : 1 ligne par version)';

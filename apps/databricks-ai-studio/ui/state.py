@@ -129,6 +129,14 @@ def build_designer():
     return AgentDesigner(ModelClient(w), registry(), ctx, settings().default_model)
 
 
+def build_tool_designer():
+    """Copilote d'outils, sous l'identité de l'utilisateur (exploration et vérifications avec ses droits)."""
+    from backend.tool_designer import ToolDesigner
+    w, sql, ident = user_session()
+    ctx = ToolContext(sql=sql, workspace=w, max_rows=settings().max_rows, user_email=ident.email)
+    return ToolDesigner(ModelClient(w), registry(), ctx, settings().default_model, ident.email)
+
+
 def refresh_data():
     cached_tools.clear()
     st.session_state.pop("_agents_cache", None)
