@@ -118,3 +118,9 @@ CREATE TABLE IF NOT EXISTS dataops_dev.ai_studio.tool_versions (
   created_at TIMESTAMP NOT NULL,
   CONSTRAINT tool_versions_pk PRIMARY KEY (tool_id, version)
 ) COMMENT 'Historique des versions des outils créés dans DISCOVERY (grain : 1 ligne par version)';
+
+
+-- Identité des agents (prénom = name) : nom d'appel @, rôle, accroche, exemples, anciens noms
+ALTER TABLE dataops_dev.ai_studio.agents ADD COLUMNS (handle STRING COMMENT 'Nom d''appel @ (unique)',
+  persona STRING COMMENT 'Rôle affiché après le prénom', tagline STRING COMMENT 'Accroche de la liste @',
+  call_examples STRING COMMENT 'Liste JSON des exemples', aliases STRING COMMENT 'Liste JSON des anciens noms');

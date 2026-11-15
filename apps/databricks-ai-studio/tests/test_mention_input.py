@@ -12,7 +12,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_payload_and_toggle(monkeypatch):
     assert m.agents_payload([{"agent_id": "x", "name": "SQL Assistant", "owner": "a@b", "category": "Analyse"},
-                             {"agent_id": "y", "name": ""}]) == [{"name": "SQL Assistant", "category": "Analyse"}]
+                             {"agent_id": "y", "name": ""}]) == [{"name": "SQL Assistant", "category": "Analyse", "handle": "",
+                                                  "persona": "", "tagline": "", "aliases": []}]
     monkeypatch.delenv("AI_STUDIO_MENTION_INPUT", raising=False)
     assert m.enabled()
     monkeypatch.setenv("AI_STUDIO_MENTION_INPUT", "0")

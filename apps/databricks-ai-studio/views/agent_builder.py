@@ -13,6 +13,7 @@ user = state.current_user()
 
 if "builder" not in st.session_state:
     b = {"step": 0, "agent_id": None, "name": "", "description": "", "icon": "smart_toy", "category": "Général",
+         "handle": "", "persona": "", "tagline": "", "call_examples": [], "aliases": [],
          "model_endpoint": s_cfg.default_model, "instructions": "", "tool_ids": [], "knowledge_tables": [],
          "temperature": 0.1, "max_iterations": s_cfg.max_iterations}
     edit_id = st.session_state.pop("builder_edit_id", None)
@@ -24,7 +25,9 @@ if "builder" not in st.session_state:
                      icon=a.get("icon") or "smart_toy", category=a.get("category") or "Général",
                      model_endpoint=cfg.model_endpoint, instructions=cfg.instructions, tool_ids=cfg.tool_ids,
                      knowledge_tables=cfg.knowledge_tables, temperature=cfg.temperature or 0.0,
-                     max_iterations=cfg.max_iterations)
+                     max_iterations=cfg.max_iterations, handle=a.get("handle") or "",
+                     persona=a.get("persona") or "", tagline=a.get("tagline") or "",
+                     call_examples=a.get("call_examples") or [], aliases=a.get("aliases") or [])
     st.session_state["builder"] = b
 b = st.session_state["builder"]
 
@@ -178,7 +181,19 @@ def errors_for(step: int) -> list[str]:
 with st.container(border=True):
     step = b["step"]
     if step == 0:
-        b["name"] = st.text_input("Nom de l'agent", b["name"], max_chars=80)
+        from backend import personas as _p
+        n1, n2, n3 = st.columns([2, 2, 3])
+        b["name"] = n1.text_input("Prénom de l'agent", b["name"], max_chars=80, help="Ex. Margot")
+        b["handle"] = n2.text_input("Nom d'appel (@)", b.get("handle") or _p.suggest_handle(b["name"]), max_chars=20,
+                                    help="Tapé après @ dans le chat : minuscules sans accent, unique.")
+        b["persona"] = n3.text_input("Rôle", b.get("persona") or "", max_chars=_p.MAX_PERSONA,
+                                     help="Affiché après le prénom, ex. « la cartographe »")
+        b["tagline"] = st.text_input("Accroche (liste @)", b.get("tagline") or "", max_chars=_p.MAX_TAGLINE,
+                                     help="Une phrase à la 1re personne : ce que l'agent fait pour vous.")
+        b["call_examples"] = [x for x in st.text_area(
+            "Appelez-moi pour… (un exemple par ligne, 3 au plus)", "\n".join(b.get("call_examples") or []),
+            height=90).splitlines() if x.strip()][:_p.MAX_EXAMPLES]
+        st.caption(f"Aperçu : @{b['handle'] or '…'} · {_p.display(b) or '…'} · {_p.AI_BADGE}")
         b["description"] = st.text_area("Description", b["description"], max_chars=500)
         c1, c2 = st.columns(2)
         b["icon"] = c1.selectbox("Icône", ICONS, index=ICONS.index(b["icon"]) if b["icon"] in ICONS else 0,
@@ -286,7 +301,8 @@ def save(status: str):
     if errs:
         st.warning(" ".join(errs))
         return
-    meta = {k: b[k] for k in ("name", "description", "icon", "category")}
+    meta = {k: b.get(k) for k in ("name", "description", "icon", "category", "handle", "persona", "tagline",
+                                   "call_examples", "aliases")}
     cfg = {k: b[k] for k in ("model_endpoint", "instructions", "tool_ids", "knowledge_tables",
                              "temperature", "max_iterations")}
     repo = state.repository()

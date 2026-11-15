@@ -35,3 +35,23 @@ console.log("OK mention_logic");
 assert.strictEqual(L.isComplete("Sentinelle DQ Réseau ", L.filterAgents(A, "Sentinelle DQ Réseau ")), true);
 assert.strictEqual(L.isComplete("Sentinelle", L.filterAgents(A, "Sentinelle")), false);
 console.log("OK isComplete");
+
+
+// --- Identité des agents : @nom d'appel, anciens noms, mots de l'accroche ---
+(function () {
+  const assert = require("assert");
+  const L = require("../../ui/mention_input/frontend/mention_logic.js");
+  const P = [{ name: "Margot", handle: "margot", persona: "la cartographe", tagline: "Je situe les gares sur une carte.",
+               aliases: ["Carto Réseau"] },
+             { name: "Victor", handle: "victor", persona: "le veilleur", tagline: "Je surveille la fraîcheur." }];
+  assert.deepStrictEqual(L.filterAgents(P, "vic").map(a => a.name), ["Victor"]);
+  assert.deepStrictEqual(L.filterAgents(P, "carto").map(a => a.name), ["Margot"]);      // ancien nom
+  assert.deepStrictEqual(L.filterAgents(P, "carte").map(a => a.name), ["Margot"]);      // mot de l'accroche
+  assert.deepStrictEqual(L.filterAgents(P, "fraich").map(a => a.name), ["Victor"]);
+  assert.deepStrictEqual(L.filterAgents(P, "ca").map(a => a.name), ["Margot"]);         // < 3 lettres : pas l'accroche
+  const t = L.tabComplete("Bonjour @mar", 12, P);
+  assert.strictEqual(t.text, "Bonjour @margot ");
+  assert.ok(L.highlight("@margot et @Carto Réseau", P).split("<mark>").length === 3);
+  assert.ok(L.isComplete("margot ", P));
+  console.log("identité des agents : ok");
+})();

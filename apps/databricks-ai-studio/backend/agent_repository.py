@@ -29,7 +29,8 @@ class AgentRepository:
     def list_agents(self) -> list[dict]:
         r = self.sql.query(f"""
             SELECT a.agent_id, a.name, a.description, a.icon, a.category, a.status, a.current_version,
-                   a.owner, a.updated_at, v.model_endpoint, v.tool_ids, v.knowledge_tables
+                   a.owner, a.updated_at, a.handle, a.persona, a.tagline, a.call_examples, a.aliases,
+                   v.model_endpoint, v.tool_ids, v.knowledge_tables
             FROM {self.s.table('agents')} a
             LEFT JOIN {self.s.table('agent_versions')} v
               ON a.agent_id = v.agent_id AND a.current_version = v.version
@@ -39,7 +40,21 @@ class AgentRepository:
             a["current_version"] = int(a["current_version"])
             a["tool_ids"] = _loads(a["tool_ids"], [])
             a["knowledge_tables"] = _loads(a["knowledge_tables"], [])
+            a["call_examples"] = _loads(a.get("call_examples"), [])
+            a["aliases"] = _loads(a.get("aliases"), [])
         return r["rows"]
+
+    def set_persona(self, agent_id: str, persona: dict) -> None:
+        """Identité de l'agent (prénom = colonne name ; nom d'appel, rôle, accroche, exemples, anciens noms)."""
+        from backend import personas
+        p = personas.normalize(persona)
+        errs = personas.validate(p, self.list_agents(), agent_id)
+        if errs:
+            raise ValueError(" ".join(errs))
+        self.sql.execute(f"""
+            UPDATE {self.s.table('agents')} SET handle = :handle, persona = :persona, tagline = :tagline,
+                   call_examples = :call_examples, aliases = :aliases, updated_at = current_timestamp()
+            WHERE agent_id = :agent_id""", {"agent_id": agent_id, **personas.to_row(p)})
 
     def get_agent(self, agent_id: str) -> dict | None:
         return next((a for a in self.list_agents() if a["agent_id"] == agent_id), None)
@@ -75,6 +90,7 @@ class AgentRepository:
     def create_agent(self, meta: dict, cfg: dict, user: str, status: str = "brouillon") -> str:
         """La version est écrite avant l'en-tête : un échec intermédiaire ne laisse qu'une version orpheline."""
         agent_id = uuid.uuid4().hex
+        self._check_persona(meta, agent_id)
         self._insert_version(agent_id, 1, cfg, user)
         self.sql.execute(f"""
             INSERT INTO {self.s.table('agents')}
@@ -84,12 +100,22 @@ class AgentRepository:
             {"agent_id": agent_id, "name": meta["name"], "description": meta.get("description", ""),
              "icon": meta.get("icon", ""), "category": meta.get("category", "Général"),
              "status": status, "owner": user})
+        if meta.get("handle"):
+            self.set_persona(agent_id, meta)
         return agent_id
+
+    def _check_persona(self, meta: dict, agent_id: str) -> None:
+        if meta.get("handle"):
+            from backend import personas
+            errs = personas.validate(personas.normalize(meta), self.list_agents(), agent_id)
+            if errs:
+                raise ValueError(" ".join(errs))
 
     def save_version(self, agent_id: str, meta: dict, cfg: dict, user: str, status: str | None = None) -> int:
         r = self.sql.query(f"SELECT coalesce(max(version), 0) + 1 AS v FROM {self.s.table('agent_versions')} "
                            "WHERE agent_id = :agent_id", {"agent_id": agent_id})
         version = int(r["rows"][0]["v"])
+        self._check_persona(meta, agent_id)
         self._insert_version(agent_id, version, cfg, user)
         self.sql.execute(f"""
             UPDATE {self.s.table('agents')} SET name = :name, description = :description, icon = :icon,
@@ -99,6 +125,8 @@ class AgentRepository:
             {"agent_id": agent_id, "name": meta["name"], "description": meta.get("description", ""),
              "icon": meta.get("icon", ""), "category": meta.get("category", "Général"),
              "status": status, "version": version})
+        if meta.get("handle"):
+            self.set_persona(agent_id, meta)
         return version
 
     def set_status(self, agent_id: str, status: str) -> None:

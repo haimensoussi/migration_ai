@@ -19,7 +19,9 @@ def enabled() -> bool:
 
 def agents_payload(agents: list[dict]) -> list[dict]:
     """Seules les informations utiles à l'affichage sont transmises au navigateur."""
-    return [{"name": a["name"], "category": a.get("category") or ""} for a in agents if a.get("name")]
+    return [{"name": a["name"], "category": a.get("category") or "", "handle": a.get("handle") or "",
+             "persona": a.get("persona") or "", "tagline": a.get("tagline") or "",
+             "aliases": list(a.get("aliases") or [])} for a in agents if a.get("name")]
 
 
 def _js_string(src: str) -> str:

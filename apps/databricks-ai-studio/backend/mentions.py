@@ -39,6 +39,9 @@ def _keys(agents: list[dict]) -> list[tuple[str, dict]]:
             continue
         for k in {norm(name), slug(name)}:
             keys.append((k, a))
+        extra = [a.get("handle")] + list(a.get("aliases") or [])
+        for k in {x for e in extra if e for x in (norm(str(e)), slug(str(e)))}:
+            keys.append((k, a))
         firsts.setdefault(slug(name).split("-")[0], []).append(a)
     for first, lst in firsts.items():           # alias court (@sentinelle) seulement s'il est non ambigu
         if len(lst) == 1 and len(first) >= 3:
@@ -53,6 +56,7 @@ def parse_mentions(text: str, agents: list[dict], max_mentions: int = MAX_MENTIO
     keys, n = _keys(agents), norm(text)
     names = {norm(a["name"]): a["name"] for a in agents if a.get("name")}
     names.update({slug(a["name"]): a["name"] for a in agents if a.get("name")})
+    names.update({a["handle"]: a["name"] for a in agents if a.get("handle") and a.get("name")})
     spans, i = [], 0
     while (j := text.find("@", i)) >= 0:
         if j > 0 and text[j - 1].isalnum():          # adresse e-mail : pas une mention

@@ -36,13 +36,16 @@
     const b = ensureBox();
     let html = '<div style="font-size:12px;color:#6B6475;padding:7px 12px 4px">Agents disponibles</div>';
     items.forEach(function (a, i) {
-      const ini = a.name.split(/\s+/).filter(Boolean).slice(0, 2).map(function (w) { return w[0]; }).join("").toUpperCase();
+      const ini = a.name.split(/\s+/).filter(Boolean).slice(0, 1).map(function (w) { return w[0]; }).join("").toUpperCase();
+      const head = (a.handle ? "@" + a.handle + " · " : "") + a.name + (a.persona ? ", " + a.persona : "");
+      const sub = a.tagline || a.category || "";
       html += '<div data-i="' + i + '" style="display:flex;align-items:center;gap:10px;padding:7px 12px;cursor:pointer;' +
         (i === active ? "background:#FBF2F7;" : "") + '">' +
         '<div style="width:26px;height:26px;border-radius:8px;background:#FBF2F7;color:#B0124F;border:1px solid #EAD3E0;' +
         'font-weight:700;font-size:11px;display:flex;align-items:center;justify-content:center;flex:none">' + L.escapeHtml(ini) +
-        '</div><div><div style="color:#2B1B33;font-size:14px;font-weight:600">' + L.escapeHtml(a.name) + "</div>" +
-        (a.category ? '<div style="color:#6B6475;font-size:12px">' + L.escapeHtml(a.category) + "</div>" : "") + "</div></div>";
+        '</div><div style="min-width:0"><div style="color:#2B1B33;font-size:14px;font-weight:600">' + L.escapeHtml(head) +
+        ' <span style="font-weight:500;font-size:10px;color:#7A3E9D;border:1px solid #E3D3EC;border-radius:6px;padding:0 5px">Agent IA</span></div>' +
+        (sub ? '<div style="color:#6B6475;font-size:12px;white-space:normal">' + L.escapeHtml(sub) + "</div>" : "") + "</div></div>";
     });
     b.innerHTML = html;
     b.querySelectorAll("[data-i]").forEach(function (el) {
@@ -51,7 +54,7 @@
     b.style.display = "block";
     const r = target.getBoundingClientRect();
     b.style.left = r.left + "px";
-    b.style.width = Math.max(260, Math.min(r.width, 440)) + "px";
+    b.style.width = Math.max(300, Math.min(r.width, 520)) + "px";
     b.style.top = Math.max(8, r.top - b.offsetHeight - 8) + "px";
     const cur = b.querySelector('[data-i="' + active + '"]');
     if (cur) cur.scrollIntoView({ block: "nearest" });
@@ -70,7 +73,7 @@
 
   function choose(i) {
     if (!mention || !items[i] || !target) return;
-    const r = L.insertMention(target.value, target.selectionStart, mention, items[i].name);
+    const r = L.insertMention(target.value, target.selectionStart, mention, items[i].handle || items[i].name);
     close();
     setValue(target, r.text, r.caret);
     target.focus();

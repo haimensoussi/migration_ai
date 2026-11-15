@@ -27,7 +27,12 @@ PROPOSE_AGENT = {"type": "function", "function": {
     "name": "propose_agent",
     "description": "Termine la conception en proposant la configuration complète du brouillon d'agent.",
     "parameters": {"type": "object", "properties": {
-        "name": {"type": "string", "description": "Nom court de l'agent"},
+        "name": {"type": "string", "description": "Prénom de l'agent, facile à retenir et à taper (ex. Margot)"},
+        "handle": {"type": "string", "description": "Nom d'appel après @ : prénom en minuscules sans accent"},
+        "persona": {"type": "string", "description": "Rôle court après le prénom (ex. la cartographe)"},
+        "tagline": {"type": "string", "description": "Accroche à la 1re personne, 90 caractères max"},
+        "call_examples": {"type": "array", "items": {"type": "string"},
+                          "description": "3 exemples de demandes pour lesquelles appeler cet agent"},
         "description": {"type": "string", "description": "Description fonctionnelle (2 phrases maximum)"},
         "category": {"type": "string", "enum": CATEGORIES},
         "icon": {"type": "string", "enum": ICONS},
@@ -104,7 +109,8 @@ class AgentDesigner:
         """
         request = (request or "").strip() or ("Améliore la clarté et la robustesse des instructions et vérifie "
                                               "la cohérence entre instructions, outils et tables.")
-        cfg = {k: current.get(k) for k in ("name", "description", "category", "icon", "instructions", "tool_ids",
+        cfg = {k: current.get(k) for k in ("name", "handle", "persona", "tagline", "call_examples",
+                                           "description", "category", "icon", "instructions", "tool_ids",
                                            "knowledge_tables", "temperature", "max_iterations")}
         parts = [f"Demande d'amélioration : {request}", "",
                  "Configuration actuelle (JSON) :", json.dumps(cfg, ensure_ascii=False, indent=1)]
@@ -231,7 +237,14 @@ class AgentDesigner:
                 return min(hi, max(lo, cast(v)))
             except (TypeError, ValueError):
                 return default
+        from backend import personas
+        ident = personas.normalize({**p, "name": name})
+        if len(ident["tagline"]) > personas.MAX_TAGLINE:
+            warnings.append("Accroche raccourcie à 90 caractères.")
+            ident["tagline"] = ident["tagline"][:personas.MAX_TAGLINE - 1].rstrip() + "…"
         draft = {"name": name, "description": str(p.get("description") or "").strip()[:500], "icon": icon,
+                 "handle": ident["handle"], "persona": ident["persona"], "tagline": ident["tagline"],
+                 "call_examples": ident["call_examples"],
                  "category": category, "model_endpoint": self.model_endpoint, "instructions": instructions,
                  "tool_ids": tools, "knowledge_tables": tables,
                  "temperature": num(p.get("temperature"), 0.0, 1.0, 0.1, float),
@@ -243,7 +256,8 @@ class AgentDesigner:
                             events=events, changes=changes)
 
 
-FIELDS_LABELS = {"name": "Nom", "description": "Description", "category": "Catégorie", "icon": "Icône",
+FIELDS_LABELS = {"name": "Prénom", "handle": "Nom d'appel", "persona": "Rôle", "tagline": "Accroche",
+                 "call_examples": "Exemples d'appel", "description": "Description", "category": "Catégorie", "icon": "Icône",
                  "tool_ids": "Outils", "knowledge_tables": "Tables", "temperature": "Température",
                  "max_iterations": "Itérations max", "instructions": "Instructions"}
 

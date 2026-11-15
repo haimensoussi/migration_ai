@@ -54,6 +54,7 @@ def plain_tools(tool_ids: list[str] | None) -> list[str]:
 class SubAgent:
     cfg: AgentConfig
     description: str
+    label: str = ""          # « Victor, le veilleur » pour l'affichage
 
 
 class Orchestrator:
@@ -86,7 +87,10 @@ class Orchestrator:
             label, n = scfg.name or aid, 2
             while label in subs:
                 label, n = f"{scfg.name} ({n})", n + 1
-            subs[label] = SubAgent(scfg, (meta.get("description") or "").strip())
+            from backend import personas
+            shown = personas.display({**meta, "name": scfg.name})
+            desc = " ".join(x for x in ((meta.get("tagline") or "").strip(), (meta.get("description") or "").strip()) if x)
+            subs[label] = SubAgent(scfg, (f"{shown} ({personas.AI_BADGE}). " if shown != scfg.name else "") + desc, shown)
         return subs, warnings
 
     def prepare(self, cfg: AgentConfig, on_tool_event: Callable[[ToolEvent], None] | None = None
@@ -133,12 +137,13 @@ class Orchestrator:
             res = AgentRuntime(self.model, self.base, self.ctx_factory(), on_tool_event=log).run(scfg, history)
             outils = [{"outil": e.tool_id, "statut": e.status} for e in res.events]
             if res.pending:
-                return {"agent": sub.cfg.name, "statut": "validation_requise", "outils": outils, "echange": rounds[agent],
+                return {"agent": sub.cfg.name, "agent_affiche": sub.label or sub.cfg.name, "statut": "validation_requise", "outils": outils, "echange": rounds[agent],
                         "message": (f"L'agent « {sub.cfg.name} » demande une validation humaine pour l'outil "
                                     f"{res.pending['tool']} : cette action n'est pas exécutée par délégation. "
                                     "Utilisez directement cet agent dans Chat & Test.")}
             threads[agent] = [m for m in res.messages if m["role"] != "system"]
-            out = {"agent": sub.cfg.name, "statut": "succes", "reponse": res.final_text or "",
+            out = {"agent": sub.cfg.name, "agent_affiche": sub.label or sub.cfg.name, "statut": "succes",
+                   "reponse": res.final_text or "",
                    "outils": outils, "latence_ms": res.latency_ms, "echange": rounds[agent]}
             maps = [e for e in res.events if e.tool_id == "render_map" and e.status == "succes" and isinstance(e.result, dict)]
             if maps:   # cartes du partenaire : résumé pour le modèle, données complètes pour l'affichage (_ui)

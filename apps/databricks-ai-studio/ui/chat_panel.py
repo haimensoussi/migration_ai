@@ -24,11 +24,12 @@ def _show_delegation(ev: dict):
     res = ev.get("result") if isinstance(ev.get("result"), dict) else {}
     st_txt = "validation requise" if res.get("statut") == "validation_requise" else STATUS_TXT.get(ev["status"], ev["status"])
     n = f" n° {res['echange']}" if res.get("echange") else ""
-    with st.expander(f"Échange avec « {args.get('agent', '?')} »{n} : {st_txt} ({ev['duration_ms']} ms)"):
+    who = res.get("agent_affiche") or _DISPLAY.get(args.get("agent", ""), args.get("agent", "?"))
+    with st.expander(f"Question posée à {who}{n} : {st_txt} ({ev['duration_ms']} ms)"):
         st.caption("Question transmise")
         st.markdown(str(args.get("question", "")))
         if ev["status"] == "succes":
-            st.caption("Réponse de l'agent")
+            st.caption(f"Réponse de {who.split(',')[0]} ({AI_BADGE})")
             st.markdown(res.get("reponse") or res.get("message") or "(vide)")
             if res.get("outils"):
                 st.caption("Outils appelés : " + ", ".join(f"{o['outil']} ({STATUS_TXT.get(o['statut'], o['statut'])})"
@@ -40,7 +41,7 @@ def _show_delegation(ev: dict):
     if maps:
         from ui import map_view
         for i, m in enumerate(maps):
-            st.caption(f"Carte produite par « {res.get('agent') or args.get('agent', '?')} »")
+            st.caption(f"Carte produite par {who}")
             map_view.render({"result": m, "arguments": {"query": m.get("_ui_query", "")}}, key=f"{id(ev)}_{i}")
 
 
@@ -88,6 +89,15 @@ def _inject_css():
         st.markdown(f"<style>{css_file.read_text()}</style>", unsafe_allow_html=True)
 
 
+from backend.personas import AI_BADGE  # noqa: E402
+
+_DISPLAY: dict[str, str] = {}   # nom de l'agent -> « Prénom, rôle » (alimenté à chaque affichage du chat)
+
+
+def _shown(name: str) -> str:
+    return f"{_DISPLAY.get(name, name)} · {AI_BADGE}" if name else name
+
+
 def render_discovery_message(role: str, content: str, agent_name: str = "", chips: list | None = None):
     """Affiche un message DISCOVERY : avatar, nom de l'agent, icônes métier (interface) puis Markdown du modèle.
 
@@ -100,7 +110,7 @@ def render_discovery_message(role: str, content: str, agent_name: str = "", chip
             st.markdown(content)
         return
     with st.chat_message("assistant", avatar=AV["assistant"]):
-        head = f'<div class="dsc-agent">DISCOVERY — {html.escape(agent_name)}</div>' if agent_name else ""
+        head = f'<div class="dsc-agent">{html.escape(_shown(agent_name))}</div>' if agent_name else ""
         st.markdown(head + chips_html([tuple(c) for c in (chips or [])]), unsafe_allow_html=True)
         st.markdown(content)
 
@@ -108,7 +118,7 @@ def render_discovery_message(role: str, content: str, agent_name: str = "", chip
 def _welcome(cfg: AgentConfig):
     caps = capabilities_for(cfg.tool_ids)
     with st.chat_message("assistant", avatar=AV["assistant"]):
-        body = (f'<div class="dsc-agent">DISCOVERY — {html.escape(cfg.name or "Agent")}</div>'
+        body = (f'<div class="dsc-agent">{html.escape(_shown(cfg.name or "Agent"))}</div>'
                 "<p>Bonjour ! Je peux vous accompagner dans l'exploration et l'analyse de vos données Databricks.</p>")
         if caps:
             body += '<div class="dsc-cap-title">Mes capacités</div>' + "".join(
@@ -151,7 +161,11 @@ def render_chat(cfg: AgentConfig, key: str, persist: bool = True, category: str 
             render_discovery_message(item["role"], item["content"], item.get("agent", ""), item.get("chips"))
 
     repo = state.repository()
-    mentionables = [a for a in (state.mentionable_agents() or []) if a.get("agent_id") != cfg.agent_id]
+    from backend import personas
+    everyone = state.mentionable_agents() or []
+    _DISPLAY.update({a["name"]: personas.display(a) for a in everyone if a.get("name")})
+    mentionables = [a for a in everyone if a.get("agent_id") != cfg.agent_id]
+    me_row = next((a for a in everyone if a.get("agent_id") == cfg.agent_id), {})
 
     def make_logger(agent_id: str):
         def _log(ev: ToolEvent):
@@ -279,8 +293,9 @@ def render_chat(cfg: AgentConfig, key: str, persist: bool = True, category: str 
         st.caption("Adresser le prochain message à un agent (ou tapez @ dans votre message) :")
         cols = st.columns(min(len(mentionables), 5))
         for i, a in enumerate(mentionables[:5]):
-            if cols[i].button(f"@{a['name']}", key=f"mention_{key}_{a['agent_id']}", use_container_width=True):
-                s["mention_prefix"] = a["name"]
+            if cols[i].button(f"@{personas.mention(a)}", key=f"mention_{key}_{a['agent_id']}", use_container_width=True,
+                              help=" — ".join(x for x in (personas.display(a), a.get("tagline")) if x)):
+                s["mention_prefix"] = personas.mention(a)
                 st.rerun()
         if s.get("mention_prefix"):
             c_a, c_b = st.columns([4, 1])
@@ -303,7 +318,8 @@ def render_chat(cfg: AgentConfig, key: str, persist: bool = True, category: str 
         if prefix and "@" not in prompt:
             prompt = f"@{prefix} {prompt}"
         from backend.mentions import parse_mentions
-        me_agent = {"agent_id": cfg.agent_id, "name": cfg.name}
+        me_agent = {"agent_id": cfg.agent_id, "name": cfg.name, "handle": me_row.get("handle"),
+                    "aliases": me_row.get("aliases") or []}
         found = parse_mentions(prompt, mentionables + [me_agent]) if "@" in prompt else None
         if found:
             found.agents = [a for a in found.agents if a["agent_id"] != cfg.agent_id]   # @agent courant : flux normal

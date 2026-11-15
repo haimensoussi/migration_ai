@@ -23,10 +23,14 @@
     const qs = slug(query);
     const scored = [];
     agents.forEach(function (a) {
-      const n = norm(a.name), s = slug(a.name);
+      const n = norm(a.name), s = slug(a.name), h = norm(a.handle || "");
+      const aliases = (a.aliases || []).map(norm);
+      const words = norm((a.persona || "") + " " + (a.tagline || "")).split(/[^a-z0-9]+/).filter(Boolean);
       let score = -1;
-      if (n.startsWith(q) || s.startsWith(qs)) score = 0;
-      else if (n.split(/\s+/).some(function (w) { return w.startsWith(q); })) score = 1;
+      if ((h && h.startsWith(q)) || n.startsWith(q) || s.startsWith(qs)) score = 0;
+      else if (n.split(/\s+/).some(function (w) { return w.startsWith(q); }) ||
+               aliases.some(function (al) { return al.startsWith(q) || slug(al).startsWith(qs); })) score = 1;
+      else if (q.length >= 3 && words.some(function (w) { return w.startsWith(q); })) score = 2;
       if (score >= 0) scored.push([score, a]);
     });
     scored.sort(function (x, y) { return x[0] - y[0] || x[1].name.localeCompare(y[1].name); });
@@ -45,7 +49,7 @@
     const m = activeMention(text, caret);
     if (!m || !m.query) return null;
     const hits = filterAgents(agents, m.query);
-    return hits.length === 1 ? insertMention(text, caret, m, hits[0].name) : null;
+    return hits.length === 1 ? insertMention(text, caret, m, hits[0].handle || hits[0].name) : null;
   }
 
   function escapeHtml(s) {
@@ -56,7 +60,8 @@
 
   /* HTML du calque de surlignage : mentions reconnues (nom complet) en <mark>. */
   function highlight(text, agents) {
-    const names = agents.map(function (a) { return a.name; }).sort(function (a, b) { return b.length - a.length; });
+    const names = [].concat.apply([], agents.map(function (a) { return [a.name, a.handle].concat(a.aliases || []); }))
+      .filter(Boolean).sort(function (a, b) { return b.length - a.length; });
     const nt = norm(text);
     let out = "", i = 0;
     while (i < text.length) {
@@ -81,7 +86,7 @@
   /* Vrai si la saisie correspond déjà exactement au nom d'un agent proposé (liste à fermer). */
   function isComplete(query, hits) {
     const q = norm(query).trim();
-    return hits.some(function (a) { return norm(a.name) === q; }) && /\s$/.test(query);
+    return hits.some(function (a) { return norm(a.name) === q || (a.handle && norm(a.handle) === q); }) && /\s$/.test(query);
   }
 
   const api = { norm, slug, activeMention, filterAgents, insertMention, tabComplete, highlight, escapeHtml, isComplete };

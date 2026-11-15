@@ -138,7 +138,7 @@ def test_welcome_then_turn_with_icons_and_safe_markdown(panel):
     md = [c for c in fake.calls if c[0] == "markdown"]
     llm = [c for c in md if "<script>" in c[1]]
     assert llm and all(c[2] is False for c in llm)         # contenu du modèle jamais rendu en HTML
-    head = [c for c in md if "DISCOVERY — SQL Assistant" in c[1]]
+    head = [c for c in md if "SQL Assistant · Agent IA" in c[1]]
     assert head and head[0][2] is True and "Analyse des données" in head[0][1]
     assert any(c[1] == "Combien ?" and c[2] is False for c in md)
     avatars = [c[2].get("avatar") for c in fake.calls if c[0] == "ctx" and c[2].get("avatar")]

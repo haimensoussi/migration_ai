@@ -21,7 +21,7 @@ except Exception as e:  # noqa: BLE001
 
 q = query.lower().strip()
 items = [a for a in items if (status == "Tous" or a["status"] == status)
-         and (not q or q in f"{a['name']} {a.get('description')} {a.get('category')}".lower())]
+         and (not q or q.lstrip("@") in f"{a['name']} {a.get('handle')} {a.get('persona')} {a.get('tagline')} {a.get('description')} {a.get('category')} {' '.join(a.get('aliases') or [])}".lower())]
 if not items:
     st.info("Aucun agent. Créez-en un avec l'Agent Builder.")
 
