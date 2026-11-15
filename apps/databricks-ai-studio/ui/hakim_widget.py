@@ -124,9 +124,13 @@ def render(page_title: str) -> None:
     """Bulle flottante ; le panneau s'ouvre au clic et garde la conversation entre les pages."""
     if not hakim.enabled():
         return
-    st.markdown(CSS, unsafe_allow_html=True)
-    with st.container(key="hakim_fab"):
-        clicked = st.button(f"{hakim.NAME}", icon=":material/assistant:", key="hakim_open",
-                            help="L'architecte de la plateforme : posez une question sur DISCOVERY")
+    label, tip = f"{hakim.NAME}", "L'architecte de la plateforme : posez une question sur DISCOVERY"
+    try:   # bulle flottante (conteneur à clé, Streamlit récent)
+        box = st.container(key="hakim_fab")
+        st.markdown(CSS, unsafe_allow_html=True)
+    except TypeError:   # version de Streamlit sans clé de conteneur : bouton dans la barre latérale
+        box = st.sidebar
+    with box:
+        clicked = st.button(label, icon=":material/assistant:", key="hakim_open", help=tip)
     if clicked:
         _panel(page_context(page_title))
