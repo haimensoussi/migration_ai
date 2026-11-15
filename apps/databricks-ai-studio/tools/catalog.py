@@ -8,10 +8,11 @@ _TABLE = {"type": "string", "description": "Nom complet catalog.schema.table"}
 BUILTIN_TOOLS: list[ToolSpec] = [
     ToolSpec(
         tool_id="list_tables", name="Lister les tables", category="Unity Catalog",
-        description="Liste les tables d'un schéma Unity Catalog accessibles à l'utilisateur.",
+        description=("Liste les tables d'un schéma Unity Catalog accessibles à l'utilisateur. Sans catalogue ni "
+                     "schéma : zone de données de la plateforme (dataops_dev.ai_studio, tables data_*)."),
         input_schema={"type": "object", "properties": {
-            "catalog": {"type": "string", "description": "Catalogue"},
-            "schema": {"type": "string", "description": "Schéma"}}, "required": ["catalog", "schema"]},
+            "catalog": {"type": "string", "description": "Catalogue (facultatif : zone de données par défaut)"},
+            "schema": {"type": "string", "description": "Schéma (facultatif : zone de données par défaut)"}}},
         output_schema={"type": "object", "properties": {"schema": {"type": "string"}, "nombre": {"type": "integer"},
                        "tables": {"type": "array"}}},
         executor="tools.uc_tools:list_tables"),

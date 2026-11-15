@@ -84,7 +84,7 @@ with tab_new:
                 "avant de l'enregistrer. Aucun code n'est généré ni exécuté : seulement une requête contrôlée.")
     req = st.text_area("Votre besoin", key="td_request", height=90,
                        placeholder="Ex. : un outil qui liste les gares voyageurs d'un département avec leurs coordonnées")
-    scope = st.text_input("Périmètre de données (catalogue.schéma, facultatif)", "dataops_dev.description_du_reseau_bronze",
+    scope = st.text_input("Périmètre de données (catalogue.schéma, facultatif)", "dataops_dev.ai_studio",
                           key="td_scope", help="Le copilote commence par explorer ce schéma.")
     if st.button("Proposer un outil", type="primary"):
         try:

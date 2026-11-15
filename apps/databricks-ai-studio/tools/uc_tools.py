@@ -1,12 +1,22 @@
 """Outils Unity Catalog : exécutés en SQL avec l'identité de l'utilisateur (droits UC appliqués)."""
 from __future__ import annotations
 
-from backend.tool_registry import ToolContext
+from backend.tool_registry import ToolContext, ToolError
 from tools.common import check_allowed, quote, split_name
 
 
-def list_tables(ctx: ToolContext, catalog: str, schema: str) -> dict:
+def list_tables(ctx: ToolContext, catalog: str = "", schema: str = "") -> dict:
+    """Sans catalogue ni schéma : zone de données de la plateforme (config.data_scope)."""
+    from backend.config import data_scope
+    dcat, dsch, prefix = data_scope()
+    default = not (catalog or schema)
+    if default:
+        catalog, schema = dcat, dsch
+    elif not (catalog and schema):
+        raise ToolError("Indiquer le catalogue ET le schéma, ou aucun des deux pour la zone de données "
+                        f"{dcat}.{dsch} (tables {prefix}*).")
     cat, sch = split_name(f"{catalog}.{schema}", 2)
+    data_zone = (cat.lower(), sch.lower()) == (dcat.lower(), dsch.lower())
     r = ctx.sql.query(f"SHOW TABLES IN {quote([cat, sch])}", row_limit=500)
     allowed = {t.lower() for t in ctx.allowed_tables}
     tables = []
@@ -14,8 +24,13 @@ def list_tables(ctx: ToolContext, catalog: str, schema: str) -> dict:
         full = f"{cat}.{sch}.{row['tableName']}"
         if str(row.get("isTemporary")).lower() == "true":
             continue
+        if data_zone and prefix and not str(row["tableName"]).lower().startswith(prefix.lower()):
+            continue   # tables de configuration de la plateforme : non listées
         tables.append({"table": full, "autorisee_pour_agent": (not allowed) or full.lower() in allowed})
-    return {"schema": f"{cat}.{sch}", "nombre": len(tables), "tables": tables, "tronque": r["truncated"]}
+    out = {"schema": f"{cat}.{sch}", "nombre": len(tables), "tables": tables, "tronque": r["truncated"]}
+    if data_zone:
+        out["zone_de_donnees"] = f"{dcat}.{dsch} (tables {prefix}*)" + (" ; schéma par défaut" if default else "")
+    return out
 
 
 def describe_table(ctx: ToolContext, table: str) -> dict:

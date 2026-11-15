@@ -46,5 +46,22 @@ def load_settings() -> Settings:
     return s
 
 
+def data_scope() -> tuple[str, str, str]:
+    """Zone de données des agents : (catalogue, schéma, préfixe des tables de données).
+
+    Défaut : dataops_dev.ai_studio, tables préfixées data_ (les autres tables du schéma sont la configuration
+    de la plateforme : agents, conversations, journaux).
+    """
+    cat = os.environ.get("AI_STUDIO_DATA_CATALOG") or os.environ.get("AI_STUDIO_CATALOG", "dataops_dev")
+    sch = os.environ.get("AI_STUDIO_DATA_SCHEMA") or os.environ.get("AI_STUDIO_SCHEMA", "ai_studio")
+    pre = os.environ.get("AI_STUDIO_DATA_PREFIX", "data_")
+    for v in (cat, sch):
+        if not _IDENT.match(v):
+            raise ValueError(f"Identifiant invalide dans la configuration : {v!r}")
+    if pre and not re.match(r"^[A-Za-z0-9_]+$", pre):
+        raise ValueError(f"Préfixe invalide dans la configuration : {pre!r}")
+    return cat, sch, pre
+
+
 def running_in_databricks_app() -> bool:
     return bool(os.environ.get("DATABRICKS_APP_NAME"))

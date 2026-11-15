@@ -14,6 +14,13 @@ env:
     value: dataops_dev
   - name: AI_STUDIO_SCHEMA
     value: ai_studio
+  # Zone de données des agents : list_tables sans paramètre et HakimAI listent ce schéma, tables préfixées data_
+  - name: AI_STUDIO_DATA_CATALOG
+    value: dataops_dev
+  - name: AI_STUDIO_DATA_SCHEMA
+    value: ai_studio
+  - name: AI_STUDIO_DATA_PREFIX
+    value: data_
   - name: AI_STUDIO_MAX_ROWS
     value: "200"
   # URL du flux Power Automate Smart Office (ressource secret, lecture seule)

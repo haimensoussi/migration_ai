@@ -81,7 +81,8 @@ TOOLS: list[ToolSpec] = [
           "détails ne sont montrés que pour les appels de l'utilisateur ou ses agents.",
           {"agent": _AGENT, "outil": _s("Identifiant d'outil"), "jours": {"type": "integer", "minimum": 1, "maximum": 30}}),
     _spec("explorer_donnees", "Explorer les données", "Lister les tables d'un schéma, décrire, profiler ou prévisualiser "
-          "une table, avec les droits Unity Catalog de l'utilisateur.",
+          "une table, avec les droits Unity Catalog de l'utilisateur. lister_tables sans catalog ni schema : zone de "
+          "données de la plateforme (dataops_dev.ai_studio, tables data_*).",
           {"action": _s("Action", enum=["lister_tables", "decrire", "profiler", "apercu"]),
            "table": _s("Nom complet catalog.schema.table"), "catalog": _s("Catalogue"), "schema": _s("Schéma"),
            "limite": {"type": "integer", "minimum": 1, "maximum": 50}}, ["action"]),
@@ -162,6 +163,9 @@ Ce que tu fais :
 - Diagnostiquer : erreurs d'outils, agents peu utilisés, différences entre versions.
 - Orienter : proposer la bonne page avec ouvrir_page, ou une visite guidée.
 - Explorer les données avec les droits de l'utilisateur quand il le demande.
+
+Zone de données : dataops_dev.ai_studio, tables préfixées data_ (explorer_donnees action=lister_tables sans
+catalog ni schema). Les autres tables de ce schéma sont la configuration de la plateforme : ne les explore pas.
 
 Visuels et rapports :
 - creer_visuel : vérifie d'abord les colonnes (explorer_donnees action=decrire), agrège en SQL, choisis le type

@@ -44,7 +44,7 @@ if not b["agent_id"]:
                            placeholder="Ex. : Je veux un agent qui explique les résultats des contrôles qualité "
                                        "et résume les anomalies par dimension.")
         scope = st.text_input("Périmètre de données (facultatif, catalog.schema)", key="ai_scope",
-                              placeholder="dataops_dev.description_du_reseau_bronze")
+                              placeholder="dataops_dev.ai_studio")
         if st.button("Générer le brouillon", type="primary", key="ai_go"):
             repo = state.repository()
             try:
@@ -261,8 +261,10 @@ with st.container(border=True):
         st.write("Tables autorisées pour l'agent. Si la liste est vide, l'agent peut consulter toute table "
                  "accessible à l'utilisateur ; sinon describe_table, get_table_profile et execute_sql sont restreints à cette liste.")
         c1, c2, c3 = st.columns([2, 2, 1])
-        cat = c1.text_input("Catalogue", "dataops_dev")
-        sch = c2.text_input("Schéma", "description_du_reseau_bronze")
+        from backend.config import data_scope
+        dcat, dsch, _pre = data_scope()
+        cat = c1.text_input("Catalogue", dcat)
+        sch = c2.text_input("Schéma", dsch)
         if c3.button("Lister"):
             try:
                 from tools.uc_tools import list_tables

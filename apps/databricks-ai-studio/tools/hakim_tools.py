@@ -318,9 +318,7 @@ def explorer_donnees(ctx: ToolContext, action: str, table: str = "", catalog: st
     _p(ctx)
     from tools import sql_tools, uc_tools
     from tools.common import split_name, quote
-    if action == "lister_tables":
-        if not (catalog and schema):
-            raise ToolError("catalog et schema requis pour lister les tables.")
+    if action == "lister_tables":   # sans catalogue ni schéma : zone de données (dataops_dev.ai_studio, data_*)
         return uc_tools.list_tables(ctx, catalog, schema)
     if not table:
         raise ToolError("table requise (catalog.schema.table).")
