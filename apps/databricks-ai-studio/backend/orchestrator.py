@@ -149,6 +149,11 @@ class Orchestrator:
             if maps:   # cartes du partenaire : résumé pour le modèle, données complètes pour l'affichage (_ui)
                 out["cartes"] = [{"titre": m.result.get("titre"), "nombre_points": m.result.get("nombre_points")} for m in maps]
                 out["_ui_maps"] = [{**m.result, "_ui_query": m.arguments.get("query", "")} for m in maps]
+            charts = [e for e in res.events if e.tool_id == "render_chart" and e.status == "succes"
+                      and isinstance(e.result, dict) and e.result.get("_ui_chart")]
+            if charts:   # graphiques du partenaire : même principe que les cartes
+                out["graphiques"] = [{"titre": c.result.get("titre"), "lignes": c.result.get("lignes")} for c in charts]
+                out["_ui_charts"] = [c.result["_ui_chart"] for c in charts]
             return out
 
         ctx = self.ctx_factory()

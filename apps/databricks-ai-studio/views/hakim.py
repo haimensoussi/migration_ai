@@ -126,16 +126,11 @@ def show_visual(v, key: str) -> None:
         from ui import map_view
         st.caption(v["titre"])
         map_view.render({"result": v["carte"], "arguments": {"query": v["requete"]}}, key=key)
-    elif v["type"] == "tableau":
-        st.caption(v["titre"])
-        st.dataframe(v["lignes"], use_container_width=True, hide_index=True)
+        with st.expander(f"{v['id']} · requête ({v['carte'].get('nombre_points')} points)"):
+            st.code(v["requete"], language="sql")
     else:
-        from tools.hakim_report_tools import vega_spec
-        st.vega_lite_chart(vega_spec(v), use_container_width=True)
-    with st.expander(f"{v['id']} · requête et données ({len(v['lignes']) if v['type'] != 'carte' else v['carte'].get('nombre_points')})"):
-        st.code(v["requete"], language="sql")
-        if v["type"] not in ("carte", "tableau"):
-            st.dataframe(v["lignes"], use_container_width=True, hide_index=True)
+        from ui import chart_view
+        chart_view.render(v, key=key)
 
 
 def show_report(r, key: str) -> None:

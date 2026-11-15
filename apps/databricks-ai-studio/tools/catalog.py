@@ -42,6 +42,24 @@ BUILTIN_TOOLS: list[ToolSpec] = [
                        "tronque": {"type": "boolean"}}},
         executor="tools.sql_tools:execute_sql"),
     ToolSpec(
+        tool_id="render_chart", name="Afficher un graphique", category="Visualisation",
+        description=("Exécute UNE requête SQL en lecture seule et affiche le résultat en graphique dans le chat : "
+                     "barres, barres_horizontales, courbe, aire, camembert, nuage ou tableau. Agréger en SQL "
+                     "(GROUP BY) avant de tracer ; x = catégories ou axe horizontal, y = colonne numérique. "
+                     "Renvoie un résumé (lignes, aperçu, statistiques de y) ; le graphique est affiché à "
+                     "l'utilisateur. Pour une carte, utiliser render_map."),
+        input_schema={"type": "object", "properties": {
+            "query": {"type": "string", "description": "Requête SQL en lecture seule renvoyant les colonnes à tracer"},
+            "type": {"type": "string", "enum": ["barres", "barres_horizontales", "courbe", "aire", "camembert",
+                                                "nuage", "tableau"], "description": "Type de graphique"},
+            "title": {"type": "string", "description": "Titre du graphique"},
+            "x": {"type": "string", "description": "Colonne des catégories ou de l'axe horizontal"},
+            "y": {"type": "string", "description": "Colonne numérique"},
+            "color_by": {"type": "string", "description": "Colonne de regroupement (facultatif)"},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 1000, "description": "Lignes au plus (200 par défaut)"}},
+            "required": ["query", "type"]},
+        output_schema={"type": "object"}, executor="tools.chart_tools:render_chart"),
+    ToolSpec(
         tool_id="render_map", name="Afficher une carte", category="Visualisation",
         description=("Exécute UNE requête SQL en lecture seule et affiche le résultat sur une carte interactive dans le "
                      "chat. Le résultat doit contenir une colonne latitude et une colonne longitude (WGS84). "

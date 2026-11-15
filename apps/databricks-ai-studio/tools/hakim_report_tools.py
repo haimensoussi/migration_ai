@@ -1,7 +1,7 @@
 """Outils de HakimAI, lot 3b : visuels et rapports, en lecture seule avec les droits de l'utilisateur.
 
 - Les données viennent d'une requête SELECT contrôlée (checked_statement : lecture seule, tables autorisées).
-- Le modèle choisit le type et les colonnes ; l'application dessine (Altair, carte pydeck) : aucun code généré exécuté.
+- Le modèle choisit le type et les colonnes ; l'application dessine (Vega-Lite, carte pydeck) : aucun code généré exécuté.
 - Le rapport est assemblé par l'application à partir des visuels réellement calculés ; tout texte est échappé.
 """
 from __future__ import annotations
@@ -13,65 +13,9 @@ import math
 
 from backend.tool_registry import ToolContext, ToolError
 from tools.hakim_tools import _p
-from tools.sql_tools import checked_statement
+from tools.chart_tools import _clean, _num, _stats, build_chart, summary, vega_spec  # noqa: F401  (moteur partagé)
 
-MAX_ROWS = 1000
-NUMERIC = {"BYTE", "SHORT", "INT", "LONG", "FLOAT", "DOUBLE", "DECIMAL"}   # l'API SQL renvoie tout en texte
 KINDS = ("barres", "barres_horizontales", "courbe", "aire", "camembert", "nuage", "tableau", "carte")
-PALETTE = ["#0072B2", "#E69F00", "#009E73", "#CC79A7", "#56B4E9", "#D55E00", "#F0E442", "#000000"]  # Okabe-Ito
-
-
-def _num(v):
-    try:
-        f = float(v)
-        return f if math.isfinite(f) else None
-    except (TypeError, ValueError):
-        return None
-
-
-def _clean(v):
-    """Valeurs JSON (Decimal -> float, dates -> ISO) pour Vega-Lite, l'export et le journal."""
-    import decimal
-    if isinstance(v, decimal.Decimal):
-        return float(v)
-    if isinstance(v, (dt.date, dt.datetime)):
-        return v.isoformat()
-    if isinstance(v, float) and not math.isfinite(v):
-        return None
-    return v
-
-
-def _stats(rows: list[dict], col: str) -> dict | None:
-    vals = [x for x in (_num(r.get(col)) for r in rows) if x is not None]
-    if not vals:
-        return None
-    return {"min": min(vals), "max": max(vals), "somme": round(sum(vals), 4), "moyenne": round(sum(vals) / len(vals), 4),
-            "valeurs": len(vals), "vides": len(rows) - len(vals)}
-
-
-def vega_spec(v: dict) -> dict:
-    """Spécification Vega-Lite (utilisée à l'écran via Altair et dans le rapport HTML)."""
-    kind, x, y, color = v["type"], v["x"], v["y"], v.get("couleur")
-    yq = {"field": y, "type": "quantitative", "title": y}
-    xn = {"field": x, "type": "nominal", "title": x, "sort": "-y" if v.get("tri", True) else None}
-    enc: dict = {}
-    if kind in ("barres",):
-        mark, enc = "bar", {"x": xn, "y": yq}
-    elif kind == "barres_horizontales":
-        mark, enc = "bar", {"y": {**xn, "sort": "-x" if v.get("tri", True) else None}, "x": yq}
-    elif kind in ("courbe", "aire"):
-        mark = "line" if kind == "courbe" else "area"
-        enc = {"x": {"field": x, "type": "temporal" if v.get("x_temporel") else "ordinal", "title": x}, "y": yq}
-    elif kind == "camembert":
-        mark, enc = {"type": "arc", "innerRadius": 50}, {"theta": yq, "color": {"field": x, "type": "nominal", "title": x}}
-    else:  # nuage
-        mark, enc = "point", {"x": {"field": x, "type": "quantitative", "title": x}, "y": yq}
-    if color and kind != "camembert":
-        enc["color"] = {"field": color, "type": "nominal", "title": color}
-    enc["tooltip"] = [{"field": c} for c in v["colonnes"][:6]]
-    return {"$schema": "https://vega.github.io/schema/vega-lite/v5.json", "title": v["titre"],
-            "data": {"values": v["lignes"]}, "mark": mark, "encoding": enc, "width": "container", "height": 340,
-            "config": {"range": {"category": PALETTE}, "mark": {"color": PALETTE[0]}}}
 
 
 def creer_visuel(ctx: ToolContext, titre: str, requete: str, type: str, x: str = "", y: str = "", couleur: str = "",
@@ -87,40 +31,9 @@ def creer_visuel(ctx: ToolContext, titre: str, requete: str, type: str, x: str =
                           "colonnes": [], "lignes": [], "cree_le": dt.datetime.now().isoformat(timespec="seconds")}
         return {"visuel_id": vid, "type": "carte", "points": r.get("nombre_points"), "ignores": r.get("ignores"),
                 "tronque": r.get("tronque"), "message": r.get("message"), "affichage": "La carte s'affiche sous la réponse."}
-    stmt = checked_statement(ctx, requete)
-    n = max(1, min(int(limite or 200), MAX_ROWS))
-    r = ctx.sql.query(stmt, row_limit=n)
-    raw = r.get("rows") or []
-    types = r.get("types") or {}
-    temporal = bool(raw and x and (isinstance(raw[0].get(x), (dt.date, dt.datetime))
-                                   or str(types.get(x) or "").upper() in ("DATE", "TIMESTAMP", "TIMESTAMP_NTZ")))
-    numeric = {c for c, t in types.items() if str(t or "").upper() in NUMERIC} | ({y} if y else set())
-    rows = [{k: (_num(val) if k in numeric and val is not None else _clean(val)) for k, val in row.items()}
-            for row in raw]
-    cols = list(r.get("columns") or (list(rows[0].keys()) if rows else []))
-    cols = [c["name"] if isinstance(c, dict) else c for c in cols]
-    if not rows:
-        raise ToolError("La requête ne renvoie aucune ligne : rien à représenter.")
-    if type != "tableau":
-        for role, c in (("x", x), ("y", y)):
-            if not c or c not in cols:
-                raise ToolError(f"Colonne {role} « {c} » absente du résultat (colonnes : {', '.join(cols)}).")
-        if couleur and couleur not in cols:
-            raise ToolError(f"Colonne de couleur « {couleur} » absente du résultat.")
-        if _stats(rows, y) is None:
-            raise ToolError(f"La colonne y « {y} » ne contient pas de nombres.")
-    v = {"id": vid, "type": type, "titre": titre, "requete": requete, "x": x, "y": y, "couleur": couleur,
-         "colonnes": cols, "lignes": rows, "tronque": bool(r.get("truncated")),
-         "x_temporel": temporal,
-         "cree_le": dt.datetime.now().isoformat(timespec="seconds")}
+    v = {"id": vid, **build_chart(ctx, titre, requete, type, x, y, couleur, limite)}
     p.visuals[vid] = v
-    out = {"visuel_id": vid, "type": type, "lignes": len(rows), "tronque": v["tronque"], "colonnes": cols,
-           "apercu": rows[:10], "affichage": "Le visuel s'affiche sous la réponse."}
-    if y:
-        out["statistiques_y"] = _stats(rows, y)
-    if v["tronque"]:
-        out["attention"] = f"Résultat limité à {n} lignes : agréger davantage pour un visuel complet."
-    return out
+    return {"visuel_id": vid, **summary(v)}
 
 
 # --- Rapport ----------------------------------------------------------------------------------------------
