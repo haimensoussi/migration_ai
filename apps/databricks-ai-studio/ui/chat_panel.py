@@ -96,7 +96,7 @@ _DISPLAY: dict[str, str] = {}   # nom de l'agent -> « Prénom, rôle » (alimen
 
 def mention_key(key: str, a: dict) -> str:
     """Clé de bouton unique : une équipe partage l'identifiant de son chef, d'où le type et le nom d'appel."""
-    return f"mention_{key}_{a.get('kind') or 'agent'}_{a.get('handle') or a['agent_id']}"
+    return f"mention_{key}_{a.get('kind') or 'agent'}_{a['agent_id']}_{a.get('handle') or ''}"
 
 
 def _shown(name: str) -> str:

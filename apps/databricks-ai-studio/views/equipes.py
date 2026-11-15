@@ -82,7 +82,13 @@ def do_save(data: dict, mode: str, publish: bool, publish_lead: bool) -> None:
             state.refresh_data()
             if publish_lead and is_admin:
                 state.repository().set_status(data["lead_agent_id"], "publie")
-        tid = trepo.save(data, user.email)
+        try:
+            tid = trepo.save(data, user.email)
+        except Exception:
+            if mode == "nouveau":   # pas de chef orphelin si l'équipe n'a pas pu être créée
+                state.repository().set_status(data["lead_agent_id"], "archive")
+                state.refresh_data()
+            raise
         msg = "Équipe enregistrée en brouillon."
         if publish:
             trepo.set_status(tid, "publie", user.email)
