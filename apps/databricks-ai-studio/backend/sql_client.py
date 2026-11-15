@@ -71,6 +71,7 @@ class SqlClient:
             "columns": cols,
             "rows": [dict(zip(cols, r)) for r in rows],
             "truncated": bool(manifest.get("truncated")),
+            "types": {c["name"]: c.get("type_name") for c in (manifest.get("schema") or {}).get("columns", [])},
         }
 
     def execute(self, statement: str, params: dict | None = None) -> None:

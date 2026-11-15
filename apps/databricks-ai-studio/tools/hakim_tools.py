@@ -91,6 +91,8 @@ class Platform:
     drafts: dict = field(default_factory=dict)        # brouillons conçus pendant la conversation (lot 2)
     designer: Any = None                              # fabrique AgentDesigner (droits de l'utilisateur)
     tool_designer: Any = None                         # fabrique ToolDesigner (droits de l'utilisateur)
+    visuals: dict = field(default_factory=dict)       # visuels de la conversation (lot 3b)
+    reports: dict = field(default_factory=dict)       # rapports de la conversation (lot 3b)
 
     def t(self, name: str) -> str:
         return self.repo.s.table(name)

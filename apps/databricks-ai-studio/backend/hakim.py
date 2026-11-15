@@ -47,6 +47,10 @@ _LIST = {"type": "array", "items": {"type": "string"}}
 _W = "tools.hakim_write_tools"
 
 
+def _r(tool_id, name, description, props=None, required=None):
+    return _spec(tool_id, name, description, props, required, module="hakim_report_tools")
+
+
 def _w(tool_id, name, description, props=None, required=None, write=True):
     return _spec(tool_id, name, description, props, required, write=write, module="hakim_write_tools")
 
@@ -81,6 +85,26 @@ TOOLS: list[ToolSpec] = [
           {"action": _s("Action", enum=["lister_tables", "decrire", "profiler", "apercu"]),
            "table": _s("Nom complet catalog.schema.table"), "catalog": _s("Catalogue"), "schema": _s("Schéma"),
            "limite": {"type": "integer", "minimum": 1, "maximum": 50}}, ["action"]),
+]
+
+# Lot 3b : visuels et rapports (lecture seule, droits de l'utilisateur)
+_SECTION = {"type": "object", "properties": {"titre": {"type": "string"}, "texte": {"type": "string"},
+                                             "visuel_id": {"type": "string"}}, "required": ["titre"]}
+TOOLS += [
+    _r("creer_visuel", "Créer un visuel", "Exécute une requête SELECT (lecture seule, droits de l'utilisateur) et "
+       "affiche un graphique, un tableau ou une carte sous la réponse. Agréger en SQL (GROUP BY) avant de tracer.",
+       {"titre": _s("Titre du visuel"), "requete": _s("Requête SELECT renvoyant les colonnes à tracer"),
+        "type": _s("Type de visuel", enum=["barres", "barres_horizontales", "courbe", "aire", "camembert", "nuage",
+                                           "tableau", "carte"]),
+        "x": _s("Colonne des catégories ou de l'axe horizontal"), "y": _s("Colonne numérique"),
+        "couleur": _s("Colonne de regroupement (facultatif)"),
+        "infobulle": {"type": "array", "items": {"type": "string"}, "description": "Colonnes de l'infobulle (carte)"},
+        "limite": {"type": "integer", "minimum": 1, "maximum": 1000}}, ["titre", "requete", "type"]),
+    _r("generer_rapport", "Générer un rapport", "Assemble un rapport téléchargeable (HTML et Markdown) à partir des "
+       "visuels créés dans la conversation, avec les requêtes en annexe.",
+       {"titre": _s("Titre du rapport"), "introduction": _s("Contexte et périmètre"),
+        "sections": {"type": "array", "items": _SECTION, "description": "Sections : titre, texte, visuel_id"},
+        "conclusion": _s("Constats principaux")}, ["titre", "sections"]),
 ]
 
 # Lot 2 : conception (lecture) puis création en brouillon (confirmation + journal d'audit)
@@ -138,6 +162,14 @@ Ce que tu fais :
 - Diagnostiquer : erreurs d'outils, agents peu utilisés, différences entre versions.
 - Orienter : proposer la bonne page avec ouvrir_page, ou une visite guidée.
 - Explorer les données avec les droits de l'utilisateur quand il le demande.
+
+Visuels et rapports :
+- creer_visuel : vérifie d'abord les colonnes (explorer_donnees action=decrire), agrège en SQL, choisis le type
+  adapté (barres pour comparer des catégories, courbe pour une évolution, camembert seulement pour peu de parts,
+  carte s'il y a latitude/longitude). Noms de colonnes avec espaces entre accents graves.
+- Commente le visuel avec les chiffres renvoyés (aperçu, statistiques_y) ; signale tronque et les valeurs vides.
+- generer_rapport : uniquement avec des visuels déjà créés ; les textes ne contiennent que des constats issus des
+  résultats ; aucun seuil ni objectif inventé (« à valider » si tu proposes une règle).
 
 Création (lot 2), toujours en BROUILLON :
 - Agent : concevoir_agent, présente la proposition (prénom, @appel, rôle, outils, tables), puis creer_agent.

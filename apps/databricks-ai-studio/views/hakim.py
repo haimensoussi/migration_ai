@@ -14,9 +14,10 @@ from ui import state
 
 WRITE_TOOLS = {t.tool_id for t in hakim.TOOLS if t.requires_confirmation}
 
-EXAMPLES = ["Crée-moi un agent qui résume les anomalies qualité par dimension",
+EXAMPLES = ["Montre la fréquentation 2025 par Direction Régionale Gares et fais-en un rapport",
+            "Crée-moi un agent qui résume les anomalies qualité par dimension",
             "Crée un outil qui compte les gares par région", "Quels agents sont disponibles ?",
-            "Pourquoi des appels d'outils échouent ce mois-ci ?"]
+            ]
 
 st.title(f"{hakim.NAME}")
 st.caption(f"{hakim.PERSONA.capitalize()} : je vous guide dans DISCOVERY et je peux concevoir et créer pour vous des "
@@ -29,6 +30,8 @@ if not hakim.enabled():
 s = st.session_state.setdefault("hakim", {"conv": uuid.uuid4().hex, "history": [], "display": [], "turns": 0,
                                           "logged": 0, "drafts": {}, "pending": None})
 s.setdefault("drafts", {})
+s.setdefault("visuals", {})
+s.setdefault("reports", {})
 s.setdefault("pending", None)
 
 
@@ -53,7 +56,7 @@ def runtime():
     trepo = state.team_repository()
     plat = Platform(state.repository(), trepo, ident.email, trepo.is_admin(ident.email), page_context(),
                     conv=s["conv"], drafts=s["drafts"], designer=state.build_designer,
-                    tool_designer=state.build_tool_designer)
+                    tool_designer=state.build_tool_designer, visuals=s["visuals"], reports=s["reports"])
     ctx = ToolContext(sql=sql, workspace=w, max_rows=cfg_s.max_rows, user_email=ident.email, platform=plat)
     return AgentRuntime(ModelClient(w), ToolRegistry(hakim.TOOLS), ctx), hakim.config(cfg_s.default_model), plat
 
@@ -66,8 +69,11 @@ def handle(res, logged_prefix: list[dict]) -> None:
               for e in res.events]
     text = "\n\n".join(m["content"] for m in res.new_messages if m.get("role") == "assistant" and m.get("content"))
     if text or events:
+        ok = [e.result for e in res.events if e.status == "succes" and isinstance(e.result, dict)]
         s["display"].append({"role": "assistant", "content": text, "events": events,
-                             "nav": hakim.navigation_targets(res.events)})
+                             "nav": hakim.navigation_targets(res.events),
+                             "visuals": [r["visuel_id"] for r in ok if r.get("visuel_id")],
+                             "reports": [r["rapport_id"] for r in ok if r.get("rapport_id")]})
     if any(e.tool_id in WRITE_TOOLS and e.status == "succes" for e in res.events):
         state.refresh_data()
     try:   # journal : conversation et appels d'outils sous l'agent « hakimai »
@@ -113,6 +119,39 @@ def decide(approved: bool) -> None:
     handle(res, [])
 
 
+def show_visual(v, key: str) -> None:
+    if not v:
+        return
+    if v["type"] == "carte":
+        from ui import map_view
+        st.caption(v["titre"])
+        map_view.render({"result": v["carte"], "arguments": {"query": v["requete"]}}, key=key)
+    elif v["type"] == "tableau":
+        st.caption(v["titre"])
+        st.dataframe(v["lignes"], use_container_width=True, hide_index=True)
+    else:
+        from tools.hakim_report_tools import vega_spec
+        st.vega_lite_chart(vega_spec(v), use_container_width=True)
+    with st.expander(f"{v['id']} · requête et données ({len(v['lignes']) if v['type'] != 'carte' else v['carte'].get('nombre_points')})"):
+        st.code(v["requete"], language="sql")
+        if v["type"] not in ("carte", "tableau"):
+            st.dataframe(v["lignes"], use_container_width=True, hide_index=True)
+
+
+def show_report(r, key: str) -> None:
+    if not r:
+        return
+    st.markdown(f"**Rapport : {r['titre']}**")
+    c1, c2 = st.columns(2)
+    name = "".join(ch if ch.isalnum() else "_" for ch in r["titre"])[:60] or "rapport"
+    c1.download_button("Télécharger en HTML", r["html"], file_name=f"{name}.html", mime="text/html", key=f"h_{key}",
+                       use_container_width=True)
+    c2.download_button("Télécharger en Markdown", r["markdown"], file_name=f"{name}.md", mime="text/markdown",
+                       key=f"m_{key}", use_container_width=True)
+    with st.expander("Aperçu du rapport"):
+        st.markdown(r["markdown"])
+
+
 top = st.columns([4, 1])
 if top[1].button("Nouvelle conversation", use_container_width=True):
     st.session_state.pop("hakim", None)
@@ -128,6 +167,10 @@ if not s["display"]:
 for m in s["display"]:
     with st.chat_message(m["role"]):
         st.markdown(m["content"])
+        for vid in m.get("visuals") or []:
+            show_visual(s["visuals"].get(vid), key=f"{s['conv']}_{vid}")
+        for rid in m.get("reports") or []:
+            show_report(s["reports"].get(rid), key=f"{s['conv']}_{rid}")
         for nav in m.get("nav") or []:
             st.page_link(nav["path"], label=f"Ouvrir {nav['title']}")
         if m.get("events"):
