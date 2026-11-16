@@ -37,7 +37,7 @@ TOOL_CHIPS = [
     ({"list_tables", "describe_table"}, "database", "Exploration des données"),
     ({"execute_sql", "get_table_profile", "generate_sql"}, "chart", "Analyse des données"),
     ({"run_job", "get_job_status"}, "clock", "Suivi des Jobs"),
-    ({"search_documents", "office_read", "office_send"}, "document", "Documentation"),
+    ({"office_read", "office_send"}, "document", "Documentation"),
 ]
 
 CAPABILITIES = [
@@ -47,7 +47,7 @@ CAPABILITIES = [
     ({"render_chart"}, "chart", "Présenter les résultats en graphique (barres, courbes, camembert…)."),
     ({"get_table_profile", "execute_sql"}, "chart", "Analyser les résultats et identifier les anomalies."),
     ({"get_job_status", "run_job"}, "clock", "Suivre l'état des Jobs Databricks."),
-    ({"office_read", "office_send", "search_documents"}, "document", "Rechercher et préparer des documents et messages."),
+    ({"office_read", "office_send"}, "document", "Rechercher et préparer des documents et messages."),
 ]
 
 

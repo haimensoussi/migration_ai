@@ -279,7 +279,6 @@ with st.container(border=True):
         if st.button("Ajouter") and manual.count(".") == 2:
             b["knowledge_tables"] = sorted(set(b["knowledge_tables"]) | {manual.strip()})
             st.rerun()
-        st.caption("Documents PDF et index Vector Search : Knowledge Studio (phase 2).")
     else:
         errs = errors_for(5)
         if errs:

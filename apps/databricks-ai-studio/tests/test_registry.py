@@ -7,7 +7,7 @@ from tools.common import split_name
 
 def test_catalog_contracts():
     ids = [t.tool_id for t in BUILTIN_TOOLS]
-    assert len(ids) == len(set(ids)) == 15   # + render_chart
+    assert len(ids) == len(set(ids)) == 14   # + render_chart, - search_documents (Knowledge Studio retiré)
     for t in BUILTIN_TOOLS:
         assert t.input_schema["type"] == "object"
         assert callable(resolve_executor(t.executor))

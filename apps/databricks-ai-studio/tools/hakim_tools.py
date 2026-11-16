@@ -24,7 +24,6 @@ PAGES = {
     "agent_builder": ("views/agent_builder.py", "Agent Builder", "Créer ou modifier un agent, avec l'assistant de conception"),
     "chat": ("views/chat.py", "Chat & Test", "Discuter avec un agent, mentionner @agent ou @équipe"),
     "catalogue_outils": ("views/tool_catalog.py", "Catalogue d'outils", "Outils disponibles, création d'outils SQL, fonction UC ou HTTP"),
-    "knowledge_studio": ("views/knowledge_studio.py", "Knowledge Studio", "Sources de connaissance"),
     "marketplace": ("views/marketplace.py", "Marketplace", "Agents partagés"),
     "assessment": ("views/assessment.py", "Assessment Center", "Évaluation des agents"),
     "monitoring": ("views/monitoring.py", "Monitoring", "Appels d'outils, erreurs, latences"),

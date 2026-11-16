@@ -89,12 +89,10 @@ st.write("")
 g, q, s = st.columns([1.2, 1.2, 0.7])
 with g.container(border=True):
     st.markdown('<div class="dsc-section">Parcours guidés</div>', unsafe_allow_html=True)
-    p = st.columns(3)
+    p = st.columns(2)
     p[0].page_link("views/agent_builder.py", label="Créer un agent étape par étape", icon=":material/play_circle:",
                    use_container_width=True)
-    p[1].page_link("views/knowledge_studio.py", label="Connecter une source de données", icon=":material/database:",
-                   use_container_width=True)
-    p[2].page_link("views/marketplace.py", label="Publier dans la Marketplace", icon=":material/storefront:",
+    p[1].page_link("views/marketplace.py", label="Publier dans la Marketplace", icon=":material/storefront:",
                    use_container_width=True)
 with q.container(border=True):
     st.markdown('<div class="dsc-section">Accès rapides métier</div>', unsafe_allow_html=True)

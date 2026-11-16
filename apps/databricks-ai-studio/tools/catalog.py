@@ -94,23 +94,6 @@ BUILTIN_TOOLS: list[ToolSpec] = [
         output_schema={"type": "object", "properties": {"run_id": {"type": "integer"}}},
         executor="tools.planned:not_available", requires_confirmation=True, read_only=False, status="planifie"),
     ToolSpec(
-        tool_id="search_documents", name="Rechercher des documents", category="Connaissances",
-        description=("Recherche des passages dans une base de connaissances documentaire (index AI Search, recherche "
-                     "hybride), avec les droits de l'utilisateur. Chaque passage indique son fichier et sa page : "
-                     "réponds à partir des passages et cite [fichier, p. N]. Bases : corisk (documents de projet "
-                     "CORISK, actuellement un document fictif de test)."),
-        input_schema={"type": "object", "properties": {
-            "query": {"type": "string", "description": "Question ou mots-clés"},
-            "base": {"type": "string", "enum": ["corisk"], "description": "Base de connaissances (défaut : corisk)"},
-            "nombre": {"type": "integer", "minimum": 1, "maximum": 10, "description": "Passages au plus (5 par défaut)"},
-            "fichier": {"type": "string", "description": "Restreindre à un fichier (nom exact, facultatif)"}},
-            "required": ["query"]},
-        output_schema={"type": "object", "properties": {"passages": {"type": "array"}}},
-        executor="tools.doc_tools:search_documents",
-        config={"defaut": "corisk", "bases": {"corisk": {
-            "index": "dataops_dev.knowledge.corisk_chunks_index", "titre": "Documents de projet CORISK",
-            "colonnes": {"id": "chunk_id", "texte": "content", "fichier": "file_name", "page": "page"}}}}),
-    ToolSpec(
         tool_id="generate_sql", name="Générer du SQL", category="SQL",
         description="Génère une requête SQL à partir d'une question en langage naturel (phase 2).",
         input_schema={"type": "object", "properties": {"question": {"type": "string"},

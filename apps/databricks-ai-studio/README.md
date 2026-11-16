@@ -28,7 +28,7 @@ Studio de création d'agents IA inspiré de Copilot Studio, hébergé dans Datab
 | execute_sql | publié | lecture seule, 1 instruction, 200 lignes max, limité aux tables de l'agent |
 | get_job_status | publié | API Jobs avec le jeton utilisateur |
 | run_job | planifié | validation humaine obligatoire |
-| search_documents, generate_sql | planifié | phase 2 |
+| generate_sql | planifié | phase 2 |
 | get_billing_usage, get_table_lineage | indisponible | accès au catalogue `system` requis |
 
 ## Déploiement
@@ -52,5 +52,5 @@ Tests unitaires : garde SQL, contrats et registre d'outils, liste blanche des ta
 
 ## Phases suivantes
 
-- Phase 2 : Knowledge Studio (Volumes, `ai_parse_document`, Vector Search), Marketplace, Assessment Center (MLflow).
+- Phase 2 : Marketplace, Assessment Center (MLflow).
 - Phase 3 : publication des agents en endpoints Model Serving (`ResponsesAgent`), traces MLflow, consommation, gestion fine des versions.
