@@ -169,7 +169,28 @@ def concevoir_outil(ctx: ToolContext, demande: str) -> dict:
             "suite": "verifier_outil exécute un test en lecture ; creer_outil n'est possible qu'après un test réussi."}
 
 
-def verifier_outil(ctx: ToolContext, brouillon_id: str, arguments_test: dict | None = None) -> dict:
+MAX_CASES = 5
+
+
+def _run_cases(spec, cases: list[dict], ctx: ToolContext) -> dict:
+    """Exécute 1 à MAX_CASES jeux d'arguments ; le test n'est réussi que si TOUS les cas réussissent."""
+    results = [tb.run_test(spec, dict(a or {}), ctx) for a in cases[:MAX_CASES]]
+    first = dict(results[0])
+    if len(results) == 1:
+        return first
+    return {**first, "ok": all(r.get("ok") for r in results), "nombre_cas": len(results),
+            "cas_reussis": sum(1 for r in results if r.get("ok")), "cas": results}
+
+
+def _cases(default: dict, arguments: dict | None, cas_test: list | None) -> list[dict]:
+    cases = [c for c in (cas_test or []) if isinstance(c, dict)]
+    if arguments:
+        cases.insert(0, arguments)
+    return cases or [default]
+
+
+def verifier_outil(ctx: ToolContext, brouillon_id: str, arguments_test: dict | None = None,
+                   cas_test: list | None = None) -> dict:
     p = _p(ctx)
     d = _draft(p, brouillon_id, "outil")
     draft = d["draft"]
@@ -179,9 +200,114 @@ def verifier_outil(ctx: ToolContext, brouillon_id: str, arguments_test: dict | N
         d.pop("test", None)
         return {"ok": False, "erreurs": c.errors, "avertissements": c.warnings}
     spec = tb.build_spec(draft, p.user)
-    res = tb.run_test(spec, arguments_test or tb.example_args(draft), ctx)
+    res = _run_cases(spec, _cases(tb.example_args(draft), arguments_test, cas_test), ctx)
     d["test"], d["fp"] = res, tb.fingerprint(draft)
     return {"ok": bool(res.get("ok")), "avertissements": c.warnings, "test": res}
+
+
+# --- Développement d'outils : fiche, test d'un outil existant, amélioration --------------------------------
+def _find_tool(p: Platform, ref: str):
+    key = str(ref or "").strip().lower()
+    for s in p.repo.list_tools():
+        if key in (s.tool_id.lower(), (s.name or "").lower()):
+            mine = bool(s.owner) and s.owner == p.user
+            if s.status in ("archive", "retire") and not (p.is_admin or mine):
+                break
+            if s.status == "brouillon" and s.owner and not (p.is_admin or mine):
+                break
+            return s
+    raise ToolError(f"Outil « {ref} » introuvable ou non visible pour vous (lister_outils pour la liste).")
+
+
+def _loads(v, default=None):
+    if isinstance(v, (dict, list)):
+        return v
+    try:
+        return json.loads(v) if v else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _kind(s) -> str:
+    return (s.config or {}).get("type") if tb.is_custom(s) else "intégré"
+
+
+def decrire_outil(ctx: ToolContext, outil: str) -> dict:
+    p = _p(ctx)
+    s = _find_tool(p, outil)
+    cfg = s.config or {}
+    out = {"outil": s.tool_id, "nom": s.name, "categorie": s.category, "type": _kind(s),
+           "type_libelle": tb.TYPE_LABELS.get(_kind(s), "Outil intégré (code de la plateforme)"),
+           "statut": s.status, "version": s.version, "proprietaire": s.owner or None,
+           "lecture_seule": s.read_only, "confirmation": s.requires_confirmation, "identite": s.identity,
+           "description": s.description, "parametres": s.input_schema.get("properties") or {},
+           "obligatoires": s.input_schema.get("required") or [],
+           "modifiable_par_vous": tb.is_custom(s) and s.owner == p.user and s.status != "publie"}
+    if tb.is_custom(s):
+        out["definition"] = {k: cfg.get(k) for k in ("sql", "function", "kind", "connection", "method", "path",
+                                                     "query", "body", "max_rows", "tables") if cfg.get(k) not in (None, "", {}, [])}
+        out["exemples"] = cfg.get("examples") or {}
+        if p.is_admin or s.owner == p.user:
+            vers = []
+            for v in p.repo.tool_versions(s.tool_id)[:10]:
+                t = _loads(v.get("test_result"), {}) or {}
+                vers.append({"version": v.get("version"), "note": v.get("note"), "par": v.get("created_by"),
+                             "le": str(v.get("created_at") or "")[:19], "test_ok": t.get("ok"),
+                             "test_erreur": (t.get("erreur") or None) and str(t["erreur"])[:300]})
+            out["versions"] = vers
+    else:
+        out["definition"] = "Outil intégré : son code fait partie de la plateforme, il ne se modifie pas ici."
+    return out
+
+
+def tester_outil(ctx: ToolContext, outil: str, arguments: dict | None = None, cas_test: list | None = None) -> dict:
+    """Exécute un outil existant (lecture seule uniquement) avec les droits de l'utilisateur. N'écrit rien."""
+    p = _p(ctx)
+    s = _find_tool(p, outil)
+    if not s.read_only or s.requires_confirmation:
+        raise ToolError(f"« {s.tool_id} » écrit ou envoie des données : il se teste dans Chat & Test, avec "
+                        "validation humaine à chaque appel.")
+    if s.status in ("planifie", "indisponible"):
+        raise ToolError(f"« {s.tool_id} » n'est pas exécutable (statut : {s.status}).")
+    default = (s.config or {}).get("examples") or {}
+    res = _run_cases(s, _cases(default, arguments, cas_test), ctx)
+    return {"outil": s.tool_id, "statut": s.status, "test": res,
+            "note": "Test en lecture seule avec vos droits ; résultat non enregistré."}
+
+
+def ameliorer_outil(ctx: ToolContext, outil: str, demande: str = "") -> dict:
+    """Le copilote d'outils propose une nouvelle version d'un outil créé dont l'utilisateur est propriétaire."""
+    p = _p(ctx)
+    s = _find_tool(p, outil)
+    if not tb.is_custom(s):
+        raise ToolError(f"« {s.tool_id} » est un outil intégré : il ne se modifie pas. Proposez plutôt un nouvel "
+                        "outil (concevoir_outil).")
+    if s.owner != p.user:
+        raise ToolError(f"Seul le propriétaire de « {s.tool_id} » peut le modifier.")
+    if s.status == "publie":
+        raise ToolError(f"« {s.tool_id} » est publié : sa modification se fait dans le Catalogue d'outils "
+                        "(onglet Mes outils), pour ne pas interrompre les agents qui l'utilisent.")
+    if _kind(s) not in HAKIM_TOOL_KINDS:
+        raise ToolError("Les outils HTTP se modifient dans le Catalogue d'outils (test d'appel réel requis).")
+    if not callable(p.tool_designer):
+        raise ToolError("Assistant d'outils indisponible.")
+    current = tb.draft_from_spec(s)
+    vers = p.repo.tool_versions(s.tool_id)
+    last = _loads(vers[0].get("test_result"), None) if vers else None
+    r = p.tool_designer().improve(current, demande, last)
+    if not r.draft:
+        return {"brouillon_id": None, "non_realisable": r.unsupported or "Aucune proposition.", "hypotheses": r.hypotheses}
+    if r.draft.get("type") not in HAKIM_TOOL_KINDS:
+        return {"brouillon_id": None, "non_realisable": "Le type proposé n'est pas pris en charge par HakimAI."}
+    did = _new_id(p, "O")
+    p.drafts[did] = {"kind": "outil", "draft": r.draft, "base": {"tool_id": s.tool_id, "version": s.version}}
+    diff = {k: {"avant": current.get(k), "apres": r.draft.get(k)}
+            for k in ("name", "description", "sql", "function", "parameters", "max_rows")
+            if current.get(k) != r.draft.get(k)}
+    return {"brouillon_id": did, "outil": s.tool_id, "version_actuelle": s.version, "modifications": r.changes,
+            "differences": diff, "erreurs": r.check.errors, "avertissements": r.check.warnings,
+            "hypotheses": r.hypotheses,
+            "suite": "verifier_outil (test réel), puis creer_outil enregistre la nouvelle version en brouillon."}
 
 
 @_written("creer_outil", "outil")
@@ -189,11 +315,17 @@ def creer_outil(ctx, p, brouillon_id: str) -> tuple:
     d = _draft(p, brouillon_id, "outil")
     if not (d.get("test") or {}).get("ok") or d.get("fp") != tb.fingerprint(d["draft"]):
         raise ToolError("Test réussi requis avant l'enregistrement : lancez verifier_outil.")
+    cur = next((s for s in p.repo.list_tools() if s.tool_id == d["draft"]["tool_id"]), None)
+    if cur is not None and cur.status == "publie":
+        raise ToolError(f"« {cur.tool_id} » est publié : sa modification se fait dans le Catalogue d'outils.")
+    before = {"version": cur.version, "statut": cur.status} if cur is not None else None
     spec = tb.build_spec(d["draft"], p.user, status="brouillon")
-    v = p.repo.save_custom_tool(spec, p.user, d["test"], note="Créé avec HakimAI")
-    return spec.tool_id, None, {"tool_id": spec.tool_id, "version": v, "statut": "brouillon"}, {
-        "outil": spec.tool_id, "version": v, "statut": "brouillon",
-        "suite": "Publier depuis le Catalogue d'outils (onglet Mes outils)."}
+    v = p.repo.save_custom_tool(spec, p.user, d["test"],
+                                note="Modifié avec HakimAI" if cur is not None else "Créé avec HakimAI")
+    return spec.tool_id, before, {"tool_id": spec.tool_id, "version": v, "statut": "brouillon"}, {
+        "outil": spec.tool_id, "version": v, "statut": "brouillon", "nouvelle_version": cur is not None,
+        "suite": "Tester dans un agent en brouillon (modifier_agent ajoute l'outil une fois publié), puis publier "
+                 "depuis le Catalogue d'outils (onglet Mes outils)."}
 
 
 # --- Équipes ----------------------------------------------------------------------------------------------

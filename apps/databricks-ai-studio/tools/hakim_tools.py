@@ -67,6 +67,10 @@ GUIDE = {
     "securite": "Les données sont lues avec vos droits Unity Catalog. Le SQL est limité à la lecture. Les actions sensibles "
                 "demandent votre confirmation et sont journalisées.",
     "monitoring": "Le Monitoring montre les appels d'outils, les taux d'erreur et les latences par agent et par outil.",
+    "developpement_outils": "Avec HakimAI : concevoir_outil (proposition SQL paramétré ou fonction UC), verifier_outil "
+                             "(test réel en lecture, jusqu'à 5 cas), creer_outil (brouillon). Un outil en brouillon se "
+                             "relit avec decrire_outil, se rejoue avec tester_outil et s'améliore avec ameliorer_outil "
+                             "(nouvelle version). Publication et outils HTTP : Catalogue d'outils.",
     "chat": "Chat & Test permet d'essayer un agent, y compris en brouillon pour son propriétaire. Les appels d'outils sont "
             "visibles sous chaque réponse.",
 }

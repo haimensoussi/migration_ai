@@ -44,6 +44,9 @@ def _spec(tool_id, name, description, props=None, required=None, write=False, mo
 
 
 _LIST = {"type": "array", "items": {"type": "string"}}
+_TOOL = _s("Identifiant ou nom de l'outil")
+_CASES = {"type": "array", "items": {"type": "object"}, "maxItems": 5,
+          "description": "Jusqu'à 5 jeux d'arguments : cas nominal, paramètre facultatif vide, valeur limite..."}
 _W = "tools.hakim_write_tools"
 
 
@@ -128,11 +131,24 @@ TOOLS += [
        {"demande": _s("Ce que l'outil doit faire")}, ["demande"], write=False),
     _w("verifier_outil", "Vérifier un outil", "Contrôle le brouillon d'outil et exécute un test en lecture avec "
        "les droits de l'utilisateur. Obligatoire avant creer_outil.",
-       {"brouillon_id": _s("Identifiant renvoyé par concevoir_outil"),
-        "arguments_test": {"type": "object", "description": "Arguments d'essai (sinon exemples du brouillon)"}},
-       ["brouillon_id"], write=False),
-    _w("creer_outil", "Créer un outil (brouillon)", "Enregistre en BROUILLON un outil vérifié avec succès.",
-       {"brouillon_id": _s("Identifiant renvoyé par concevoir_outil")}, ["brouillon_id"]),
+       {"brouillon_id": _s("Identifiant renvoyé par concevoir_outil ou ameliorer_outil"),
+         "arguments_test": {"type": "object", "description": "Arguments d'essai (sinon exemples du brouillon)"},
+         "cas_test": _CASES},
+        ["brouillon_id"], write=False),
+    _w("decrire_outil", "Décrire un outil", "Fiche technique d'un outil : type, paramètres, requête SQL ou fonction, "
+       "exemples, statut, et pour son propriétaire l'historique des versions avec le résultat des tests.",
+       {"outil": _TOOL}, ["outil"], write=False),
+    _w("tester_outil", "Tester un outil existant", "Exécute un outil existant EN LECTURE SEULE avec les droits de "
+       "l'utilisateur, sur un ou plusieurs jeux d'arguments, sans rien enregistrer. Refusé pour les outils qui écrivent.",
+       {"outil": _TOOL, "arguments": {"type": "object", "description": "Arguments (sinon exemples de l'outil)"},
+        "cas_test": _CASES}, ["outil"], write=False),
+    _w("ameliorer_outil", "Améliorer un outil", "Le copilote d'outils propose une nouvelle version d'un outil créé "
+       "(SQL ou fonction UC) en brouillon dont l'utilisateur est propriétaire, en tenant compte du dernier test. "
+       "Rien n'est enregistré : renvoie un brouillon_id à vérifier puis enregistrer avec creer_outil.",
+       {"outil": _TOOL, "demande": _s("Ce qu'il faut changer ou corriger (facultatif)")}, ["outil"], write=False),
+    _w("creer_outil", "Créer un outil (brouillon)", "Enregistre en BROUILLON un outil vérifié avec succès : nouvel "
+       "outil, ou nouvelle version d'un outil en brouillon (brouillon issu d'ameliorer_outil).",
+       {"brouillon_id": _s("Identifiant renvoyé par concevoir_outil ou ameliorer_outil")}, ["brouillon_id"]),
     _w("creer_equipe", "Créer une équipe (brouillon)", "Crée une équipe en BROUILLON : membres, chef existant ou "
        "chef généré en brouillon (creer_chef).",
        {"nom": _s("Nom de l'équipe"), "membres": _LIST, "mission": _s("Mission en une phrase"),
@@ -179,6 +195,27 @@ Création (lot 2), toujours en BROUILLON :
 - Agent : concevoir_agent, présente la proposition (prénom, @appel, rôle, outils, tables), puis creer_agent.
 - Outil : concevoir_outil, puis verifier_outil (test réel en lecture), puis creer_outil seulement si le test réussit.
   Les outils HTTP se créent dans le Catalogue d'outils.
+
+Développement d'outils (méthode à suivre) :
+1. Cadrer : besoin, données concernées, qui l'utilisera. Vérifie d'abord avec lister_outils qu'aucun outil publié ne
+   couvre déjà le besoin ; si oui, propose-le (decrire_outil) au lieu d'en créer un.
+2. Explorer : explorer_donnees (decrire, apercu) sur les tables visées, pour connaître les colonnes et des valeurs réelles.
+3. Concevoir : concevoir_outil avec une demande précise (tables en nom complet, filtres attendus, colonnes renvoyées).
+   Présente la proposition : identifiant, type, paramètres (obligatoire ou non, exemple), requête, hypothèses.
+4. Tester : verifier_outil avec cas_test couvrant au moins le cas nominal et, s'il y a des paramètres facultatifs,
+   le cas où ils sont vides. Commente les résultats (nombre de lignes, colonnes, tronque) ; 0 ligne n'est pas un succès
+   métier : signale-le et propose une correction.
+5. Corriger : en cas d'échec ou de résultat douteux, concevoir_outil à nouveau (outil pas encore enregistré) ou
+   ameliorer_outil (outil déjà enregistré en brouillon), puis verifier_outil de nouveau.
+6. Enregistrer : creer_outil (brouillon), puis indique la publication dans le Catalogue d'outils (onglet Mes outils)
+   et l'ajout à un agent (modifier_agent, une fois l'outil publié).
+Qualité attendue d'un outil :
+- Description pour les agents : ce que fait l'outil, quand l'utiliser, ce qu'il renvoie (colonnes).
+- Un paramètre par valeur variable, avec description et exemple réel ; aucune valeur métier en dur.
+- Pas de LIMIT dans la requête (max_rows), un ORDER BY utile, noms complets catalog.schema.table.
+- Aucun seuil ni règle SNCF Réseau inventé : paramètre ou hypothèse « à valider par le responsable métier ».
+- decrire_outil pour relire un outil et son historique ; tester_outil pour rejouer un outil existant (lecture seule).
+- Un outil publié ou intégré ne se modifie pas ici : explique pourquoi et ouvre le Catalogue d'outils.
 - Équipe : creer_equipe ou modifier_equipe ; un chef est obligatoire au-delà d'un membre.
 - Quand l'utilisateur demande une écriture et que l'objet est identifiable, appelle DIRECTEMENT l'outil d'écriture : l'application affiche alors une fiche qu'il valide ou refuse. Ne demande jamais « confirmez-vous ? » en texte. S'il refuse, n'enchaîne pas d'autres écritures.
 - Tu ne publies jamais. Propose soumettre_publication, et indique l'écran où la publication se fait.
@@ -204,7 +241,7 @@ Règles :
 def config(model_endpoint: str) -> AgentConfig:
     return AgentConfig(agent_id=AGENT_ID, version=1, name=NAME, model_endpoint=model_endpoint,
                        instructions=INSTRUCTIONS, tool_ids=[t.tool_id for t in TOOLS], temperature=0.1,
-                       max_iterations=8)
+                       max_iterations=12)   # 12 : explorer, concevoir, vérifier, corriger, revérifier, enregistrer
 
 
 def describe_action(tool_id: str, args: dict, drafts: dict | None = None) -> list[str]:
@@ -228,9 +265,16 @@ def describe_action(tool_id: str, args: dict, drafts: dict | None = None) -> lis
                 out.append(f"{lab} : {str(a[k])[:200]}")
         return out
     if tool_id == "creer_outil":
-        d = (drafts.get(a.get("brouillon_id")) or {}).get("draft") or {}
-        return [f"Enregistrer l'outil « {d.get('name', '?')} » ({d.get('tool_id', '?')}) en brouillon",
-                f"Type : {d.get('type', '?')}", "Test réussi requis : " + ("oui" if (drafts.get(a.get('brouillon_id')) or {}).get("test", {}).get("ok") else "non")]
+        e = drafts.get(a.get("brouillon_id")) or {}
+        d, t, base = e.get("draft") or {}, e.get("test") or {}, e.get("base")
+        head = (f"Nouvelle version de l'outil « {d.get('name', '?')} » ({d.get('tool_id', '?')}), en brouillon"
+                if base else f"Enregistrer l'outil « {d.get('name', '?')} » ({d.get('tool_id', '?')}) en brouillon")
+        out = [head, f"Type : {d.get('type', '?')}",
+               f"Paramètres : {lst([x.get('name') for x in d.get('parameters') or []])}",
+               "Test réussi : " + ("oui" if t.get("ok") else "non")]
+        if t.get("nombre_cas"):
+            out.append(f"Cas de test réussis : {t.get('cas_reussis')} / {t.get('nombre_cas')}")
+        return out
     if tool_id == "creer_equipe":
         chef = a.get("chef") or ("chef généré en brouillon" if a.get("creer_chef") else "aucun")
         return [f"Créer l'équipe « {a.get('nom')} » en brouillon", f"Membres : {lst(a.get('membres'))}",
