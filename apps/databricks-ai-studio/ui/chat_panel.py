@@ -43,6 +43,9 @@ def _show_delegation(ev: dict):
         for i, m in enumerate(maps):
             st.caption(f"Carte produite par {who}")
             map_view.render({"result": m, "arguments": {"query": m.get("_ui_query", "")}}, key=f"{id(ev)}_{i}")
+    for docs in res.get("_ui_documents") or []:
+        from ui import source_view
+        source_view.render(docs, caption=f"{who} · ")
     charts = res.get("_ui_charts") or []
     if charts:
         from ui import chart_view
@@ -56,6 +59,9 @@ def _show_event(ev: dict):
     if ev["tool_id"] == "render_map" and ev["status"] == "succes":
         from ui import map_view
         return map_view.render(ev)
+    if ev["tool_id"] == "search_documents" and ev["status"] == "succes" and isinstance(ev.get("result"), dict):
+        from ui import source_view
+        return source_view.render(ev["result"])
     if ev["tool_id"] == "render_chart" and ev["status"] == "succes" and isinstance(ev.get("result"), dict):
         from ui import chart_view
         return chart_view.render(ev["result"].get("_ui_chart"))

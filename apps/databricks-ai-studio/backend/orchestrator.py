@@ -149,6 +149,10 @@ class Orchestrator:
             if maps:   # cartes du partenaire : résumé pour le modèle, données complètes pour l'affichage (_ui)
                 out["cartes"] = [{"titre": m.result.get("titre"), "nombre_points": m.result.get("nombre_points")} for m in maps]
                 out["_ui_maps"] = [{**m.result, "_ui_query": m.arguments.get("query", "")} for m in maps]
+            docs = [e for e in res.events if e.tool_id == "search_documents" and e.status == "succes"
+                    and isinstance(e.result, dict)]
+            if docs:   # sources documentaires du partenaire : citées dans sa réponse, détail affiché (_ui)
+                out["_ui_documents"] = [d.result for d in docs]
             charts = [e for e in res.events if e.tool_id == "render_chart" and e.status == "succes"
                       and isinstance(e.result, dict) and e.result.get("_ui_chart")]
             if charts:   # graphiques du partenaire : même principe que les cartes
