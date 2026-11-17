@@ -15,6 +15,9 @@ from typing import Any, Callable
 from backend.tool_registry import ToolContext, ToolError, ToolRegistry, ToolSpec
 
 MAX_TOOL_RESULT_CHARS = 12000
+TRUNCATED_CALL = ("Appel non exécuté : ta réponse a été coupée à la limite de longueur et les arguments sont "
+                  "incomplets. Découpe le travail en appels plus petits (moins de feuilles, de lignes ou de texte par "
+                  "appel) ; ne renvoie pas le même appel.")
 
 
 @dataclass
@@ -108,6 +111,13 @@ class AgentRuntime:
                 calls = msg.get("tool_calls") or []
                 if not calls:
                     return result(final_text=msg.get("content") or "")
+                if resp.get("finish_reason") == "length":
+                    # Réponse coupée à la limite de longueur : arguments incomplets. Aucun outil n'est exécuté (ni mis
+                    # en attente de confirmation) avec des arguments tronqués ; le modèle est invité à découper.
+                    for call in calls:
+                        self._record(ToolEvent(call["id"], call["function"]["name"], _parse_args(call), "erreur",
+                                               error=TRUNCATED_CALL), messages, events)
+                    continue
             for call in calls:
                 spec = tools.get(call["function"]["name"])
                 if spec and spec.requires_confirmation:

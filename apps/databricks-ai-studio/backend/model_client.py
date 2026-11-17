@@ -5,6 +5,8 @@ from typing import Any
 
 from databricks.sdk import WorkspaceClient
 
+MAX_OUTPUT_TOKENS = 8192   # jetons produits au plus par appel du modèle
+
 
 class ModelError(RuntimeError):
     pass
@@ -23,8 +25,10 @@ class ModelClient:
                 out.append({"name": e["name"], "task": e.get("task")})
         return sorted(out, key=lambda x: x["name"])
 
+    # 2048 coupait les appels d'outils volumineux (export Excel rédigé, rapport) : arguments tronqués à {"titre"}.
+    # Seuls les jetons réellement produits sont facturés ; la limite ne ralentit pas les réponses courtes.
     def chat(self, endpoint: str, messages: list[dict], tools: list[dict] | None = None,
-             temperature: float | None = None, max_tokens: int = 2048) -> dict:
+             temperature: float | None = None, max_tokens: int = MAX_OUTPUT_TOKENS) -> dict:
         body: dict[str, Any] = {"messages": messages, "max_tokens": max_tokens}
         if tools:
             body["tools"] = tools
@@ -37,7 +41,8 @@ class ModelClient:
         choices = resp.get("choices") or []
         if not choices:
             raise ModelError(f"Réponse vide du modèle {endpoint}.")
-        return {"message": normalize_message(choices[0].get("message") or {}), "usage": resp.get("usage") or {}}
+        return {"message": normalize_message(choices[0].get("message") or {}), "usage": resp.get("usage") or {},
+                "finish_reason": choices[0].get("finish_reason")}
 
 
 def normalize_message(msg: dict) -> dict:

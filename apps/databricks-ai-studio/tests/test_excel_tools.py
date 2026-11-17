@@ -78,6 +78,44 @@ def test_limits_truncation_and_read_only():
         xt.export_excel(ctx(), "T", [{"nom": "F", "requete": "SELECT 1"}] * 11)
 
 
+def test_drafted_sheet_is_marked_and_mixed_with_data():
+    sql = Sql()
+    r = xt.export_excel(ctx(sql), "Spec", [
+        {"nom": "Plan de test", "lignes": [{"cas": "Nominal", "attendu": "=1+1", "n": 3},
+                                           {"cas": "Erreur", "ordre": {"a": 1}}]},
+        {"nom": "Données", "requete": "SELECT * FROM a.b.c"}])
+    assert len(sql.calls) == 1                                           # la feuille rédigée n'exécute rien
+    assert [(f["feuille"], f["origine"], f["lignes"]) for f in r["feuilles"]] == [
+        ("Plan de test", "rédigée", 2), ("Données", "données", 2)]
+    assert r["feuilles"][0]["colonnes"] == ["cas", "attendu", "n", "ordre"]
+    assert "Plan de test" in r["note"] and "relire" in r["note"]
+    z = unzip(r)
+    s1 = z.read("xl/worksheets/sheet1.xml").decode()
+    assert '<c r="A1" t="inlineStr" s="5">' in s1                        # en-tête orange
+    assert '<c r="C2"><v>3</v></c>' in s1 and "<f>" not in s1 and "{&quot;a&quot;: 1}" not in s1
+    assert '{"a": 1}' in s1
+    assert '<c r="A1" t="inlineStr" s="1">' in z.read("xl/worksheets/sheet2.xml").decode()
+    assert xt.DRAFT_ORIGIN in z.read("xl/worksheets/sheet3.xml").decode()
+    assert 'fillId="3"' in z.read("xl/styles.xml").decode()
+
+
+def test_drafted_sheet_with_lists_and_errors():
+    r = xt.export_excel(ctx(), "T", [{"nom": "S", "colonnes": ["a", "b"], "lignes": [["x", 1], ["y"]]}])
+    assert r["feuilles"][0]["lignes"] == 2
+    bad = [
+        ({"nom": "S"}, "soit requete"),
+        ({"nom": "S", "requete": "SELECT 1", "lignes": [{"a": 1}]}, "soit requete"),
+        ({"nom": "S", "lignes": []}, "lignes vides"),
+        ({"nom": "S", "lignes": [{"a": 1}] * (xt.MAX_DRAFT_ROWS + 1)}, "lignes rédigées au plus"),
+        ({"nom": "S", "lignes": [["x"]]}, "chaque ligne doit être un objet"),
+        ({"nom": "S", "colonnes": ["a"], "lignes": [{"a": 1, "z": 2}]}, "colonnes inconnues"),
+        ({"nom": "S", "colonnes": ["a"], "lignes": [[1, 2]]}, "2 valeurs pour 1"),
+    ]
+    for f, msg in bad:
+        with pytest.raises(ToolError, match=msg):
+            xt.export_excel(ctx(), "T", [f])
+
+
 def test_registered_in_catalog_and_hakim():
     spec = next(t for t in BUILTIN_TOOLS if t.tool_id == "export_excel")
     assert spec.read_only and not spec.requires_confirmation

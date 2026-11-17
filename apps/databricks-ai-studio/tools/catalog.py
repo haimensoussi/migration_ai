@@ -106,13 +106,20 @@ BUILTIN_TOOLS: list[ToolSpec] = [
                      "(10 feuilles au plus), en-têtes figés et filtrables, nombres et dates typés, plus une feuille "
                      "Informations (date, utilisateur, requête et nombre de lignes de chaque feuille). À utiliser quand "
                      "l'utilisateur demande un export, un fichier Excel ou un tableur. Les nombres de lignes renvoyés "
-                     "sont calculés par l'application : les reprendre tels quels et signaler toute feuille tronquée."),
+                     "sont calculés par l'application : les reprendre tels quels et signaler toute feuille tronquée. "
+                     "Une feuille peut aussi être un tableau rédigé (colonnes, lignes ; 500 lignes au plus) pour un "
+                     "contenu qui n'est pas dans les tables (spécification, plan de test) : il est marqué « non issu "
+                     "des données ». Les chiffres issus des données passent toujours par une requête."),
         input_schema={"type": "object", "properties": {
             "titre": {"type": "string", "description": "Titre du fichier (sert aussi au nom du fichier)"},
             "feuilles": {"type": "array", "maxItems": 10, "items": {"type": "object", "properties": {
                 "nom": {"type": "string", "description": "Nom de la feuille (31 caractères au plus)"},
-                "requete": {"type": "string", "description": "Requête SQL en lecture seule"}},
-                "required": ["nom", "requete"]}},
+                "requete": {"type": "string", "description": "Requête SQL en lecture seule (feuille de données)"},
+                "colonnes": {"type": "array", "items": {"type": "string"},
+                             "description": "Feuille rédigée : noms des colonnes (facultatif si lignes sont des objets)"},
+                "lignes": {"type": "array", "maxItems": 500, "items": {"type": "object"},
+                           "description": "Feuille rédigée, à la place de requete : une ligne = un objet colonne -> valeur"}},
+                "required": ["nom"]}},
             "limite": {"type": "integer", "minimum": 1, "maximum": 20000,
                        "description": "Lignes au plus par feuille (5000 par défaut)"}},
             "required": ["titre", "feuilles"]},

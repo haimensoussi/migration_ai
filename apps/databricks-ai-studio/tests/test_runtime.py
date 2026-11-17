@@ -51,6 +51,36 @@ def test_tool_loop():
     assert {t["function"]["name"] for t in sent_tools} == {"echo", "danger"}
 
 
+class TruncatingModel(ScriptedModel):
+    """Première réponse coupée à la limite de longueur (finish_reason=length), comme l'endpoint réel."""
+
+    def chat(self, endpoint, messages, tools=None, temperature=None, max_tokens=2048):
+        out = super().chat(endpoint, messages, tools, temperature, max_tokens)
+        if len(self.calls) == 1:
+            out["finish_reason"] = "length"
+        return out
+
+
+def test_truncated_tool_call_is_never_executed_nor_pending():
+    replies = [{"role": "assistant", "content": "", "tool_calls": [call("c1", "danger", {}), call("c2", "echo", {})]},
+               {"role": "assistant", "content": "", "tool_calls": [call("c3", "echo", {"text": "ok"})]},
+               {"role": "assistant", "content": "fini"}]
+    rt = AgentRuntime(TruncatingModel(replies), ToolRegistry([ECHO, DANGER]), ToolContext(None, None))
+    res = rt.run(cfg(), [{"role": "user", "content": "x"}])
+    assert res.pending is None and res.final_text == "fini"             # pas de confirmation sur arguments tronqués
+    assert [(e.call_id, e.status) for e in res.events] == [("c1", "erreur"), ("c2", "erreur"), ("c3", "succes")]
+    assert "coupée à la limite" in res.events[0].error
+    sent = rt.model.calls[1]["messages"]                                  # le modèle reçoit une réponse par appel
+    assert {m["tool_call_id"] for m in sent if m["role"] == "tool"} == {"c1", "c2"}
+
+
+def test_model_client_default_output_budget():
+    import inspect
+    from backend.model_client import MAX_OUTPUT_TOKENS, ModelClient
+    assert MAX_OUTPUT_TOKENS >= 8192
+    assert inspect.signature(ModelClient.chat).parameters["max_tokens"].default == MAX_OUTPUT_TOKENS
+
+
 def test_invalid_args_and_unknown_tool_are_reported_to_model():
     rt = make([{"role": "assistant", "content": "", "tool_calls": [call("c1", "echo", {}),
                                                                      call("c2", "rm_rf", {})]},

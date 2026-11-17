@@ -6,6 +6,9 @@
   le modèle. Le modèle reçoit un résumé (feuilles, lignes, colonnes) ; le fichier est dans « _ui_excel ».
 - Feuille « Informations » : titre, date, utilisateur, et pour chaque feuille sa requête et son nombre de lignes
   (traçabilité résultat -> requête).
+- Feuilles rédigées : une feuille peut aussi recevoir un tableau fourni directement (colonnes, lignes), par exemple
+  une spécification ou un plan de test. Son contenu vient du modèle, pas des données : en-tête orange, origine
+  « contenu rédigé, non issu des données » dans la feuille Informations et dans le résumé.
 - Protection contre l'injection de formules : les textes commençant par = + - @ sont écrits en texte pur.
 """
 from __future__ import annotations
@@ -13,6 +16,7 @@ from __future__ import annotations
 import base64
 import datetime as dt
 import io
+import json
 import math
 import re
 import zipfile
@@ -24,6 +28,9 @@ from tools.sql_tools import checked_statement
 MAX_SHEETS = 10
 MAX_ROWS = 20000          # lignes par feuille
 DEFAULT_ROWS = 5000
+MAX_DRAFT_ROWS = 500      # feuille rédigée : contenu écrit par le modèle, volume limité
+MAX_DRAFT_COLS = 30
+DRAFT_ORIGIN = "Contenu rédigé par l'assistant, non issu des données : à relire et valider"
 MAX_CELL = 32000          # limite Excel : 32 767 caractères par cellule
 _BAD_SHEET = re.compile(r"[\[\]:*?/\\]")
 _CTRL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
@@ -90,15 +97,16 @@ def sheet_name(name: str, used: set) -> str:
 
 
 # --- Écriture du classeur (SpreadsheetML minimal) -----------------------------------------------------------
-# Styles : 0 normal, 1 en-tête (gras, fond), 2 date, 3 date et heure, 4 texte en gras (feuille Informations)
+# Styles : 0 normal, 1 en-tête (gras, fond), 2 date, 3 date et heure, 4 texte en gras (feuille Informations),
+# 5 en-tête de feuille rédigée (fond orange)
 _STYLES = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
 <numFmts count="2"><numFmt numFmtId="164" formatCode="dd/mm/yyyy"/><numFmt numFmtId="165" formatCode="dd/mm/yyyy hh:mm:ss"/></numFmts>
 <fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font></fonts>
-<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF0B2A5B"/><bgColor indexed="64"/></patternFill></fill></fills>
+<fills count="4"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF0B2A5B"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFC55A11"/><bgColor indexed="64"/></patternFill></fill></fills>
 <borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>
 <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-<cellXfs count="5"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment wrapText="1"/></xf></cellXfs>
+<cellXfs count="6"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment wrapText="1"/></xf><xf numFmtId="0" fontId="1" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1"/></cellXfs>
 </styleSheet>"""
 
 
@@ -193,7 +201,8 @@ def build_workbook(sheets: list[dict], info: list[list[str]]) -> bytes:
         z.writestr("xl/styles.xml", _STYLES)
         for i, s in enumerate(sheets, 1):
             z.writestr(f"xl/worksheets/sheet{i}.xml",
-                       _sheet_xml(s["colonnes"], s["lignes"], _widths(s["colonnes"], s["lignes"])))
+                       _sheet_xml(s["colonnes"], s["lignes"], _widths(s["colonnes"], s["lignes"]),
+                                  header_style=5 if s.get("redigee") else 1))
         info_rows = [[("s", a), ("s", b)] for a, b in info]
         z.writestr(f"xl/worksheets/sheet{len(names)}.xml",
                    _sheet_xml(["Information", "Valeur"], info_rows, [28, 100], filters=False))
@@ -205,12 +214,57 @@ def file_name(title: str) -> str:
     return f"{base}_{dt.date.today().isoformat()}.xlsx"
 
 
+# --- Feuilles rédigées ----------------------------------------------------------------------------------------
+def _draft_value(v) -> tuple:
+    """Valeur fournie par le modèle : nombres JSON en nombres, textes tels quels (jamais convertis), objets en JSON."""
+    if v is None or v == "":
+        return None, None
+    if isinstance(v, bool):
+        return "b", v
+    if isinstance(v, (int, float)):
+        return ("n", v) if math.isfinite(v) else ("s", str(v))
+    if isinstance(v, (dict, list)):
+        return "s", json.dumps(v, ensure_ascii=False)
+    return "s", str(v)
+
+
+def draft_sheet(i: int, name: str, colonnes, lignes) -> tuple[list[str], list[list[tuple]]]:
+    if not isinstance(lignes, list) or not lignes:
+        raise ToolError(f"Feuille {i} « {name} » : lignes vides (liste d'objets ou de listes attendue).")
+    if len(lignes) > MAX_DRAFT_ROWS:
+        raise ToolError(f"Feuille {i} « {name} » : {MAX_DRAFT_ROWS} lignes rédigées au plus. Pour des données, "
+                        "utiliser une requête.")
+    cols = [str(c) for c in (colonnes or [])]
+    if not cols:   # ordre d'apparition des clés
+        for row in lignes:
+            if not isinstance(row, dict):
+                raise ToolError(f"Feuille {i} « {name} » : sans colonnes, chaque ligne doit être un objet.")
+            cols += [str(k) for k in row if str(k) not in cols]
+    if not cols or len(cols) > MAX_DRAFT_COLS:
+        raise ToolError(f"Feuille {i} « {name} » : entre 1 et {MAX_DRAFT_COLS} colonnes.")
+    data = []
+    for j, row in enumerate(lignes, 1):
+        if isinstance(row, dict):
+            unknown = [k for k in row if str(k) not in cols]
+            if unknown:
+                raise ToolError(f"Feuille {i} « {name} », ligne {j} : colonnes inconnues {unknown}.")
+            data.append([_draft_value(row.get(c)) for c in cols])
+        elif isinstance(row, list):
+            if len(row) > len(cols):
+                raise ToolError(f"Feuille {i} « {name} », ligne {j} : {len(row)} valeurs pour {len(cols)} colonnes.")
+            data.append([_draft_value(row[k] if k < len(row) else None) for k in range(len(cols))])
+        else:
+            raise ToolError(f"Feuille {i} « {name} », ligne {j} : objet ou liste attendu.")
+    return cols, data
+
+
 # --- Outil ------------------------------------------------------------------------------------------------------
 def export_excel(ctx: ToolContext, titre: str, feuilles: list, limite: int = DEFAULT_ROWS) -> dict:
     if not str(titre or "").strip():
         raise ToolError("Titre du fichier manquant.")
     if not feuilles:
-        raise ToolError("Au moins une feuille est requise (nom, requete).")
+        raise ToolError("Au moins une feuille est requise : nom et requete (données), ou nom et lignes (tableau "
+                        "rédigé).")
     if len(feuilles) > MAX_SHEETS:
         raise ToolError(f"{MAX_SHEETS} feuilles au plus.")
     n = max(1, min(int(limite or DEFAULT_ROWS), MAX_ROWS))
@@ -219,9 +273,21 @@ def export_excel(ctx: ToolContext, titre: str, feuilles: list, limite: int = DEF
             ["Par", ctx.user_email or "utilisateur"], ["Application", "DISCOVERY (données lues avec vos droits)"],
             ["Limite de lignes par feuille", str(n)]]
     for i, f in enumerate(feuilles, 1):
-        if not isinstance(f, dict) or not str(f.get("requete") or "").strip():
-            raise ToolError(f"Feuille {i} invalide : objet attendu avec nom et requete.")
+        if not isinstance(f, dict):
+            raise ToolError(f"Feuille {i} invalide : objet attendu (nom, et requete ou lignes).")
+        has_q, has_rows = bool(str(f.get("requete") or "").strip()), f.get("lignes") is not None
+        if has_q == has_rows:
+            raise ToolError(f"Feuille {i} : indiquer soit requete (données), soit lignes (tableau rédigé), "
+                            "pas les deux ni aucun.")
         name = sheet_name(f.get("nom") or f"Feuille {i}", used)
+        if has_rows:
+            cols, data = draft_sheet(i, name, f.get("colonnes"), f["lignes"])
+            sheets.append({"nom": name, "colonnes": cols, "lignes": data, "redigee": True})
+            resume.append({"feuille": name, "lignes": len(data), "colonnes": cols, "tronque": False,
+                           "origine": "rédigée"})
+            info.append([f"Feuille « {name} »", f"{len(data)} ligne(s)"])
+            info.append([f"Origine « {name} »", DRAFT_ORIGIN])
+            continue
         stmt = checked_statement(ctx, f["requete"])
         try:
             r = ctx.sql.query(stmt, row_limit=n)
@@ -233,15 +299,20 @@ def export_excel(ctx: ToolContext, titre: str, feuilles: list, limite: int = DEF
         data = [[convert(row.get(c), types.get(c)) for c in cols] for row in rows]
         trunc = bool(r.get("truncated")) or len(rows) >= n
         sheets.append({"nom": name, "colonnes": cols, "lignes": data})
-        resume.append({"feuille": name, "lignes": len(rows), "colonnes": cols, "tronque": trunc})
+        resume.append({"feuille": name, "lignes": len(rows), "colonnes": cols, "tronque": trunc,
+                       "origine": "données"})
         info.append([f"Feuille « {name} »", f"{len(rows)} ligne(s)" + (" (tronquée à la limite)" if trunc else "")])
         info.append([f"Requête « {name} »", stmt])
     content = build_workbook(sheets, info)
     fname = file_name(titre)
+    drafted = [s["feuille"] for s in resume if s["origine"] == "rédigée"]
+    note = "Nombres de lignes calculés par l'application : les reprendre tels quels. Signaler toute feuille tronquée."
+    if drafted:
+        note += (" Feuilles rédigées (" + ", ".join(drafted) + ") : leur contenu vient de toi, pas des données ; "
+                 "le dire à l'utilisateur et lui demander de le relire et de le valider.")
     return {"titre": titre, "fichier": fname, "taille_ko": round(len(content) / 1024, 1), "feuilles": resume,
             "affichage": "Le bouton de téléchargement Excel s'affiche sous la réponse.",
-            "note": "Nombres de lignes calculés par l'application : les reprendre tels quels. Signaler toute feuille "
-                    "tronquée.",
+            "note": note,
             "_ui_excel": {"titre": titre, "nom_fichier": fname,
                           "contenu_b64": base64.b64encode(content).decode("ascii")}}
 
