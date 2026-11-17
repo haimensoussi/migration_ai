@@ -32,6 +32,8 @@ OUTPUT_SCHEMA = {"type": "object", "properties": {"colonnes": {"type": "array"},
                                                   "nombre_lignes": {"type": "integer"}, "tronque": {"type": "boolean"}}}
 HTTP_OUTPUT_SCHEMA = {"type": "object", "properties": {"statut_http": {"type": "integer"}, "reponse": {"type": "string"},
                                                        "json": {}, "tronque": {"type": "boolean"}}}
+# 'd''Azur' : en Spark SQL, deux littéraux collés (dAzur), pas une apostrophe échappée
+_DOUBLED_QUOTE = re.compile(r"[^\s'(,=]''[^\s')]")
 _PLAN_ERROR = re.compile(r"error occurred during query planning|AnalysisException", re.I)
 
 
@@ -188,6 +190,9 @@ def check(draft: dict, existing: dict[str, ToolSpec], owner: str, sql=None) -> C
         except SqlGuardError as e:
             c.errors.append(f"Requête refusée : {e}")
             return c
+        if _DOUBLED_QUOTE.search(stmt):
+            c.errors.append("Apostrophe doublée ('') dans une chaîne : en Spark SQL elle disparaît ('d''Azur' donne "
+                            "dAzur). Écrivez \\' (d\\'Azur) ou utilisez des guillemets doubles (\"d'Azur\").")
         refs = extract_table_refs(stmt)
         partial = sorted(r for r in refs if r.count(".") != 2)
         if partial:

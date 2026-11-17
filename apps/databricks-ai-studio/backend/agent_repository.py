@@ -14,6 +14,17 @@ from backend.sql_client import SqlClient
 from backend.tool_registry import ToolSpec
 
 
+# Outils de restitution ajoutés à tout nouvel agent (Agent Builder, concepteur IA, HakimAI, équipes) :
+# lecture seule, droits de l'utilisateur, chiffres calculés par l'application.
+DEFAULT_TOOLS = ("render_chart", "render_kpi", "generate_report")
+
+
+def with_default_tools(tool_ids: list | None) -> list:
+    """Ajoute les outils par défaut absents, sans doublon ni changement de l'ordre existant."""
+    ids = list(tool_ids or [])
+    return ids + [t for t in DEFAULT_TOOLS if t not in ids]
+
+
 def _loads(v: Any, default):
     try:
         return json.loads(v) if v else default
@@ -91,6 +102,7 @@ class AgentRepository:
         """La version est écrite avant l'en-tête : un échec intermédiaire ne laisse qu'une version orpheline."""
         agent_id = uuid.uuid4().hex
         self._check_persona(meta, agent_id)
+        cfg = {**cfg, "tool_ids": with_default_tools(cfg.get("tool_ids"))}
         self._insert_version(agent_id, 1, cfg, user)
         self.sql.execute(f"""
             INSERT INTO {self.s.table('agents')}

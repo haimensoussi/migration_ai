@@ -1,6 +1,7 @@
 """Assistant de création d'agent en 6 étapes."""
 import streamlit as st
 
+from backend.agent_repository import DEFAULT_TOOLS
 from backend.agent_runtime import AgentConfig
 from ui import state
 from ui.chat_panel import render_chat
@@ -14,7 +15,7 @@ user = state.current_user()
 if "builder" not in st.session_state:
     b = {"step": 0, "agent_id": None, "name": "", "description": "", "icon": "smart_toy", "category": "Général",
          "handle": "", "persona": "", "tagline": "", "call_examples": [], "aliases": [],
-         "model_endpoint": s_cfg.default_model, "instructions": "", "tool_ids": [], "knowledge_tables": [],
+         "model_endpoint": s_cfg.default_model, "instructions": "", "tool_ids": list(DEFAULT_TOOLS), "knowledge_tables": [],
          "temperature": 0.1, "max_iterations": s_cfg.max_iterations}
     edit_id = st.session_state.pop("builder_edit_id", None)
     if edit_id:
@@ -251,6 +252,8 @@ with st.container(border=True):
                        "6 échanges et 120 s par demande ; chaque partenaire garde ses outils, tables autorisées et "
                        "validations. Les actions soumises à validation humaine ne sont jamais exécutées par un autre agent.")
         b["tool_ids"] = sel_tools + sel_agents
+        if not b["agent_id"]:
+            st.caption("Graphique, indicateurs et rapport sont ajoutés automatiquement à tout nouvel agent.")
         for t in pub:
             if t.tool_id in b["tool_ids"]:
                 st.markdown(f"- **{t.name}** : {t.description}")

@@ -154,6 +154,21 @@ def test_ameliorer_refusals():
         run(adm, "ameliorer_outil", outil="gares_dep")
 
 
+@pytest.mark.parametrize("lit,bad", [("'Côte d''Azur'", True), ("'Côte d\\'Azur'", False), ('"Côte d\'Azur"', False),
+                                     ("''", False)])
+def test_doubled_apostrophe_is_rejected(lit, bad):
+    sql = f"SELECT `Nom` FROM dataops_dev.ai_studio.data_gares WHERE (:dep IS NULL OR `Departement` = :dep) " \
+          f"AND coalesce(`Nom`, '') <> {lit} ORDER BY `Nom`"
+    c = tb.check(draft(sql=sql), {}, ME)
+    assert any("Apostrophe doublée" in e for e in c.errors) == bad
+
+
+def test_designer_prompt_mentions_apostrophes():
+    from backend.tool_designer import designer_prompt
+    p = designer_prompt([])
+    assert "Jamais ''" in p and "caractères spéciaux" in p
+
+
 def test_creer_outil_refuses_published_target(fake_run):
     c, repo = ctx()
     c.platform.drafts["O1"] = {"kind": "outil", "draft": draft("pub_tool")}

@@ -106,6 +106,10 @@ def designer_prompt(existing: list[ToolSpec], scope: str | None = None) -> str:
         "Paramètre facultatif : (:nom IS NULL OR colonne = :nom) et required = false.",
         "- Noms de paramètres en minuscules (a-z, 0-9, _). Types : string, integer, number, boolean.",
         "- Pas de LIMIT dans la requête : utilise max_rows (100 par défaut, 1000 au plus). Ajoute un ORDER BY utile.",
+        "- Apostrophe dans une chaîne SQL : écris \\' (ex. 'Provence-Alpes-Côte d\\'Azur') ou entoure la chaîne de "
+        "guillemets doubles (\"Côte d'Azur\"). Jamais '' : en Spark SQL, 'd''Azur' devient dAzur (deux chaînes collées).",
+        "- Valeurs avec caractères spéciaux (apostrophe, accent, tiret, espace) : recopie-les exactement depuis les "
+        "données observées et donne en exemple de paramètre l'une d'elles quand elles existent, pour qu'elle soit testée.",
         "- La description dit aux agents ce que fait l'outil, quand l'utiliser, et ce qu'il renvoie (colonnes).",
         "- N'invente ni règle métier ni seuil SNCF Réseau : s'il en faut, mets-les en paramètre ou dans hypotheses "
         "comme « à valider par le responsable métier ».",

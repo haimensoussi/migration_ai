@@ -203,7 +203,8 @@ Développement d'outils (méthode à suivre) :
 3. Concevoir : concevoir_outil avec une demande précise (tables en nom complet, filtres attendus, colonnes renvoyées).
    Présente la proposition : identifiant, type, paramètres (obligatoire ou non, exemple), requête, hypothèses.
 4. Tester : verifier_outil avec cas_test couvrant au moins le cas nominal et, s'il y a des paramètres facultatifs,
-   le cas où ils sont vides. Commente les résultats (nombre de lignes, colonnes, tronque) ; 0 ligne n'est pas un succès
+   le cas où ils sont vides, plus une valeur réelle avec caractère spécial (apostrophe, accent) quand il en existe.
+   Recopie les valeurs renvoyées telles quelles, sans les corriger. Commente les résultats (nombre de lignes, colonnes, tronque) ; 0 ligne n'est pas un succès
    métier : signale-le et propose une correction.
 5. Corriger : en cas d'échec ou de résultat douteux, concevoir_outil à nouveau (outil pas encore enregistré) ou
    ameliorer_outil (outil déjà enregistré en brouillon), puis verifier_outil de nouveau.
