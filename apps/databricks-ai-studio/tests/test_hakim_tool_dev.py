@@ -163,6 +163,23 @@ def test_doubled_apostrophe_is_rejected(lit, bad):
     assert any("Apostrophe doublée" in e for e in c.errors) == bad
 
 
+def test_card_lists_each_test_case_and_instructions_cover_refusal():
+    drafts = {"O1": {"kind": "outil", "draft": draft(), "test": {
+        "ok": False, "nombre_cas": 2, "cas_reussis": 1, "cas": [
+            {"ok": True, "arguments": {}, "nombre_lignes": 12},
+            {"ok": False, "arguments": {"dep": "KO"}, "erreur": "colonne inconnue"}]}}}
+    lines = hakim.describe_action("creer_outil", {"brouillon_id": "O1"}, drafts)
+    assert "Cas 1 (sans argument) : 12 ligne(s)" in lines
+    assert "Cas 2 (dep=KO) : échec : colonne inconnue" in lines
+    assert any(l.startswith("Paramètres : dep (string, facultatif)") for l in lines)
+    assert any(l.startswith("Description : Liste les gares") for l in lines)
+    single = hakim.describe_action("creer_outil", {"brouillon_id": "O2"},
+                                   {"O2": {"draft": draft(), "test": {"ok": True, "arguments": {"dep": "Ain"},
+                                                                      "nombre_lignes": 3}}})
+    assert "Cas 1 (dep=Ain) : 3 ligne(s)" in single
+    assert "L'UTILISATEUR a refusé" in hakim.INSTRUCTIONS and "caractère pour caractère" in hakim.INSTRUCTIONS
+
+
 def test_designer_prompt_mentions_apostrophes():
     from backend.tool_designer import designer_prompt
     p = designer_prompt([])

@@ -208,7 +208,8 @@ Développement d'outils (méthode à suivre) :
    métier : signale-le et propose une correction.
 5. Corriger : en cas d'échec ou de résultat douteux, concevoir_outil à nouveau (outil pas encore enregistré) ou
    ameliorer_outil (outil déjà enregistré en brouillon), puis verifier_outil de nouveau.
-6. Enregistrer : creer_outil (brouillon), puis indique la publication dans le Catalogue d'outils (onglet Mes outils)
+6. Enregistrer : dans le même message que l'appel à creer_outil, résume d'abord en 3 à 5 lignes l'identifiant,
+   les paramètres, la logique de la requête et chaque cas testé avec son nombre de lignes. Puis creer_outil (brouillon), puis indique la publication dans le Catalogue d'outils (onglet Mes outils)
    et l'ajout à un agent (modifier_agent, une fois l'outil publié).
 Qualité attendue d'un outil :
 - Description pour les agents : ce que fait l'outil, quand l'utiliser, ce qu'il renvoie (colonnes).
@@ -218,7 +219,10 @@ Qualité attendue d'un outil :
 - decrire_outil pour relire un outil et son historique ; tester_outil pour rejouer un outil existant (lecture seule).
 - Un outil publié ou intégré ne se modifie pas ici : explique pourquoi et ouvre le Catalogue d'outils.
 - Équipe : creer_equipe ou modifier_equipe ; un chef est obligatoire au-delà d'un membre.
-- Quand l'utilisateur demande une écriture et que l'objet est identifiable, appelle DIRECTEMENT l'outil d'écriture : l'application affiche alors une fiche qu'il valide ou refuse. Ne demande jamais « confirmez-vous ? » en texte. S'il refuse, n'enchaîne pas d'autres écritures.
+- Quand l'utilisateur demande une écriture et que l'objet est identifiable, appelle DIRECTEMENT l'outil d'écriture : l'application affiche alors une fiche qu'il valide ou refuse. Ne demande jamais « confirmez-vous ? » en texte.
+- Un statut « refuse » signifie que L'UTILISATEUR a refusé la fiche (jamais « la plateforme ») : dis « Vous avez
+  refusé l'enregistrement », rappelle que rien n'a été écrit, n'enchaîne aucune autre écriture et demande ce qu'il
+  souhaite changer.
 - Tu ne publies jamais. Propose soumettre_publication, et indique l'écran où la publication se fait.
 - Un agent publié se modifie dans Agent Builder.
 - Après une création, indique comment tester (Chat & Test) et propose ouvrir_page.
@@ -228,6 +232,9 @@ Règles :
 - Hors des outils de création ci-dessus, tu ne modifies et n'exécutes rien : explique comment faire et ouvre la page.
 - Un refus d'accès est normal : signale-le tel quel, sans le contourner.
 - N'invente aucun agent, outil, chiffre ou résultat. Dis quand une information n'est pas disponible.
+- Recopie les valeurs renvoyées par les outils caractère pour caractère (libellés, noms, chiffres). Si une valeur
+  paraît anormale (apostrophe ou accent manquant, libellé tronqué), montre-la telle quelle et signale l'anomalie
+  au lieu de la corriger.
 - Pour décrire ce qu'on peut faire sur une page, ne cite que les actions_disponibles renvoyées par contexte_page :
   n'ajoute aucune fonctionnalité (pas de « supprimer » si seule l'archive existe).
 - Les chiffres doivent venir des outils et rester cohérents : un total est la somme exacte des groupes affichés.
@@ -270,11 +277,18 @@ def describe_action(tool_id: str, args: dict, drafts: dict | None = None) -> lis
         d, t, base = e.get("draft") or {}, e.get("test") or {}, e.get("base")
         head = (f"Nouvelle version de l'outil « {d.get('name', '?')} » ({d.get('tool_id', '?')}), en brouillon"
                 if base else f"Enregistrer l'outil « {d.get('name', '?')} » ({d.get('tool_id', '?')}) en brouillon")
-        out = [head, f"Type : {d.get('type', '?')}",
-               f"Paramètres : {lst([x.get('name') for x in d.get('parameters') or []])}",
+        params = [f"{x.get('name')} ({x.get('type')}, {'obligatoire' if x.get('required') else 'facultatif'})"
+                  for x in d.get("parameters") or []]
+        out = [head, f"Type : {d.get('type', '?')}", f"Paramètres : {lst(params)}",
+               f"Description : {str(d.get('description') or '—')[:240]}",
                "Test réussi : " + ("oui" if t.get("ok") else "non")]
         if t.get("nombre_cas"):
             out.append(f"Cas de test réussis : {t.get('cas_reussis')} / {t.get('nombre_cas')}")
+        for i, c in enumerate(t.get("cas") or ([t] if t else []), 1):
+            args_txt = ", ".join(f"{k}={v}" for k, v in (c.get("arguments") or {}).items()) or "sans argument"
+            res = (f"{c.get('nombre_lignes')} ligne(s)" if c.get("ok") and "nombre_lignes" in c
+                   else ("réussi" if c.get("ok") else f"échec : {str(c.get('erreur') or '')[:120]}"))
+            out.append(f"Cas {i} ({args_txt}) : {res}")
         return out
     if tool_id == "creer_equipe":
         chef = a.get("chef") or ("chef généré en brouillon" if a.get("creer_chef") else "aucun")
