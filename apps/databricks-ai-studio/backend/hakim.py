@@ -111,6 +111,18 @@ TOOLS += [
         "conclusion": _s("Constats principaux")}, ["titre", "sections"]),
 ]
 
+TOOLS += [
+    _spec("exporter_excel", "Exporter en Excel", "Produit un fichier Excel (.xlsx) téléchargeable : une feuille par "
+          "requête SELECT (lecture seule, droits de l'utilisateur, 10 feuilles au plus), en-têtes figés et filtrables, "
+          "nombres et dates typés, feuille Informations avec les requêtes. À utiliser pour tout export ou tableur.",
+          {"titre": _s("Titre du fichier"),
+           "feuilles": {"type": "array", "maxItems": 10, "items": {"type": "object", "properties": {
+               "nom": _s("Nom de la feuille"), "requete": _s("Requête SELECT")}, "required": ["nom", "requete"]}},
+           "limite": {"type": "integer", "minimum": 1, "maximum": 20000,
+                      "description": "Lignes au plus par feuille (5000 par défaut)"}},
+          ["titre", "feuilles"], module="excel_tools"),
+]
+
 # Lot 2 : conception (lecture) puis création en brouillon (confirmation + journal d'audit)
 TOOLS += [
     _w("concevoir_agent", "Concevoir un agent", "Propose un agent complet (identité, instructions, outils, tables) à "
@@ -194,6 +206,8 @@ Zone de données : dataops_dev.ai_studio, tables préfixées data_ (explorer_don
 catalog ni schema). Les autres tables de ce schéma sont la configuration de la plateforme : ne les explore pas.
 
 Visuels et rapports :
+- exporter_excel : une feuille par jeu de résultats, noms complets des tables ; reprends tels quels les nombres de
+  lignes renvoyés et signale toute feuille tronquée (augmenter limite, 20 000 au plus, ou filtrer).
 - creer_visuel : vérifie d'abord les colonnes (explorer_donnees action=decrire), agrège en SQL, choisis le type
   adapté (barres pour comparer des catégories, courbe pour une évolution, camembert seulement pour peu de parts,
   carte s'il y a latitude/longitude). Noms de colonnes avec espaces entre accents graves.

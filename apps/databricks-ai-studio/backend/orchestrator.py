@@ -165,6 +165,12 @@ class Orchestrator:
             if reps:   # rapports du partenaire : titre pour le modèle, fichiers pour le téléchargement
                 out["rapports"] = [{"titre": r.result.get("titre")} for r in reps]
                 out["_ui_reports"] = [r.result["_ui_report"] for r in reps]
+            xls = [e for e in res.events if e.tool_id == "export_excel" and e.status == "succes"
+                   and isinstance(e.result, dict) and e.result.get("_ui_excel")]
+            if xls:    # fichiers Excel du partenaire : résumé pour le modèle, fichier pour le téléchargement
+                out["fichiers_excel"] = [{"titre": x.result.get("titre"), "feuilles": x.result.get("feuilles")}
+                                         for x in xls]
+                out["_ui_excels"] = [x.result["_ui_excel"] for x in xls]
             return out
 
         ctx = self.ctx_factory()

@@ -101,6 +101,23 @@ BUILTIN_TOOLS: list[ToolSpec] = [
             "required": ["titre", "sections"]},
         output_schema={"type": "object"}, executor="tools.report_tools:generate_report"),
     ToolSpec(
+        tool_id="export_excel", name="Exporter en Excel", category="Visualisation",
+        description=("Produit un fichier Excel (.xlsx) téléchargeable : une feuille par requête SQL en lecture seule "
+                     "(10 feuilles au plus), en-têtes figés et filtrables, nombres et dates typés, plus une feuille "
+                     "Informations (date, utilisateur, requête et nombre de lignes de chaque feuille). À utiliser quand "
+                     "l'utilisateur demande un export, un fichier Excel ou un tableur. Les nombres de lignes renvoyés "
+                     "sont calculés par l'application : les reprendre tels quels et signaler toute feuille tronquée."),
+        input_schema={"type": "object", "properties": {
+            "titre": {"type": "string", "description": "Titre du fichier (sert aussi au nom du fichier)"},
+            "feuilles": {"type": "array", "maxItems": 10, "items": {"type": "object", "properties": {
+                "nom": {"type": "string", "description": "Nom de la feuille (31 caractères au plus)"},
+                "requete": {"type": "string", "description": "Requête SQL en lecture seule"}},
+                "required": ["nom", "requete"]}},
+            "limite": {"type": "integer", "minimum": 1, "maximum": 20000,
+                       "description": "Lignes au plus par feuille (5000 par défaut)"}},
+            "required": ["titre", "feuilles"]},
+        output_schema={"type": "object"}, executor="tools.excel_tools:export_excel"),
+    ToolSpec(
         tool_id="render_map", name="Afficher une carte", category="Visualisation",
         description=("Exécute UNE requête SQL en lecture seule et affiche le résultat sur une carte interactive dans le "
                      "chat. Le résultat doit contenir une colonne latitude et une colonne longitude (WGS84). "

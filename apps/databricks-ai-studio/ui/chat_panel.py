@@ -48,6 +48,10 @@ def _show_delegation(ev: dict):
         from ui import chart_view
         for c in charts:
             chart_view.render(c, caption=f"Graphique produit par {who}")
+    if res.get("_ui_excels"):
+        from ui import report_view
+        for i, x in enumerate(res["_ui_excels"]):
+            report_view.render_excel(x, key=f"{id(ev)}_{i}", caption=who)
     if res.get("_ui_kpis") or res.get("_ui_reports"):
         from ui import report_view
         for k in res.get("_ui_kpis") or []:
@@ -68,6 +72,9 @@ def _show_event(ev: dict):
     if ev["tool_id"] == "render_kpi" and ev["status"] == "succes" and isinstance(ev.get("result"), dict):
         from ui import report_view
         return report_view.render_kpis(ev["result"].get("_ui_kpi"))
+    if ev["tool_id"] == "export_excel" and ev["status"] == "succes" and isinstance(ev.get("result"), dict):
+        from ui import report_view
+        return report_view.render_excel(ev["result"].get("_ui_excel"), key=str(id(ev)))
     if ev["tool_id"] == "generate_report" and ev["status"] == "succes" and isinstance(ev.get("result"), dict):
         from ui import report_view
         return report_view.render_report(ev["result"].get("_ui_report"), key=str(id(ev)))

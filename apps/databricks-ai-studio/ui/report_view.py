@@ -1,5 +1,18 @@
 """Affichage des indicateurs (render_kpi) et des rapports (generate_report) dans le chat : API Streamlit 1.38."""
+import base64
+
 import streamlit as st
+
+XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+def render_excel(x: dict | None, key: str = "", caption: str = "") -> None:
+    """Bouton de téléchargement du fichier produit par export_excel (contenu construit par l'application)."""
+    if not x or not x.get("contenu_b64"):
+        return
+    st.markdown(f"**{caption + ' · ' if caption else ''}Fichier Excel : {x.get('titre', '')}**")
+    st.download_button("Télécharger le fichier Excel", base64.b64decode(x["contenu_b64"]),
+                       file_name=x.get("nom_fichier") or "export.xlsx", mime=XLSX_MIME, key=f"xlsx_{key}")
 
 PER_ROW = 4
 

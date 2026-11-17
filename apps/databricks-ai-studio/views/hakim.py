@@ -73,7 +73,8 @@ def handle(res, logged_prefix: list[dict]) -> None:
         s["display"].append({"role": "assistant", "content": text, "events": events,
                              "nav": hakim.navigation_targets(res.events),
                              "visuals": [r["visuel_id"] for r in ok if r.get("visuel_id")],
-                             "reports": [r["rapport_id"] for r in ok if r.get("rapport_id")]})
+                             "reports": [r["rapport_id"] for r in ok if r.get("rapport_id")],
+                             "excels": [r["_ui_excel"] for r in ok if r.get("_ui_excel")]})
     if any(e.tool_id in WRITE_TOOLS and e.status == "succes" for e in res.events):
         state.refresh_data()
     try:   # journal : conversation et appels d'outils sous l'agent « hakimai »
@@ -166,6 +167,9 @@ for m in s["display"]:
             show_visual(s["visuals"].get(vid), key=f"{s['conv']}_{vid}")
         for rid in m.get("reports") or []:
             show_report(s["reports"].get(rid), key=f"{s['conv']}_{rid}")
+        for i, x in enumerate(m.get("excels") or []):
+            from ui import report_view
+            report_view.render_excel(x, key=f"{s['conv']}_{id(m)}_{i}")
         for nav in m.get("nav") or []:
             st.page_link(nav["path"], label=f"Ouvrir {nav['title']}")
         if m.get("events"):
