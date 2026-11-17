@@ -18,6 +18,7 @@ pages = {
         st.Page("views/agent_builder.py", title="Agent Builder", icon=":material/construction:"),
         st.Page("views/chat.py", title="Chat & Test", icon=":material/forum:"),
         st.Page("views/tool_catalog.py", title="Catalogue d'outils", icon=":material/grid_view:"),
+        st.Page("views/flux.py", title="Flux", icon=":material/account_tree:"),
         st.Page("views/marketplace.py", title="Marketplace", icon=":material/storefront:"),
         st.Page("views/assessment.py", title="Assessment Center", icon=":material/fact_check:"),
         st.Page("views/monitoring.py", title="Monitoring", icon=":material/monitoring:"),

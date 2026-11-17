@@ -1,6 +1,7 @@
 """Assistant de création d'agent en 6 étapes."""
 import streamlit as st
 
+from backend import flux as flux_mod
 from backend.agent_repository import DEFAULT_TOOLS
 from backend.agent_runtime import AgentConfig
 from ui import state
@@ -233,12 +234,25 @@ with st.container(border=True):
                                          height=260, placeholder="Tu es un assistant qui ...")
         st.caption("Le cadre d'exécution (droits de l'utilisateur, tables autorisées, lecture seule) est ajouté automatiquement.")
     elif step == 3:
-        tools = state.cached_tools()
+        all_tools = state.cached_tools()
+        tools = [t for t in all_tools if t.category != "Flux"]
         pub = [t for t in tools if t.status == "publie"]
         labels = {t.tool_id: f"{t.name} ({t.tool_id})" for t in pub}
         current_agents = [t for t in b["tool_ids"] if str(t).startswith("agent:")]
         sel_tools = st.multiselect("Outils du Tool Catalog", list(labels), [t for t in b["tool_ids"] if t in labels],
                                    format_func=labels.get)
+        st.markdown("**Flux Power Automate** (facultatif)")
+        fx = [t for t in all_tools if flux_mod.is_flux(t)
+              and (t.status == "publie" or (t.status == "brouillon" and t.owner == user.email))]
+        flabels = {t.tool_id: f"{t.name} ({t.tool_id})" + (" · brouillon, inactif tant qu'il n'est pas publié"
+                                                          if t.status != "publie" else "")
+                   + (" · action confirmée par l'utilisateur" if t.requires_confirmation else "") for t in fx}
+        sel_flux = st.multiselect("Flux utilisables par l'agent", list(flabels),
+                                  [t for t in b["tool_ids"] if t in flabels], format_func=flabels.get)
+        if sel_flux:
+            st.caption("Les flux sont asynchrones : l'outil « Suivre une demande de flux » (flux_suivi) est ajouté "
+                       "automatiquement pour lire les réponses.")
+            sel_flux = sel_flux + (["flux_suivi"] if "flux_suivi" not in sel_flux else [])
         st.markdown("**Agents partenaires** (facultatif)")
         cand = [a for a in state.agents() if a["agent_id"] != b["agent_id"] and a["status"] == "publie"
                 and not any(str(t).startswith("agent:") for t in (a.get("tool_ids") or []))]
@@ -251,7 +265,7 @@ with st.container(border=True):
             st.caption("Un agent qui a des partenaires ne peut pas lui-même être consulté (pas de boucle). Au plus "
                        "6 échanges et 120 s par demande ; chaque partenaire garde ses outils, tables autorisées et "
                        "validations. Les actions soumises à validation humaine ne sont jamais exécutées par un autre agent.")
-        b["tool_ids"] = sel_tools + sel_agents
+        b["tool_ids"] = sel_tools + sel_flux + sel_agents
         if not b["agent_id"]:
             st.caption("Graphique, indicateurs et rapport sont ajoutés automatiquement à tout nouvel agent.")
         for t in pub:

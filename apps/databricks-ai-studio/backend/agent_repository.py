@@ -25,6 +25,14 @@ def with_default_tools(tool_ids: list | None) -> list:
     return ids + [t for t in DEFAULT_TOOLS if t not in ids]
 
 
+CREATED_EXECUTORS = ("tools.custom_tools:", "tools.flow_tools:call_flow")
+
+
+def _is_created(executor: str) -> bool:
+    """Outil créé dans DISCOVERY (outil générique ou flux Power Automate), par opposition aux outils intégrés."""
+    return executor.startswith(CREATED_EXECUTORS[0]) or executor == CREATED_EXECUTORS[1]
+
+
 def _loads(v: Any, default):
     try:
         return json.loads(v) if v else default
@@ -186,7 +194,7 @@ class AgentRepository:
             return False, "", True
         row = r["rows"][0]
         ro = row["read_only"] if isinstance(row["read_only"], bool) else str(row["read_only"]).lower() == "true"
-        if not str(row["executor"]).startswith("tools.custom_tools:"):
+        if not _is_created(str(row["executor"])):
             return True, "__integre__", ro
         return True, row["owner"], ro
 
@@ -198,7 +206,7 @@ class AgentRepository:
 
     def save_custom_tool(self, spec: ToolSpec, user: str, test_result: dict, note: str = "") -> int:
         """Enregistre une nouvelle version d'un outil créé. Refuse d'écraser un outil intégré ou d'un autre utilisateur."""
-        if not spec.executor.startswith("tools.custom_tools:"):
+        if not _is_created(spec.executor):
             raise ValueError("Seuls les outils créés (exécuteurs génériques) peuvent être enregistrés ici.")
         exists, owner = self.tool_owner(spec.tool_id)
         if exists and owner != user:
@@ -229,6 +237,22 @@ class AgentRepository:
             self._check_publish(read_only, user)
         self.sql.execute(f"UPDATE {self.s.table('tools')} SET status = :s, updated_at = current_timestamp() "
                          "WHERE tool_id = :t AND owner = :u", {"s": status, "t": tool_id, "u": user})
+
+    def tool_owners(self) -> dict:
+        """{tool_id: propriétaire} ; « __integre__ » pour un outil intégré (contrôle d'unicité des identifiants)."""
+        r = self.sql.query(f"SELECT tool_id, executor, coalesce(owner, '') AS owner FROM {self.s.table('tools')}")
+        return {x["tool_id"]: (x["owner"] if _is_created(str(x["executor"])) else "__integre__") for x in r["rows"]}
+
+    def list_flux_requests(self, user: str, flux_id: str | None = None, limit: int = 50) -> list[dict]:
+        """Demandes de flux de l'utilisateur, les plus récentes d'abord."""
+        where, params = "user_name = :u", {"u": user}
+        if flux_id:
+            where, params["f"] = where + " AND flux_id = :f", flux_id
+        r = self.sql.query(
+            f"SELECT demande_id, flux_id, flux_version, agent_id, statut, test, parametres, reponse, erreur, "
+            f"created_at, pris_en_charge_at, termine_at FROM {self.s.table('flux_demandes')} WHERE {where} "
+            f"ORDER BY created_at DESC LIMIT {max(1, min(int(limit), 500))}", params)
+        return r["rows"]
 
     def tool_versions(self, tool_id: str) -> list[dict]:
         r = self.sql.query(f"SELECT version, spec, test_result, note, created_by, created_at "

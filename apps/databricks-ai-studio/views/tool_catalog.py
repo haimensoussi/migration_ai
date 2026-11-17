@@ -9,7 +9,7 @@ from ui import state
 from ui.components import badge
 
 st.title("Catalogue d'outils")
-tools = state.cached_tools()
+tools = [t for t in state.cached_tools() if t.category != "Flux"]   # flux : page Flux
 if not tools:
     st.warning("Catalogue vide : initialisez-le dans Paramètres.")
     st.stop()

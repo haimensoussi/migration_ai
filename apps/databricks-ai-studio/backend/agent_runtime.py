@@ -88,6 +88,7 @@ class AgentRuntime:
         tools = self.registry.for_agent(cfg.tool_ids)
         payload = [s.to_openai() for s in tools.values()] or None
         self.ctx.allowed_tables = list(cfg.knowledge_tables)
+        self.ctx.agent_id = cfg.agent_id
 
         def result(**kw):
             return TurnResult(messages=messages, new_messages=messages[start:], events=events,

@@ -171,3 +171,23 @@ CREATE TABLE IF NOT EXISTS dataops_dev.ai_studio.copilot_actions (
   created_at TIMESTAMP NOT NULL COMMENT 'Horodatage',
   CONSTRAINT copilot_actions_pk PRIMARY KEY (action_id)
 ) COMMENT 'Journal d audit des actions ecrites par HakimAI (lot 2) et demandes de publication';
+
+
+-- Rubrique Flux (lot 1) : boite d'echange entre les agents et les flux Power Automate
+CREATE TABLE IF NOT EXISTS dataops_dev.ai_studio.flux_demandes (
+  demande_id STRING NOT NULL COMMENT 'Identifiant unique de la demande (32 hex)',
+  flux_id STRING NOT NULL COMMENT 'Flux appele (tool_id flux_...)',
+  flux_version STRING COMMENT 'Version du flux au moment de la demande',
+  conversation_id STRING COMMENT 'Conversation d origine (banc-de-test pour un essai)',
+  agent_id STRING COMMENT 'Agent demandeur (vide pour le banc de test)',
+  user_name STRING NOT NULL COMMENT 'Utilisateur pour qui la demande est faite',
+  parametres STRING COMMENT 'Parametres transmis au flux, valeurs fixes incluses (JSON)',
+  statut STRING NOT NULL COMMENT 'en_attente | en_cours | terminee | erreur',
+  reponse STRING COMMENT 'Reponse ecrite par le flux (JSON de preference)',
+  erreur STRING COMMENT 'Message d erreur ecrit par le flux',
+  test BOOLEAN COMMENT 'Demande du banc de test',
+  created_at TIMESTAMP NOT NULL COMMENT 'Depot de la demande',
+  pris_en_charge_at TIMESTAMP COMMENT 'Prise en charge par le flux',
+  termine_at TIMESTAMP COMMENT 'Reponse ou erreur',
+  CONSTRAINT flux_demandes_pk PRIMARY KEY (demande_id)
+) COMMENT 'Demandes des agents aux flux Power Automate (grain : 1 ligne par demande). Ecrite par le service principal de l App, lue et mise a jour par Power Automate (connecteur Azure Databricks)';

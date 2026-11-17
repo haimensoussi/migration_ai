@@ -83,7 +83,7 @@ def chat_endpoints() -> list[str]:
 def build_runtime(on_tool_event=None, conversation_id: str = "") -> AgentRuntime:
     w, sql, ident = user_session()
     ctx = ToolContext(sql=sql, workspace=w, max_rows=settings().max_rows,
-                      conversation_id=conversation_id, user_email=ident.email)
+                      conversation_id=conversation_id, user_email=ident.email, app_sql=repository().sql)
     return AgentRuntime(ModelClient(w), registry(), ctx, on_tool_event=on_tool_event)
 
 
@@ -98,7 +98,7 @@ def build_runtime_for(cfg, on_tool_event=None, conversation_id: str = "", on_sub
 
     def ctx_factory():
         return ToolContext(sql=sql, workspace=w, max_rows=s.max_rows, conversation_id=conversation_id,
-                           user_email=ident.email)
+                           user_email=ident.email, app_sql=repo.sql)
 
     def load(aid):
         a = repo.get_agent(aid)

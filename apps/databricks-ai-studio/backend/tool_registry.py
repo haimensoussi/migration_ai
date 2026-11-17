@@ -67,6 +67,8 @@ class ToolContext:
     user_email: str = ""
     delegate: Any = None           # orchestration : fonction (agent, question) -> résultat, fournie au superviseur
     platform: Any = None           # copilote HakimAI : accès en lecture à la plateforme, filtré par les droits
+    app_sql: Any = None            # SqlClient du service principal (boîte d'échange des flux uniquement)
+    agent_id: str = ""             # agent en cours d'exécution (renseigné par le runtime, journalisation)
 
 
 ALLOWED_EXECUTOR_PREFIX = "tools."

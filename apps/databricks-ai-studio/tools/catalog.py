@@ -61,6 +61,15 @@ BUILTIN_TOOLS: list[ToolSpec] = [
             "required": ["query", "type"]},
         output_schema={"type": "object"}, executor="tools.chart_tools:render_chart"),
     ToolSpec(
+        tool_id="flux_suivi", name="Suivre une demande de flux", category="Flux",
+        description=("Lit l'état d'une demande déposée auprès d'un flux Power Automate (outil flux_...) : "
+                     "en_attente, en_cours, terminee (avec la réponse du flux), erreur ou expiree. Ne lit que les "
+                     "demandes de l'utilisateur. Tant qu'il n'y a pas de réponse, ne pas inventer de résultat."),
+        input_schema={"type": "object", "properties": {
+            "demande_id": {"type": "string", "description": "Identifiant renvoyé par l'outil de flux"}},
+            "required": ["demande_id"]},
+        output_schema={"type": "object"}, executor="tools.flow_tools:flux_suivi"),
+    ToolSpec(
         tool_id="render_kpi", name="Afficher des indicateurs", category="Visualisation",
         description=("Exécute UNE requête SQL en lecture seule et affiche des cartes d'indicateurs dans le chat. "
                      "Une ligne = un indicateur (12 au plus) : colonne valeur (numérique), colonne libelle (facultative), "
