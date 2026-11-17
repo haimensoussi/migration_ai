@@ -126,15 +126,25 @@ TOOLS += [
        {"agent": _AGENT, "instructions": _s("Nouvelles instructions complètes"), "ajouter_outils": _LIST,
         "retirer_outils": _LIST, "ajouter_tables": _LIST, "retirer_tables": _LIST, "role": _s("Rôle"),
         "accroche": _s("Accroche")}, ["agent"]),
-    _w("concevoir_outil", "Concevoir un outil", "Propose un outil SQL paramétré ou une fonction UC à partir d'une "
-       "demande, sans rien enregistrer. Renvoie un brouillon_id.",
+    _w("concevoir_outil", "Concevoir un outil", "Propose un outil SQL paramétré, une fonction UC ou un appel HTTP via "
+       "une connexion Unity Catalog existante, à partir d'une demande, sans rien enregistrer. Renvoie un brouillon_id.",
        {"demande": _s("Ce que l'outil doit faire")}, ["demande"], write=False),
     _w("verifier_outil", "Vérifier un outil", "Contrôle le brouillon d'outil et exécute un test en lecture avec "
-       "les droits de l'utilisateur. Obligatoire avant creer_outil.",
+       "les droits de l'utilisateur (SQL, fonction UC, HTTP GET). HTTP autre que GET : contrôle sans envoi, l'appel "
+       "réel passe par tester_appel_http. Obligatoire avant creer_outil.",
        {"brouillon_id": _s("Identifiant renvoyé par concevoir_outil ou ameliorer_outil"),
          "arguments_test": {"type": "object", "description": "Arguments d'essai (sinon exemples du brouillon)"},
          "cas_test": _CASES},
         ["brouillon_id"], write=False),
+    _w("lister_connexions", "Lister les connexions HTTP", "Connexions HTTP Unity Catalog visibles avec les droits de "
+       "l'utilisateur (hors system_*), nécessaires aux outils HTTP. Sans connexion, indique quoi demander à "
+       "l'administrateur du metastore.", write=False),
+    _w("tester_appel_http", "Tester un appel HTTP (envoi réel)", "Envoie un appel RÉEL (POST, PUT, PATCH, DELETE) d'un "
+       "brouillon d'outil HTTP déjà contrôlé par verifier_outil. Peut créer ou modifier des données dans le service "
+       "distant : demande la validation de l'utilisateur.",
+       {"brouillon_id": _s("Identifiant du brouillon HTTP"),
+        "arguments": {"type": "object", "description": "Arguments (sinon exemples du brouillon)"}, "cas_test": _CASES},
+       ["brouillon_id"]),
     _w("decrire_outil", "Décrire un outil", "Fiche technique d'un outil : type, paramètres, requête SQL ou fonction, "
        "exemples, statut, et pour son propriétaire l'historique des versions avec le résultat des tests.",
        {"outil": _TOOL}, ["outil"], write=False),
@@ -194,7 +204,13 @@ Visuels et rapports :
 Création (lot 2), toujours en BROUILLON :
 - Agent : concevoir_agent, présente la proposition (prénom, @appel, rôle, outils, tables), puis creer_agent.
 - Outil : concevoir_outil, puis verifier_outil (test réel en lecture), puis creer_outil seulement si le test réussit.
-  Les outils HTTP se créent dans le Catalogue d'outils.
+- Outil HTTP : lister_connexions d'abord (sans connexion HTTP adaptée, explique ce qu'il faut demander à
+  l'administrateur du metastore et arrête-toi), puis concevoir_outil en nommant la connexion, puis verifier_outil.
+  GET : verifier_outil envoie un vrai appel en lecture. POST, PUT, PATCH, DELETE : verifier_outil contrôle sans
+  envoyer ; explique que l'appel réel peut créer ou modifier des données, puis appelle tester_appel_http (fiche de
+  validation) avec des données de test inoffensives ; creer_outil seulement si l'appel réel réussit. Jamais
+  d'identifiant, jeton ou mot de passe dans l'outil (ils restent dans la connexion). Un outil HTTP qui écrit
+  demandera une validation humaine à chaque appel et ne peut être publié que par un administrateur des outils.
 
 Développement d'outils (méthode à suivre) :
 1. Cadrer : besoin, données concernées, qui l'utilisera. Vérifie d'abord avec lister_outils qu'aucun outil publié ne
@@ -289,6 +305,22 @@ def describe_action(tool_id: str, args: dict, drafts: dict | None = None) -> lis
             res = (f"{c.get('nombre_lignes')} ligne(s)" if c.get("ok") and "nombre_lignes" in c
                    else ("réussi" if c.get("ok") else f"échec : {str(c.get('erreur') or '')[:120]}"))
             out.append(f"Cas {i} ({args_txt}) : {res}")
+        return out
+    if tool_id == "tester_appel_http":
+        e = drafts.get(a.get("brouillon_id")) or {}
+        d = e.get("draft") or {}
+        cases = [c for c in (a.get("cas_test") or []) if isinstance(c, dict)]
+        if a.get("arguments"):
+            cases.insert(0, a["arguments"])
+        if not cases:
+            cases = [{x["name"]: x.get("example") for x in d.get("parameters") or [] if x.get("example") is not None}]
+        out = [f"Envoyer un appel RÉEL {d.get('method', '?')} via la connexion « {d.get('connection', '?')} »",
+               f"Chemin : {d.get('path', '?')}",
+               "Cet appel peut créer, modifier ou supprimer des données dans le service distant."]
+        for i, c in enumerate(cases[:5], 1):
+            out.append(f"Appel {i} : " + (", ".join(f"{k}={v}" for k, v in c.items()) or "sans argument"))
+        if d.get("body") is not None:
+            out.append("Corps : " + json.dumps(d["body"], ensure_ascii=False)[:300])
         return out
     if tool_id == "creer_equipe":
         chef = a.get("chef") or ("chef généré en brouillon" if a.get("creer_chef") else "aucun")

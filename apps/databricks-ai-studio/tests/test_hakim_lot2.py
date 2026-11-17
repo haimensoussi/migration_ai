@@ -9,7 +9,8 @@ from tools.hakim_tools import Platform
 
 ME, OTHER = "a@sncf.fr", "b@sncf.fr"
 REG = ToolRegistry(hakim.TOOLS)
-WRITES = {"creer_agent", "modifier_agent", "creer_outil", "creer_equipe", "modifier_equipe", "soumettre_publication",
+WRITES = {"creer_agent", "modifier_agent", "creer_outil", "tester_appel_http", "creer_equipe", "modifier_equipe",
+          "soumettre_publication",
           "archiver"}
 
 

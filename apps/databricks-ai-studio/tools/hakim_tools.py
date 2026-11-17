@@ -70,7 +70,9 @@ GUIDE = {
     "developpement_outils": "Avec HakimAI : concevoir_outil (proposition SQL paramétré ou fonction UC), verifier_outil "
                              "(test réel en lecture, jusqu'à 5 cas), creer_outil (brouillon). Un outil en brouillon se "
                              "relit avec decrire_outil, se rejoue avec tester_outil et s'améliore avec ameliorer_outil "
-                             "(nouvelle version). Publication et outils HTTP : Catalogue d'outils.",
+                             "(nouvelle version). Outils HTTP : lister_connexions (connexion UC existante requise), puis "
+                             "concevoir et vérifier ; un appel autre que GET n'est envoyé qu'après votre validation "
+                             "(tester_appel_http). Publication : Catalogue d'outils.",
     "chat": "Chat & Test permet d'essayer un agent, y compris en brouillon pour son propriétaire. Les appels d'outils sont "
             "visibles sous chaque réponse.",
 }

@@ -17,7 +17,12 @@ from backend import tool_builder as tb
 from backend.tool_registry import ToolContext, ToolError
 from tools.hakim_tools import Platform, _find_agent, _p
 
-HAKIM_TOOL_KINDS = ("sql_template", "uc_function")
+HAKIM_TOOL_KINDS = ("sql_template", "uc_function", "http_connection")
+
+
+def _http_write(draft: dict) -> bool:
+    """Appel HTTP autre que GET : il peut créer, modifier ou envoyer des données dans le service distant."""
+    return draft.get("type") == "http_connection" and (draft.get("method") or "GET").upper() != "GET"
 
 
 # --- Journal d'audit ------------------------------------------------------------------------------------
@@ -159,14 +164,18 @@ def concevoir_outil(ctx: ToolContext, demande: str) -> dict:
     if not r.draft:
         return {"brouillon_id": None, "non_realisable": r.unsupported or "Aucune proposition.", "hypotheses": r.hypotheses}
     if r.draft.get("type") not in HAKIM_TOOL_KINDS:
-        return {"brouillon_id": None, "type": r.draft.get("type"),
-                "non_realisable": "Les outils HTTP se créent dans le Catalogue d'outils (test d'appel réel requis)."}
+        return {"brouillon_id": None, "type": r.draft.get("type"), "non_realisable": "Type d'outil non pris en charge."}
     did = _new_id(p, "O")
     p.drafts[did] = {"kind": "outil", "draft": r.draft}
-    return {"brouillon_id": did, "outil_propose": {k: r.draft.get(k) for k in
-            ("tool_id", "name", "type", "description", "parameters", "sql", "function")},
+    keys = ("tool_id", "name", "type", "description", "parameters", "sql", "function", "connection", "method",
+            "path", "query", "body", "headers")
+    suite = ("verifier_outil contrôle l'appel (sans l'envoyer) ; tester_appel_http envoie un appel réel après "
+             "validation de l'utilisateur ; creer_outil n'est possible qu'après un appel réel réussi."
+             if _http_write(r.draft) else
+             "verifier_outil exécute un test réel en lecture ; creer_outil n'est possible qu'après un test réussi.")
+    return {"brouillon_id": did, "outil_propose": {k: r.draft.get(k) for k in keys if r.draft.get(k) not in (None, "", {})},
             "erreurs": r.check.errors, "avertissements": r.check.warnings, "hypotheses": r.hypotheses,
-            "suite": "verifier_outil exécute un test en lecture ; creer_outil n'est possible qu'après un test réussi."}
+            "suite": suite}
 
 
 MAX_CASES = 5
@@ -199,10 +208,55 @@ def verifier_outil(ctx: ToolContext, brouillon_id: str, arguments_test: dict | N
     if not c.ok:
         d.pop("test", None)
         return {"ok": False, "erreurs": c.errors, "avertissements": c.warnings}
+    if _http_write(draft):              # pas d'envoi sans validation : l'appel réel passe par tester_appel_http
+        d.pop("test", None)
+        d["checked_fp"] = tb.fingerprint(draft)
+        return {"ok": True, "controle": "réussi (connexion, paramètres, compilation)", "appel_reel": "non envoyé",
+                "avertissements": c.warnings,
+                "suite": f"Appel {draft['method']} : tester_appel_http envoie un appel réel après validation de "
+                         "l'utilisateur (il peut créer ou modifier des données dans le service distant)."}
     spec = tb.build_spec(draft, p.user)
     res = _run_cases(spec, _cases(tb.example_args(draft), arguments_test, cas_test), ctx)
     d["test"], d["fp"] = res, tb.fingerprint(draft)
     return {"ok": bool(res.get("ok")), "avertissements": c.warnings, "test": res}
+
+
+@_written("tester_appel_http", "outil")
+def tester_appel_http(ctx, p, brouillon_id: str, arguments: dict | None = None, cas_test: list | None = None) -> tuple:
+    """Appel réel d'un brouillon HTTP autre que GET, après fiche de validation. Tracé dans copilot_actions."""
+    d = _draft(p, brouillon_id, "outil")
+    draft = d["draft"]
+    if not _http_write(draft):
+        raise ToolError("Réservé aux appels HTTP autres que GET : utilisez verifier_outil.")
+    if d.get("checked_fp") != tb.fingerprint(draft):
+        raise ToolError("Contrôle requis avant l'appel réel : lancez verifier_outil.")
+    spec = tb.build_spec(draft, p.user)
+    res = _run_cases(spec, _cases(tb.example_args(draft), arguments, cas_test), ctx)
+    d["test"], d["fp"] = res, tb.fingerprint(draft)
+    return draft["tool_id"], None, {"test": res}, {"ok": bool(res.get("ok")), "test": res}
+
+
+def lister_connexions(ctx: ToolContext) -> dict:
+    """Connexions HTTP Unity Catalog visibles avec les droits de l'utilisateur (system_* exclues)."""
+    _p(ctx)
+    try:
+        rows = ctx.sql.query("SHOW CONNECTIONS", row_limit=200).get("rows") or []
+    except Exception as e:  # noqa: BLE001
+        raise ToolError(f"Liste des connexions inaccessible : {str(e)[:300]}") from e
+    pick = lambda r, *ks: next((r[k] for k in ks if r.get(k) not in (None, "")), None)  # noqa: E731
+    out = []
+    for r in rows:
+        name, kind = str(pick(r, "name", "connection_name") or ""), str(pick(r, "connection_type", "type") or "")
+        if not name or name.lower().startswith("system_") or kind.upper() != "HTTP":
+            continue
+        out.append({"connexion": name, "type": kind, "proprietaire": pick(r, "owner"),
+                    "commentaire": pick(r, "comment")})
+    res = {"nombre": len(out), "connexions": out}
+    if not out:
+        res["note"] = ("Aucune connexion HTTP visible. Sa création (CREATE CONNECTION ... TYPE HTTP) est réservée à un "
+                       "administrateur du metastore : indiquez-lui l'hôte, le port, le chemin de base et le type "
+                       "d'authentification. Les identifiants restent dans la connexion, jamais dans l'outil.")
+    return res
 
 
 # --- Développement d'outils : fiche, test d'un outil existant, amélioration --------------------------------
@@ -288,7 +342,7 @@ def ameliorer_outil(ctx: ToolContext, outil: str, demande: str = "") -> dict:
         raise ToolError(f"« {s.tool_id} » est publié : sa modification se fait dans le Catalogue d'outils "
                         "(onglet Mes outils), pour ne pas interrompre les agents qui l'utilisent.")
     if _kind(s) not in HAKIM_TOOL_KINDS:
-        raise ToolError("Les outils HTTP se modifient dans le Catalogue d'outils (test d'appel réel requis).")
+        raise ToolError("Type d'outil non pris en charge par HakimAI : modifiez-le dans le Catalogue d'outils.")
     if not callable(p.tool_designer):
         raise ToolError("Assistant d'outils indisponible.")
     current = tb.draft_from_spec(s)
@@ -302,7 +356,8 @@ def ameliorer_outil(ctx: ToolContext, outil: str, demande: str = "") -> dict:
     did = _new_id(p, "O")
     p.drafts[did] = {"kind": "outil", "draft": r.draft, "base": {"tool_id": s.tool_id, "version": s.version}}
     diff = {k: {"avant": current.get(k), "apres": r.draft.get(k)}
-            for k in ("name", "description", "sql", "function", "parameters", "max_rows")
+            for k in ("name", "description", "sql", "function", "connection", "method", "path", "query", "body",
+                      "parameters", "max_rows")
             if current.get(k) != r.draft.get(k)}
     return {"brouillon_id": did, "outil": s.tool_id, "version_actuelle": s.version, "modifications": r.changes,
             "differences": diff, "erreurs": r.check.errors, "avertissements": r.check.warnings,

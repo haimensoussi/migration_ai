@@ -180,6 +180,58 @@ def test_card_lists_each_test_case_and_instructions_cover_refusal():
     assert "L'UTILISATEUR a refusé" in hakim.INSTRUCTIONS and "caractère pour caractère" in hakim.INSTRUCTIONS
 
 
+def http_draft(method="POST"):
+    return tb.normalize({"tool_id": "creer_ticket", "name": "Créer un ticket", "type": "http_connection",
+                         "description": "Crée un ticket dans l'outil de suivi ; renvoie le statut HTTP et la réponse.",
+                         "connection": "suivi_http", "method": method, "path": "/tickets",
+                         "body": {"titre": "{{titre}}"} if method != "GET" else None,
+                         "query": {"titre": "{{titre}}"} if method == "GET" else {},
+                         "parameters": [{"name": "titre", "type": "string", "description": "Titre", "required": True,
+                                         "example": "Test HakimAI"}]})
+
+
+def test_http_write_needs_confirmed_real_call(fake_run):
+    c, repo = ctx()
+    c.platform.drafts["O1"] = {"kind": "outil", "draft": http_draft()}
+    with pytest.raises(ToolError, match="Contrôle requis"):
+        run(c, "tester_appel_http", brouillon_id="O1")
+    r = run(c, "verifier_outil", brouillon_id="O1")
+    assert r["ok"] and r["appel_reel"] == "non envoyé" and fake_run == []        # rien n'est envoyé
+    with pytest.raises(ToolError, match="Test réussi requis"):
+        run(c, "creer_outil", brouillon_id="O1")
+    lines = hakim.describe_action("tester_appel_http", {"brouillon_id": "O1"}, c.platform.drafts)
+    assert "RÉEL POST" in lines[0] and "Appel 1 : titre=Test HakimAI" in lines and any("Corps" in l for l in lines)
+    spec = REG.specs["tester_appel_http"]
+    assert spec.requires_confirmation and not spec.read_only
+    out = run(c, "tester_appel_http", brouillon_id="O1")
+    assert out["ok"] and fake_run == [("creer_ticket", {"titre": "Test HakimAI"})]
+    assert any(a["t"] == "tester_appel_http" and a["s"] == "succes" for _, a in repo.sql.done)
+    run(c, "creer_outil", brouillon_id="O1")
+    saved = repo.saved[0][0]
+    assert saved.requires_confirmation and not saved.read_only and saved.status == "brouillon"
+
+
+def test_http_get_is_tested_directly_and_tester_appel_refuses_get(fake_run):
+    c, _ = ctx()
+    c.platform.drafts["O1"] = {"kind": "outil", "draft": http_draft("GET")}
+    assert run(c, "verifier_outil", brouillon_id="O1")["ok"] and len(fake_run) == 1
+    with pytest.raises(ToolError, match="autres que GET"):
+        run(c, "tester_appel_http", brouillon_id="O1")
+
+
+def test_lister_connexions_filters_http_and_system():
+    c, _ = ctx()
+    rows = [{"name": "suivi_http", "connection_type": "HTTP", "owner": "x"},
+            {"name": "system_ai", "connection_type": "HTTP"}, {"name": "pg", "connection_type": "POSTGRESQL"}]
+    c = ToolContext(sql=types.SimpleNamespace(query=lambda s, **k: {"rows": rows}), workspace=None,
+                    user_email=ME, platform=c.platform)
+    r = run(c, "lister_connexions")
+    assert [x["connexion"] for x in r["connexions"]] == ["suivi_http"]
+    c2 = ToolContext(sql=types.SimpleNamespace(query=lambda s, **k: {"rows": []}), workspace=None, user_email=ME,
+                     platform=c.platform)
+    assert "administrateur du metastore" in run(c2, "lister_connexions")["note"]
+
+
 def test_designer_prompt_mentions_apostrophes():
     from backend.tool_designer import designer_prompt
     p = designer_prompt([])
