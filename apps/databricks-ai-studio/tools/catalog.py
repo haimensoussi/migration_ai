@@ -61,6 +61,46 @@ BUILTIN_TOOLS: list[ToolSpec] = [
             "required": ["query", "type"]},
         output_schema={"type": "object"}, executor="tools.chart_tools:render_chart"),
     ToolSpec(
+        tool_id="render_kpi", name="Afficher des indicateurs", category="Visualisation",
+        description=("Exécute UNE requête SQL en lecture seule et affiche des cartes d'indicateurs dans le chat. "
+                     "Une ligne = un indicateur (12 au plus) : colonne valeur (numérique), colonne libelle (facultative), "
+                     "colonne reference (facultative, ex. année précédente) pour l'écart et la tendance. "
+                     "format pourcentage : valeurs déjà en % (91.2), écarts en points. sens indique si une hausse est "
+                     "favorable. Valeurs, écarts et tendances sont calculés par l'application : les reprendre tels quels."),
+        input_schema={"type": "object", "properties": {
+            "query": {"type": "string", "description": "Requête SQL en lecture seule, une ligne par indicateur"},
+            "valeur": {"type": "string", "description": "Colonne de la valeur (numérique)"},
+            "titre": {"type": "string", "description": "Titre du bloc d'indicateurs"},
+            "libelle": {"type": "string", "description": "Colonne du libellé de chaque indicateur (facultatif)"},
+            "reference": {"type": "string", "description": "Colonne de la valeur de référence (facultatif)"},
+            "format": {"type": "string", "enum": ["nombre", "decimal", "pourcentage"], "description": "Format des valeurs"},
+            "unite": {"type": "string", "description": "Unité affichée (ex. voyageurs, trains), hors pourcentage"},
+            "sens": {"type": "string", "enum": ["hausse_favorable", "baisse_favorable", "neutre"],
+                     "description": "Interprétation d'une hausse (neutre par défaut)"},
+            "libelle_reference": {"type": "string", "description": "Libellé de la référence (ex. 2024)"}},
+            "required": ["query", "valeur"]},
+        output_schema={"type": "object"}, executor="tools.report_tools:render_kpi"),
+    ToolSpec(
+        tool_id="generate_report", name="Générer un rapport", category="Visualisation",
+        description=("Assemble un rapport téléchargeable (HTML et Markdown) : titre, introduction, sections, conclusion. "
+                     "Chaque section a un titre, un texte et, au besoin, une requête SQL en lecture seule affichée en "
+                     "tableau ou en graphique (type, x, y, couleur comme render_chart). Les requêtes figurent en "
+                     "annexe. Calculer d'abord les chiffres (execute_sql, render_chart, render_kpi) et ne reprendre "
+                     "dans les textes que ces chiffres. Pas de carte dans le rapport."),
+        input_schema={"type": "object", "properties": {
+            "titre": {"type": "string", "description": "Titre du rapport"},
+            "introduction": {"type": "string"},
+            "sections": {"type": "array", "maxItems": 8, "items": {"type": "object", "properties": {
+                "titre": {"type": "string"}, "texte": {"type": "string"},
+                "requete": {"type": "string", "description": "Requête SQL en lecture seule (facultative)"},
+                "type": {"type": "string", "enum": ["tableau", "barres", "barres_horizontales", "courbe", "aire",
+                                                    "camembert", "nuage"]},
+                "x": {"type": "string"}, "y": {"type": "string"}, "couleur": {"type": "string"}},
+                "required": ["titre"]}},
+            "conclusion": {"type": "string"}},
+            "required": ["titre", "sections"]},
+        output_schema={"type": "object"}, executor="tools.report_tools:generate_report"),
+    ToolSpec(
         tool_id="render_map", name="Afficher une carte", category="Visualisation",
         description=("Exécute UNE requête SQL en lecture seule et affiche le résultat sur une carte interactive dans le "
                      "chat. Le résultat doit contenir une colonne latitude et une colonne longitude (WGS84). "

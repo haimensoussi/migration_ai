@@ -57,10 +57,10 @@ def _json_script(obj) -> str:
 
 
 def build_report(titre: str, sections: list[dict], visuals: dict, user: str, introduction: str = "",
-                 conclusion: str = "") -> dict:
+                 conclusion: str = "", auteur: str = "HakimAI") -> dict:
     now = dt.datetime.now().strftime("%d/%m/%Y %H:%M")
     e = html.escape
-    parts_h, parts_m, used, charts = [], [f"# {titre}", f"_Généré par HakimAI pour {user} le {now}._"], [], []
+    parts_h, parts_m, used, charts = [], [f"# {titre}", f"_Généré par {auteur} pour {user} le {now}._"], [], []
     if introduction:
         parts_h.append(f"<p>{e(introduction)}</p>"); parts_m.append(introduction)
     for i, sec in enumerate(sections, 1):
@@ -99,7 +99,7 @@ def build_report(titre: str, sections: list[dict], visuals: dict, user: str, int
 h1{{color:#B0124F}}h2{{color:#4A1942;border-bottom:1px solid #ddd;padding-bottom:4px}}
 table{{border-collapse:collapse;font-size:13px;margin:8px 0}}td,th{{border:1px solid #ddd;padding:4px 8px}}th{{background:#F6F6F8}}
 .chart{{width:100%;margin:12px 0}}.note{{color:#666;font-size:12px}}pre{{background:#F6F6F8;padding:8px;white-space:pre-wrap}}</style>
-</head><body><h1>{e(titre)}</h1><p class="note">Généré par HakimAI (DISCOVERY · SNCF Réseau) pour {e(user)} le {now}.
+</head><body><h1>{e(titre)}</h1><p class="note">Généré par {e(auteur)} (DISCOVERY · SNCF Réseau) pour {e(user)} le {now}.
 Chiffres calculés à partir des requêtes en annexe, avec les droits de l'utilisateur.</p>
 {''.join(parts_h)}<h2>Annexe : requêtes et traçabilité</h2>{annex_h}
 <script>{scripts}</script></body></html>"""

@@ -154,6 +154,17 @@ class Orchestrator:
             if charts:   # graphiques du partenaire : même principe que les cartes
                 out["graphiques"] = [{"titre": c.result.get("titre"), "lignes": c.result.get("lignes")} for c in charts]
                 out["_ui_charts"] = [c.result["_ui_chart"] for c in charts]
+            kpis = [e for e in res.events if e.tool_id == "render_kpi" and e.status == "succes"
+                    and isinstance(e.result, dict) and e.result.get("_ui_kpi")]
+            if kpis:   # indicateurs du partenaire : valeurs calculées pour le modèle, cartes pour l'affichage
+                out["indicateurs"] = [{"titre": k.result.get("titre"), "indicateurs": k.result.get("indicateurs")}
+                                      for k in kpis]
+                out["_ui_kpis"] = [k.result["_ui_kpi"] for k in kpis]
+            reps = [e for e in res.events if e.tool_id == "generate_report" and e.status == "succes"
+                    and isinstance(e.result, dict) and e.result.get("_ui_report")]
+            if reps:   # rapports du partenaire : titre pour le modèle, fichiers pour le téléchargement
+                out["rapports"] = [{"titre": r.result.get("titre")} for r in reps]
+                out["_ui_reports"] = [r.result["_ui_report"] for r in reps]
             return out
 
         ctx = self.ctx_factory()
