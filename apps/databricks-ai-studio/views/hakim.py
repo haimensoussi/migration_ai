@@ -4,7 +4,7 @@ import uuid
 
 import streamlit as st
 
-from backend import hakim
+from backend import hakim, hakim_guard
 from backend.agent_runtime import AgentRuntime
 from backend.model_client import ModelClient
 from backend.tool_registry import ToolContext, ToolRegistry
@@ -58,10 +58,12 @@ def runtime():
                     conv=s["conv"], drafts=s["drafts"], designer=state.build_designer,
                     tool_designer=state.build_tool_designer, visuals=s["visuals"], reports=s["reports"])
     ctx = ToolContext(sql=sql, workspace=w, max_rows=cfg_s.max_rows, user_email=ident.email, platform=plat)
-    return AgentRuntime(ModelClient(w), ToolRegistry(hakim.TOOLS), ctx), hakim.config(cfg_s.default_model), plat
+    guard = lambda tid, args, msgs: hakim_guard.presentation_issue(tid, args, msgs, s["drafts"])  # noqa: E731
+    return (AgentRuntime(ModelClient(w), ToolRegistry(hakim.TOOLS), ctx, before_confirm=guard),
+            hakim.config(cfg_s.default_model), plat)
 
 
-def handle(res, logged_prefix: list[dict]) -> None:
+def handle(res, logged_prefix: list[dict], warnings: list[dict] | None = None) -> None:
     """Met à jour l'historique, l'affichage, la fiche en attente et le journal."""
     s["history"] = [m for m in res.messages if m["role"] != "system"]
     s["pending"] = {"pending": res.pending, "messages": res.messages} if res.pending else None
@@ -72,6 +74,7 @@ def handle(res, logged_prefix: list[dict]) -> None:
         ok = [e.result for e in res.events if e.status == "succes" and isinstance(e.result, dict)]
         s["display"].append({"role": "assistant", "content": text, "events": events,
                              "nav": hakim.navigation_targets(res.events),
+                             "warning": hakim_guard.warning_text(warnings) if warnings else None,
                              "visuals": [r["visuel_id"] for r in ok if r.get("visuel_id")],
                              "reports": [r["rapport_id"] for r in ok if r.get("rapport_id")],
                              "excels": [r["_ui_excel"] for r in ok if r.get("_ui_excel")]})
@@ -94,11 +97,11 @@ def ask(question: str) -> None:
     s["turns"] += 1
     try:
         with st.spinner("HakimAI réfléchit…"):
-            res = rt.run(cfg, s["history"] + [user_msg])
+            res, warnings = hakim_guard.verify_turn(rt, cfg, rt.run(cfg, s["history"] + [user_msg]))
     except Exception as e:  # noqa: BLE001
         s["display"].append({"role": "assistant", "content": f"Je n'ai pas pu répondre : {e}"})
         return
-    handle(res, [user_msg])
+    handle(res, [user_msg], warnings)
 
 
 def decide(approved: bool) -> None:
@@ -110,14 +113,18 @@ def decide(approved: bool) -> None:
             audit(plat, call["tool"], "", None, call.get("arguments") or {}, None, None, "refuse")
         except Exception:  # noqa: BLE001
             pass
+        # Réponse écrite par l'application : le modèle n'est pas rappelé après un refus.
+        lines = hakim.describe_action(call["tool"], call.get("arguments") or {}, s["drafts"])
+        handle(hakim_guard.refusal_result(pend["messages"], call["call"]["id"], lines[0] if lines else None), [])
+        return
     try:
-        with st.spinner("Exécution…" if approved else "HakimAI prend note…"):
-            res = rt.resume(cfg, pend["messages"], {call["call"]["id"]: approved})
+        with st.spinner("Exécution…"):
+            res, warnings = hakim_guard.verify_turn(rt, cfg, rt.resume(cfg, pend["messages"], {call["call"]["id"]: True}))
     except Exception as e:  # noqa: BLE001
         s["pending"] = None
         s["display"].append({"role": "assistant", "content": f"Erreur pendant l'exécution : {e}"})
         return
-    handle(res, [])
+    handle(res, [], warnings)
 
 
 def show_visual(v, key: str) -> None:
@@ -163,6 +170,8 @@ if not s["display"]:
 for m in s["display"]:
     with st.chat_message(m["role"]):
         st.markdown(m["content"])
+        if m.get("warning"):
+            st.warning(m["warning"])
         for vid in m.get("visuals") or []:
             show_visual(s["visuals"].get(vid), key=f"{s['conv']}_{vid}")
         for rid in m.get("reports") or []:

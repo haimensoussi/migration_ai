@@ -70,8 +70,11 @@ def system_prompt(cfg: AgentConfig, tools: dict[str, ToolSpec]) -> str:
 
 class AgentRuntime:
     def __init__(self, model, registry: ToolRegistry, ctx: ToolContext,
-                 on_tool_event: Callable[[ToolEvent], None] | None = None):
+                 on_tool_event: Callable[[ToolEvent], None] | None = None,
+                 before_confirm: Callable[[str, dict, list[dict]], str | None] | None = None):
         self.model, self.registry, self.ctx, self.on_tool_event = model, registry, ctx, on_tool_event
+        # Contrôle facultatif avant la fiche de validation : un texte renvoyé = appel non proposé, erreur rendue au modèle.
+        self.before_confirm = before_confirm
 
     # -- API publique -------------------------------------------------------
     def run(self, cfg: AgentConfig, history: list[dict], approvals: dict[str, bool] | None = None) -> TurnResult:
@@ -124,6 +127,12 @@ class AgentRuntime:
                 if spec and spec.requires_confirmation:
                     decision = approvals.get(call["id"])
                     if decision is None:
+                        issue = (self.before_confirm(spec.tool_id, _parse_args(call), messages)
+                                 if self.before_confirm else None)
+                        if issue:
+                            self._record(ToolEvent(call["id"], spec.tool_id, _parse_args(call), "erreur",
+                                                   error=issue), messages, events)
+                            continue
                         return result(pending={"call": call, "tool": spec.tool_id,
                                                "arguments": _parse_args(call)})
                     if decision is False:
