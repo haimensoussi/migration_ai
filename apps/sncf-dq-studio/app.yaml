@@ -1,0 +1,30 @@
+command:
+  - streamlit
+  - run
+  - app.py
+
+env:
+  # SQL warehouse fourni par la ressource de l'App (CAN_USE)
+  - name: DATABRICKS_WAREHOUSE_ID
+    valueFrom: sql-warehouse
+  # Endpoint du modele de l'agent IA (ressource serving endpoint, CAN_QUERY)
+  - name: DQ_MODEL_ENDPOINT
+    valueFrom: default-model
+  # Job de la chaine DQ v3 (ressource job, CAN_MANAGE_RUN pour le service principal)
+  - name: DQ_JOB_ID
+    valueFrom: dq-job
+  # Catalogue des schemas produits par la chaine et schema des tables de l'App
+  - name: DQ_CATALOG
+    value: dataops_dev
+  - name: DQ_APP_SCHEMA
+    value: sncf_dqv3_app
+  # Source affichee par defaut (code_source de app_sources) : description_du_reseau_bronze
+  - name: DQ_DEFAULT_SOURCE
+    value: ddr
+  # Administrateurs DQ (role admin_dq en plus de la table app_roles), separes par des virgules
+  - name: DQ_ADMINS
+    value: "phsi10251@commun.ad.sncf.fr"
+  - name: DQ_MAX_ROWS
+    value: "200"
+  - name: STREAMLIT_BROWSER_GATHER_USAGE_STATS
+    value: "false"
