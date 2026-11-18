@@ -77,6 +77,18 @@ class TenantService:
                        permission=permission, role=fresh.role.role_id)
         return fresh
 
+    # -- Interface pour les modules métier (Agent Studio, marketplaces...) ----------------------------
+    def authorize(self, ctx: TenantContext, permission: str, action: str) -> TenantContext:
+        """Contrôle complet (sceau, adhésion relue, permission) ; renvoie un contexte frais."""
+        return self._authorize(ctx, permission, action)
+
+    def deny(self, ctx: TenantContext, action: str, msg: str, **details):
+        self._deny(ctx.identity, action, ctx.tenant_id, msg, **details)
+
+    def audit(self, ctx: TenantContext, action: str, target_type: str, target_id: str, outcome: str = "succes",
+              **details) -> None:
+        self._audit(ctx.tenant_id, ctx.identity.email, action, outcome, target_type, target_id, **details)
+
     # -- Plateforme --------------------------------------------------------------------------------
     def data_schema_for(self, slug: str) -> str:
         return f"{self.tenant_catalog}.saas_t_{slug}"

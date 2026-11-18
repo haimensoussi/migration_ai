@@ -160,7 +160,11 @@ class SetupWizard:
 
     # -- Lecture -----------------------------------------------------------------------------------
     def state(self, ctx: TenantContext) -> dict:
-        s = self.svc.get_settings(ctx)
+        return self.state_from(self.svc.get_settings(ctx))
+
+    @staticmethod
+    def state_from(s: dict) -> dict:
+        """État déduit des paramètres déjà lus (l'appelant a contrôlé les droits)."""
         steps = {k: s.get(f"setup.{k}") for k in DATA_STEPS}
         status = s.get("setup.status") or {}
         activated_at = status.get("activated_at", "")

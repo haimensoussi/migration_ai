@@ -14,6 +14,7 @@ pages = {
         st.Page("views/saas_accueil.py", title="Dashboard SaaS", icon=":material/space_dashboard:"),
         st.Page("views/organisations.py", title="Organisations", icon=":material/domain:"),
         st.Page("views/setup_wizard.py", title="Setup Wizard", icon=":material/checklist:"),
+        st.Page("views/agent_studio.py", title="Agent Studio", icon=":material/smart_toy:"),
     ],
     "Plateforme": [
         st.Page("views/accueil.py", title="Accueil", icon=":material/home:", default=True),

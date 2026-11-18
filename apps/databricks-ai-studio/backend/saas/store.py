@@ -138,6 +138,81 @@ class SqlStore:
             f"details FROM {self.t('saas_audit_logs')} WHERE tenant_id = :t ORDER BY created_at DESC",
             {"t": tenant_id}, limit)
 
+    # -- Agents (versionnés) -------------------------------------------------------------------------
+    AGENT_COLS = ("tenant_id", "agent_id", "version", "name", "status", "config", "source_agent_id", "created_by",
+                  "created_at", "updated_at")
+
+    def _agent(self, r: dict) -> dict:
+        d = {k: r.get(k) for k in self.AGENT_COLS}
+        d["version"] = int(d["version"])
+        d["config"] = json.loads(d["config"] or "{}")
+        return d
+
+    def agent_versions(self, tenant_id: str, agent_id: str | None = None) -> list[dict]:
+        where, params = "WHERE tenant_id = :t", {"t": tenant_id}
+        if agent_id is not None:
+            where, params = where + " AND agent_id = :a", params | {"a": agent_id}
+        return [self._agent(r) for r in self._rows(
+            f"SELECT tenant_id, agent_id, version, name, status, config, source_agent_id, created_by, "
+            f"CAST(created_at AS STRING) AS created_at, CAST(updated_at AS STRING) AS updated_at "
+            f"FROM {self.t('saas_agents')} {where} ORDER BY agent_id, version", params)]
+
+    def insert_agent_version(self, tenant_id: str, agent_id: str, version: int, name: str, config: dict,
+                             by: str) -> bool:
+        """Insère une version (statut brouillon) si elle n'existe pas. False = version déjà créée (concurrence)."""
+        before = len(self.agent_versions(tenant_id, agent_id))
+        self.sql.execute(
+            f"MERGE INTO {self.t('saas_agents')} d USING (SELECT :t AS tenant_id, :a AS agent_id, :v AS version) s "
+            "ON d.tenant_id = s.tenant_id AND d.agent_id = s.agent_id AND d.version = s.version "
+            "WHEN NOT MATCHED THEN INSERT (tenant_id, agent_id, version, name, status, config, created_by, created_at, "
+            "updated_at) VALUES (:t, :a, :v, :n, 'brouillon', :c, :by, current_timestamp(), current_timestamp())",
+            {"t": tenant_id, "a": agent_id, "v": int(version), "n": name,
+             "c": json.dumps(config, ensure_ascii=False), "by": by})
+        return len(self.agent_versions(tenant_id, agent_id)) == before + 1
+
+    def update_agent_draft(self, tenant_id: str, agent_id: str, version: int, name: str, config: dict) -> None:
+        self.sql.execute(
+            f"UPDATE {self.t('saas_agents')} SET name = :n, config = :c, updated_at = current_timestamp() "
+            "WHERE tenant_id = :t AND agent_id = :a AND version = :v AND status = 'brouillon'",
+            {"t": tenant_id, "a": agent_id, "v": int(version), "n": name, "c": json.dumps(config, ensure_ascii=False)})
+
+    def publish_agent_version(self, tenant_id: str, agent_id: str, version: int) -> None:
+        """Une seule instruction : la version devient publiée, l'ancienne publiée est archivée."""
+        self.sql.execute(
+            f"UPDATE {self.t('saas_agents')} SET status = CASE WHEN version = :v THEN 'publie' "
+            "WHEN status = 'publie' THEN 'archive' ELSE status END, updated_at = current_timestamp() "
+            "WHERE tenant_id = :t AND agent_id = :a AND (version = :v OR status = 'publie')",
+            {"t": tenant_id, "a": agent_id, "v": int(version)})
+
+    def archive_agent(self, tenant_id: str, agent_id: str) -> None:
+        self.sql.execute(
+            f"UPDATE {self.t('saas_agents')} SET status = 'archive', updated_at = current_timestamp() "
+            "WHERE tenant_id = :t AND agent_id = :a AND status = 'publie'", {"t": tenant_id, "a": agent_id})
+
+    # -- Connecteurs, exécutions, consommation -----------------------------------------------------
+    def connector_ids(self, tenant_id: str) -> set[str]:
+        return {r["connector_id"] for r in self._rows(
+            f"SELECT connector_id FROM {self.t('saas_connectors')} WHERE tenant_id = :t AND status = 'actif'",
+            {"t": tenant_id})}
+
+    def add_execution(self, tenant_id: str, execution_id: str, execution_type: str, ref_id: str, user: str,
+                      status: str, error: str | None, details: dict) -> None:
+        self.sql.execute(
+            f"INSERT INTO {self.t('saas_executions')} (tenant_id, execution_id, execution_type, ref_id, user_email, "
+            "status, started_at, ended_at, error, details) VALUES (:t, :id, :ty, :r, :u, :s, "
+            "current_timestamp() - make_interval(0, 0, 0, 0, 0, 0, :sec), current_timestamp(), :e, :d)",
+            {"t": tenant_id, "id": execution_id, "ty": execution_type, "r": ref_id, "u": user, "s": status,
+             "sec": float(details.get("latency_ms", 0)) / 1000.0, "e": error,
+             "d": json.dumps(details, ensure_ascii=False, default=str)})
+
+    def add_usage(self, tenant_id: str, rows: list[dict]) -> None:
+        for r in rows:
+            self.sql.execute(
+                f"INSERT INTO {self.t('saas_usage')} (tenant_id, usage_id, usage_date, user_email, agent_id, model, "
+                "metric, quantity, recorded_at) VALUES (:t, :id, current_date(), :u, :a, :m, :k, :q, current_timestamp())",
+                {"t": tenant_id, "id": uuid.uuid4().hex, "u": r["user_email"], "a": r["agent_id"], "m": r["model"],
+                 "k": r["metric"], "q": float(r["quantity"])})
+
     def counts(self) -> dict:
         r = self._rows(
             f"SELECT (SELECT count(*) FROM {self.t('saas_tenants')}) AS organisations, "
@@ -207,6 +282,52 @@ class MemoryStore:
 
     def audit_log(self, tenant_id, limit=100):
         return [a for a in reversed(self.audits) if a["tenant_id"] == tenant_id][:limit]
+
+    # Agents, connecteurs, exécutions, consommation (mêmes règles que SqlStore)
+    def agent_versions(self, tenant_id, agent_id=None):
+        rows = [dict(r) for r in getattr(self, "agents", []) if r["tenant_id"] == tenant_id
+                and (agent_id is None or r["agent_id"] == agent_id)]
+        return sorted(rows, key=lambda r: (r["agent_id"], r["version"]))
+
+    def insert_agent_version(self, tenant_id, agent_id, version, name, config, by):
+        self.__dict__.setdefault("agents", [])
+        if any(r["tenant_id"] == tenant_id and r["agent_id"] == agent_id and r["version"] == version
+               for r in self.agents):
+            return False
+        now = self._now()
+        self.agents.append({"tenant_id": tenant_id, "agent_id": agent_id, "version": int(version), "name": name,
+                            "status": "brouillon", "config": json.loads(json.dumps(config)), "source_agent_id": None,
+                            "created_by": by, "created_at": now, "updated_at": now})
+        return True
+
+    def update_agent_draft(self, tenant_id, agent_id, version, name, config):
+        for r in getattr(self, "agents", []):
+            if (r["tenant_id"], r["agent_id"], r["version"], r["status"]) == (tenant_id, agent_id, version, "brouillon"):
+                r.update(name=name, config=json.loads(json.dumps(config)), updated_at=self._now())
+
+    def publish_agent_version(self, tenant_id, agent_id, version):
+        for r in getattr(self, "agents", []):
+            if r["tenant_id"] == tenant_id and r["agent_id"] == agent_id:
+                if r["version"] == version:
+                    r["status"] = "publie"
+                elif r["status"] == "publie":
+                    r["status"] = "archive"
+
+    def archive_agent(self, tenant_id, agent_id):
+        for r in getattr(self, "agents", []):
+            if r["tenant_id"] == tenant_id and r["agent_id"] == agent_id and r["status"] == "publie":
+                r["status"] = "archive"
+
+    def connector_ids(self, tenant_id):
+        return {c for (t, c) in getattr(self, "connectors", set()) if t == tenant_id}
+
+    def add_execution(self, tenant_id, execution_id, execution_type, ref_id, user, status, error, details):
+        self.__dict__.setdefault("executions", []).append(
+            {"tenant_id": tenant_id, "execution_id": execution_id, "execution_type": execution_type, "ref_id": ref_id,
+             "user_email": user, "status": status, "error": error, "details": details})
+
+    def add_usage(self, tenant_id, rows):
+        self.__dict__.setdefault("usage", []).extend({"tenant_id": tenant_id, **r} for r in rows)
 
     def counts(self):
         return {"organisations": len(self.tenants),
