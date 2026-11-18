@@ -90,7 +90,10 @@ with tabs[0]:
         if ctx.can("settings.read"):
             with st.expander("Paramètres de l'organisation"):
                 settings = run("Lecture des paramètres", lambda: svc.get_settings(ctx)) or {}
-                st.json(settings) if settings else st.caption("Aucun paramètre (le Setup Wizard les renseignera).")
+                if settings:
+                    st.json(settings)
+                else:
+                    st.caption("Aucun paramètre (le Setup Wizard les renseignera).")
 
         if ctx.can("audit.read"):
             with st.expander("Journal d'audit (100 dernières actions)"):
