@@ -10,6 +10,10 @@ from ui.layout import render_header  # noqa: E402
 apply_theme()
 
 pages = {
+    "SaaS": [
+        st.Page("views/saas_accueil.py", title="Dashboard SaaS", icon=":material/space_dashboard:"),
+        st.Page("views/organisations.py", title="Organisations", icon=":material/domain:"),
+    ],
     "Plateforme": [
         st.Page("views/accueil.py", title="Accueil", icon=":material/home:", default=True),
         st.Page("views/hakim.py", title="HakimAI", icon=":material/assistant:"),

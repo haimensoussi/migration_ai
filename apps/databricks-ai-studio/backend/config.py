@@ -18,6 +18,8 @@ class Settings:
     sql_timeout_s: int = 120
     max_iterations: int = 6
     tool_admins: tuple = ()
+    platform_admins: tuple = ()   # SaaS : administrateurs de la plateforme (créent les organisations) - AI_STUDIO_PLATFORM_ADMINS
+    tenant_catalog: str = "dataops_dev"   # SaaS : catalogue des schémas dédiés aux organisations - AI_STUDIO_TENANT_CATALOG
     team_admins: tuple = ()   # e-mails autorisés à publier les équipes (AI_STUDIO_TEAM_ADMINS ; défaut : tool_admins)   # e-mails autorisés à publier les outils qui écrivent ou envoient (AI_STUDIO_TOOL_ADMINS)
 
     @property
@@ -39,8 +41,11 @@ def load_settings() -> Settings:
         sql_timeout_s=int(os.environ.get("AI_STUDIO_SQL_TIMEOUT_S", "120")),
         team_admins=tuple(e.strip().lower() for e in os.environ.get("AI_STUDIO_TEAM_ADMINS", "").split(",") if e.strip()),
         tool_admins=tuple(e.strip().lower() for e in os.environ.get("AI_STUDIO_TOOL_ADMINS", "").split(",") if e.strip()),
+        platform_admins=tuple(e.strip().lower() for e in os.environ.get("AI_STUDIO_PLATFORM_ADMINS", "").split(",")
+                              if e.strip()),
+        tenant_catalog=os.environ.get("AI_STUDIO_TENANT_CATALOG", "dataops_dev"),
     )
-    for v in (s.catalog, s.schema):
+    for v in (s.catalog, s.schema, s.tenant_catalog):
         if not _IDENT.match(v):
             raise ValueError(f"Identifiant invalide dans la configuration : {v!r}")
     return s
