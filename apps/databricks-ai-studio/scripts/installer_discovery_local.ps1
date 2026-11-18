@@ -33,7 +33,8 @@ databricks --version
 
 Etape "3/6 Connexion a l'espace Databricks (navigateur)"
 $ok = $false
-try { databricks current-user me --profile $Profil 2>$null | Out-Null; $ok = ($LASTEXITCODE -eq 0) } catch { $ok = $false }
+# Meme verification que le SDK de l'App : jeton OAuth du profil fourni par la CLI
+try { databricks auth token --profile $Profil 2>$null | Out-Null; $ok = ($LASTEXITCODE -eq 0) } catch { $ok = $false }
 if (-not $ok) { databricks auth login --host $HostDbx --profile $Profil }
 databricks current-user me --profile $Profil --output json | python -c "import sys,json;print('Connecte : '+json.load(sys.stdin)['userName'])"
 
@@ -52,6 +53,14 @@ if ($LASTEXITCODE -ne 0) { throw "Installation des paquets impossible (proxy SNC
 
 # Lanceur : variables de app.yaml (hors secrets), identite du developpeur
 @"
+# CLI Databricks : PATH rafraichi + chemin explicite pour le SDK (barres / obligatoires sous Windows)
+`$env:Path = [Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [Environment]::GetEnvironmentVariable("Path","User")
+`$cli = Get-Command databricks -ErrorAction SilentlyContinue
+if (-not `$cli) { throw "CLI Databricks introuvable dans le PATH : relancez installer_discovery_local.ps1" }
+`$env:DATABRICKS_CLI_PATH = `$cli.Source -replace '\\','/'
+# Jeton du profil : reconnexion par le navigateur s'il est absent ou expire
+try { databricks auth token --profile $Profil 2>`$null | Out-Null; `$ok = (`$LASTEXITCODE -eq 0) } catch { `$ok = `$false }
+if (-not `$ok) { databricks auth login --host $HostDbx --profile $Profil }
 `$env:DATABRICKS_CONFIG_PROFILE = "$Profil"
 `$env:DATABRICKS_WAREHOUSE_ID   = "d0642494ed2912f0"
 `$env:AI_STUDIO_DEFAULT_MODEL   = "databricks-claude-sonnet-4-6"
