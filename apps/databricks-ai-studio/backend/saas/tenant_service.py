@@ -191,6 +191,10 @@ class TenantService:
         role = self.roles().get(role_id)
         if role is None:
             raise ValidationError(f"Rôle inconnu : {role_id}")
+        sec = self.store.settings(c.tenant_id).get("setup.securite") or {}
+        domains = sec.get("allowed_domains") or []
+        if domains and e.split("@")[-1] not in domains:   # règle posée par le Setup Wizard (étape Sécurité)
+            raise ValidationError(f"Domaine non autorisé pour cette organisation (autorisés : {', '.join(domains)}).")
         if role.rank > c.role.rank:
             self._deny(c.identity, "users.add", c.tenant_id, "Vous ne pouvez pas attribuer un rôle supérieur au vôtre.",
                        target=e, role=role_id)
