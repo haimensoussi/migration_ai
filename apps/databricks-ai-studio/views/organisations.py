@@ -8,7 +8,7 @@ import streamlit as st
 from backend.saas.models import PLANS, SaasError
 from ui import state
 from ui.components import error_box
-from ui.saas_context import ROLE_LABELS, current_context, identity_or_stop
+from ui.saas_context import ROLE_LABELS, current_context, identity_or_stop, platform_admin
 
 identity = identity_or_stop()
 svc = state.tenant_service()
@@ -42,7 +42,7 @@ except Exception as e:  # noqa: BLE001
     error_box("Lecture des organisations impossible", e)
     st.stop()
 
-is_platform = svc.is_platform_admin(identity)
+is_platform = platform_admin(svc, identity, ctx)   # masqué en mode aperçu
 tabs = st.tabs(["Mon organisation", "Plateforme"] if is_platform else ["Mon organisation"])
 
 # -- Organisation courante ---------------------------------------------------------------------------------

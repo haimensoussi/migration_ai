@@ -62,6 +62,10 @@ class TenantService:
     def is_platform_admin(self, identity: Identity) -> bool:
         return identity.email in self.platform_admins
 
+    def acts_as_platform_admin(self, identity: Identity, ctx: TenantContext | None) -> bool:
+        """Pour l'interface : fonctions plateforme masquées en mode aperçu (on voit l'application comme un client)."""
+        return self.is_platform_admin(identity) and not (ctx is not None and ctx.preview)
+
     def _require_platform_admin(self, identity: Identity, action: str, tenant_id=None) -> None:
         if not self.is_platform_admin(identity):
             self._deny(identity, action, tenant_id, "Réservé aux administrateurs de la plateforme.")
@@ -71,7 +75,8 @@ class TenantService:
         if not isinstance(ctx, TenantContext) or ctx.seal is not self._seal:
             ident = ctx.identity if isinstance(ctx, TenantContext) else Identity("inconnu", "inconnu")
             self._deny(ident, action, None, reason="contexte non emis par le service")
-        fresh = self.resolve(ctx.identity, ctx.tenant_id, _action=action)
+        fresh = self.resolve(ctx.identity, ctx.tenant_id, _action=action,
+                             preview_role=ctx.role.role_id if ctx.preview else None)
         if not fresh.can(permission):
             self._deny(ctx.identity, action, ctx.tenant_id, "Votre rôle ne permet pas cette action.",
                        permission=permission, role=fresh.role.role_id)
@@ -175,7 +180,9 @@ class TenantService:
         ms = {m.tenant_id: m for m in self.store.memberships_of(identity.email) if m.status == "actif"}
         return [(t, ms[t.tenant_id]) for t in self.store.list_tenants(list(ms))]
 
-    def resolve(self, identity: Identity, tenant_id: str, _action: str = "tenant.open") -> TenantContext:
+    def resolve(self, identity: Identity, tenant_id: str, _action: str = "tenant.open",
+                preview_role: str | None = None) -> TenantContext:
+        """Contexte scellé. preview_role : mode aperçu, rôle effectif = le plus bas du rôle réel et du rôle d'aperçu."""
         if not TENANT_ID.match(str(tenant_id or "")):
             self._deny(identity, _action, None, reason="identifiant invalide")
         m = self.store.get_membership(tenant_id, identity.email)
@@ -187,7 +194,31 @@ class TenantService:
         role = self.roles().get(m.role_id)
         if role is None:
             self._deny(identity, _action, tenant_id, reason=f"role inconnu {m.role_id}")
-        return TenantContext(t, identity, role, self._seal)
+        if preview_role is None:
+            return TenantContext(t, identity, role, self._seal, False, role)
+        p = self.roles().get(preview_role)
+        if p is None:
+            self._deny(identity, _action, tenant_id, reason=f"role d'apercu inconnu {preview_role}")
+        eff = p if p.rank <= role.rank else role     # jamais d'élévation, même si le rôle réel a baissé
+        return TenantContext(t, identity, eff, self._seal, True, role)
+
+    def start_preview(self, ctx: TenantContext, role_id: str) -> TenantContext:
+        """Entre en aperçu avec un rôle strictement inférieur au rôle réel ; tracé dans l'audit."""
+        c = self._authorize(ctx, "tenant.read", "tenant.preview")
+        real = c.actual_role or c.role
+        p = self.roles().get(role_id)
+        if p is None or p.rank >= real.rank:
+            raise ValidationError("Aperçu possible uniquement avec un rôle inférieur au vôtre.")
+        self._audit(c.tenant_id, c.identity.email, "tenant.preview", "succes", "role", role_id, reel=real.role_id)
+        return self.resolve(c.identity, c.tenant_id, "tenant.preview", preview_role=role_id)
+
+    def stop_preview(self, ctx: TenantContext) -> TenantContext:
+        if not isinstance(ctx, TenantContext) or ctx.seal is not self._seal:
+            self._deny(getattr(ctx, "identity", Identity("inconnu", "inconnu")), "tenant.preview_end", None,
+                       reason="contexte non emis par le service")
+        if ctx.preview:
+            self._audit(ctx.tenant_id, ctx.identity.email, "tenant.preview_end", "succes", "role", ctx.role.role_id)
+        return self.resolve(ctx.identity, ctx.tenant_id, "tenant.preview_end")
 
     def get_tenant(self, ctx: TenantContext) -> Tenant:
         return self._authorize(ctx, "tenant.read", "tenant.read").tenant

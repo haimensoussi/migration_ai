@@ -99,8 +99,10 @@ class TenantContext:
     """Organisation courante d'un utilisateur. N'est valide que s'il a été émis par le TenantService (sceau)."""
     tenant: Tenant
     identity: Identity
-    role: Role
+    role: Role                       # rôle EFFECTIF (rôle d'aperçu si actif, jamais supérieur au rôle réel)
     seal: object
+    preview: bool = False            # mode « Aperçu en tant que »
+    actual_role: Role | None = None  # rôle réel de l'adhésion
 
     @property
     def tenant_id(self) -> str:

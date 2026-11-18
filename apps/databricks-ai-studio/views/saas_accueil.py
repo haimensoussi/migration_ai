@@ -4,7 +4,7 @@ import streamlit as st
 from backend.saas.models import SaasError
 from ui import state
 from ui.components import error_box, hero, kpi
-from ui.saas_context import ROLE_LABELS, current_context, identity_or_stop
+from ui.saas_context import ROLE_LABELS, current_context, identity_or_stop, platform_admin
 
 hero("DISCOVERY AI Studio", "Plateforme multi-entreprises de création et d'exécution d'agents IA")
 
@@ -30,7 +30,7 @@ if ctx and ctx.can("users.read"):
 kpi(c4, "Membres actifs", len(members) if members is not None else "—",
     "de l'organisation" if members is not None else "rôle sans lecture des membres")
 
-if svc.is_platform_admin(identity):
+if platform_admin(svc, identity, ctx):   # masqué en mode aperçu
     st.subheader("Plateforme")
     try:
         n = svc.platform_counts(identity)

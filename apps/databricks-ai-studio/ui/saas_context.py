@@ -32,7 +32,55 @@ def current_context(identity):
     sel = st.sidebar.selectbox("Organisation", ids, index=ids.index(sel), format_func=lambda i: labels[i])
     st.session_state["saas_tenant_id"] = sel
     try:
-        return svc.resolve(identity, sel), mine
+        ctx = svc.resolve(identity, sel)
     except AccessDenied as e:
         st.sidebar.error(str(e))
         return None, mine
+    return _preview(svc, ctx), mine
+
+
+NO_PREVIEW = "__reel__"
+
+
+def _preview(svc, ctx):
+    """Sélecteur « Aperçu en tant que » : rôles inférieurs au rôle réel. Le service applique le rôle à chaque contrôle."""
+    S = st.session_state
+    lower = [r.role_id for r in sorted(svc.roles().values(), key=lambda r: -r.rank) if r.rank < ctx.role.rank]
+    if not lower:
+        return ctx
+    key = f"saas_preview_{ctx.tenant_id}"
+    options = [NO_PREVIEW] + lower
+    if S.get(key) not in options:
+        S[key] = NO_PREVIEW
+    choice = st.sidebar.selectbox("Aperçu en tant que", options, key=key,
+                                  format_func=lambda r: "Mon rôle réel" if r == NO_PREVIEW else ROLE_LABELS.get(r, r),
+                                  help="Voir l'application avec les droits d'un rôle inférieur. Ne donne jamais plus de "
+                                       "droits ; vos droits Databricks restent les vôtres.")
+    audited = S.get(f"{key}_audited", NO_PREVIEW)
+    try:
+        if choice == NO_PREVIEW:
+            if audited != NO_PREVIEW:
+                svc.stop_preview(svc.resolve(ctx.identity, ctx.tenant_id, preview_role=audited))
+                S[f"{key}_audited"] = NO_PREVIEW
+            return ctx
+        if audited != choice:
+            out = svc.start_preview(ctx, choice)          # tracé dans l'audit
+            S[f"{key}_audited"] = choice
+        else:
+            out = svc.resolve(ctx.identity, ctx.tenant_id, preview_role=choice)
+    except Exception as e:  # noqa: BLE001
+        st.sidebar.error(f"Aperçu impossible : {e}")
+        return ctx
+    st.warning(f"Mode aperçu : vous voyez l'application en tant que **{ROLE_LABELS.get(choice, choice)}** "
+               f"(rôle réel : {ROLE_LABELS.get(ctx.role.role_id, ctx.role.role_id)}). Fonctions plateforme masquées. "
+               "Revenez à « Mon rôle réel » dans la barre latérale.", icon=":material/visibility:")
+    return out
+
+
+def in_preview(ctx) -> bool:
+    return bool(ctx and ctx.preview)
+
+
+def platform_admin(svc, identity, ctx) -> bool:
+    """Administrateur plateforme, sauf en mode aperçu (on voit l'application comme un client)."""
+    return svc.acts_as_platform_admin(identity, ctx)
