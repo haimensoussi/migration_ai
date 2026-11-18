@@ -25,8 +25,9 @@ SETUP = {
 }
 Q = {"type": "object", "properties": {"query": {"type": "string"}, "limit": {"type": "integer"}}, "required": ["query"]}
 SPECS = [ToolSpec("execute_sql", "SQL", "SQL", "Requête", Q, {}, "tools.sql_tools:execute_sql"),
-         ToolSpec("render_kpi", "KPI", "Visualisation", "KPI", {"type": "object", "properties": {}}, {},
-                  "tools.report_tools:render_kpi"),
+         ToolSpec("render_kpi", "KPI", "Visualisation", "KPI",
+                  {"type": "object", "properties": {"query": {"type": "string"}, "valeur": {"type": "string"}},
+                   "required": ["query", "valeur"]}, {}, "tools.report_tools:render_kpi"),
          ToolSpec("list_tables", "Tables", "UC", "Liste", {"type": "object", "properties": {}}, {},
                   "tools.uc_tools:list_tables"),
          ToolSpec("flux_smart_office_envoyer", "Flux", "Flux", "Flux", {"type": "object", "properties": {}}, {},
@@ -88,7 +89,7 @@ def env():
 
 def form(**kw):
     return {"name": "Analyste", "description": "Agent d'analyse", "instructions": "Tu es un analyste rigoureux et concis.",
-            "model_endpoint": MODEL, "tool_ids": ["render_kpi"], "min_role": "user"} | kw
+            "model_endpoint": MODEL, "tool_ids": [], "min_role": "user"} | kw
 
 
 def tctx():
@@ -117,6 +118,7 @@ def test_catalog_is_saas_whitelist(env):
     ({"model_endpoint": "autre-modele"}, "Modèle non autorisé"), ({"tool_ids": ["list_tables"]}, "non autorisées"),
     ({"tool_ids": ["flux_smart_office_envoyer"]}, "non autorisées"),
     ({"tool_ids": ["execute_sql"]}, "au moins une table"),
+    ({"tool_ids": ["render_kpi"]}, "au moins une table"),       # les visualisations exécutent aussi du SQL
     ({"knowledge_tables": ["dataops_dev.saas_t_alpha.ventes"]}, "non provisionné"),
     ({"connector_ids": ["crm"]}, "Connecteurs inconnus"), ({"temperature": 2}, "Température"),
     ({"max_iterations": 50}, "itérations"), ({"min_role": "dieu"}, "Rôle minimal")])
@@ -215,7 +217,7 @@ def test_run_turn_logs_execution_and_usage(env):
     model = FakeModel([text("Bonjour")])
     res = studio.run_turn(ca, aid, 1, [{"role": "user", "content": "Salut"}], model, tctx())
     assert res.final_text == "Bonjour"
-    assert model.calls[0]["endpoint"] == MODEL and model.calls[0]["tools"] == ["render_kpi"]
+    assert model.calls[0]["endpoint"] == MODEL and model.calls[0]["tools"] == []
     ex = store.executions[-1]
     assert (ex["tenant_id"], ex["ref_id"], ex["status"], ex["details"]["mode"]) == (ca.tenant_id, f"{aid}:v1", "succes", "test")
     assert sorted((u["metric"], u["quantity"]) for u in store.usage) == [("tokens_entree", 100), ("tokens_sortie", 20)]
@@ -237,6 +239,27 @@ def test_unlisted_tool_call_refused_and_sql_confined(env):
     assert "non autorisé" in res.events[0].error and "saas_t_beta" in res.events[1].error
     assert ctx_tools.sql.statements == ["SELECT count(*) n FROM dataops_dev.saas_t_alpha.ventes"]
     assert res.final_text == "3 ventes"
+
+
+def test_visual_tool_sql_confined(env):
+    svc, store, studio, ca, cb = env
+    svc.mark_schema_provisioned(PLATFORM, ca.tenant_id)
+    aid = studio.save_draft(ca, None, form(tool_ids=["render_kpi"],
+                                           knowledge_tables=["dataops_dev.saas_t_alpha.ventes"]))["agent_id"]
+    t = tctx()
+    model = FakeModel([tool_call("render_kpi", {"query": "SELECT count(*) n FROM dataops_dev.ai_studio.data_gares",
+                                                "valeur": "n"}), text("fin")])
+    res = studio.run_turn(ca, aid, 1, [{"role": "user", "content": "x"}], model, t)
+    assert res.events[0].status == "erreur" and "data_gares" in res.events[0].error and t.sql.statements == []
+
+
+def test_no_tools_exposed_without_tables_even_if_stored(env):
+    """Config ancienne ou altérée en base (outil sans table) : refusée à l'exécution, aucun outil exposé."""
+    svc, store, studio, ca, cb = env
+    aid = studio.save_draft(ca, None, form())["agent_id"]
+    store.agents[-1]["config"]["tool_ids"] = ["render_kpi"]
+    with pytest.raises(ValidationError, match="au moins une table"):
+        studio.runtime_config(ca, aid, 1)
 
 
 def test_run_turn_strips_platform_resources_and_logs_errors(env):

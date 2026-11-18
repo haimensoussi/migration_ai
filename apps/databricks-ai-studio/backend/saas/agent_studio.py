@@ -3,10 +3,10 @@
 Règles (contrôlées à l'enregistrement ET à chaque exécution) :
 - Prérequis : organisation activée par le Setup Wizard, module Agent Studio activé.
 - Modèle : un des endpoints autorisés à l'étape IA.
-- Actions : liste blanche SaaS. Les outils de données ne sont permis qu'avec au moins une table de connaissance,
-  et les tables doivent appartenir au schéma dédié de l'organisation (provisionné) : sans liste, les outils SQL de
-  la plateforme liraient tout ce que voit l'utilisateur. Les outils de la plateforme (flux, jobs, HTTP, zone SNCF)
-  sont exclus.
+- Actions : liste blanche SaaS. TOUTES exécutent du SQL (y compris graphiques, KPI, rapports, Excel, cartes) et ne
+  restreignent les tables que si l'agent en a une liste : elles ne sont donc permises qu'avec au moins une table de
+  connaissance, prise dans le schéma dédié de l'organisation (provisionné). Sans table, l'agent converse sans
+  action. Les outils de la plateforme (flux, jobs, HTTP, list_tables, zone SNCF) sont exclus.
 - Droits : concevoir / tester un brouillon = agents.manage ; utiliser un agent publié = agents.use et rôle au moins
   égal au rôle minimal de l'agent.
 - Versions : une version publiée n'est jamais modifiée ; modifier crée un brouillon (version suivante).
@@ -23,9 +23,10 @@ from backend.saas.models import Conflict, TenantContext, ValidationError
 from backend.saas.setup_wizard import ENDPOINT, SetupWizard
 from backend.tool_registry import ToolRegistry
 
-SAAS_VIEW_TOOLS = ("render_chart", "render_kpi", "generate_report", "export_excel", "render_map")
-SAAS_DATA_TOOLS = ("execute_sql", "describe_table", "get_table_profile")
-SAAS_TOOLS = SAAS_VIEW_TOOLS + SAAS_DATA_TOOLS
+# Chaque outil ci-dessous exécute une requête (checked_statement) : tables de connaissance obligatoires.
+SAAS_DATA_TOOLS = ("execute_sql", "describe_table", "get_table_profile", "render_chart", "render_kpi",
+                   "generate_report", "export_excel", "render_map")
+SAAS_TOOLS = SAAS_DATA_TOOLS
 AGENT_ID = re.compile(r"^agt_[0-9a-f]{12}$")
 TABLE_NAME = re.compile(r"^[A-Za-z0-9_]{1,128}$")
 USAGE_METRICS = {"prompt_tokens": "tokens_entree", "completion_tokens": "tokens_sortie"}
@@ -96,8 +97,9 @@ class AgentStudio:
         if outside:
             raise ValidationError(f"Tables hors du schéma de l'organisation ({tenant.data_schema}) : "
                                   + ", ".join(outside))
-        if any(t in SAAS_DATA_TOOLS for t in tools) and not tables:
-            raise ValidationError("Les actions de données exigent au moins une table de connaissance de l'organisation.")
+        if tools and not tables:
+            raise ValidationError("Les actions (toutes exécutent des requêtes) exigent au moins une table de "
+                                  "connaissance de l'organisation.")
         connectors = _list(f.get("connector_ids"))
         unknown = sorted(set(connectors) - self.svc.store.connector_ids(ctx.tenant_id))
         if unknown:
@@ -216,7 +218,8 @@ class AgentStudio:
                 self.svc.deny(c, "agents.run", "Votre rôle ne permet pas d'utiliser cet agent.", agent=aid)
         _, cfg = self._validate(c, {"name": v["name"], **v["config"]}, steps)   # revérifié à chaque exécution
         catalog = self.tool_catalog(steps)
-        registry = ToolRegistry([catalog[t] for t in cfg["tool_ids"] if t in catalog])
+        # Défense en profondeur : jamais d'action sans liste de tables (sinon aucune restriction côté outils).
+        registry = ToolRegistry([catalog[t] for t in cfg["tool_ids"] if t in catalog] if cfg["knowledge_tables"] else [])
         ac = AgentConfig(agent_id=aid, version=v["version"], name=v["name"], model_endpoint=cfg["model_endpoint"],
                          instructions=cfg["instructions"], tool_ids=list(cfg["tool_ids"]),
                          knowledge_tables=list(cfg["knowledge_tables"]), temperature=cfg["temperature"],
