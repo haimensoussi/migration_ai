@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS dataops_dev.ai_studio.agents (
   description STRING COMMENT 'Description fonctionnelle',
   icon STRING COMMENT 'Icône (emoji ou code Material)',
   category STRING COMMENT 'Catégorie métier',
-  status STRING NOT NULL COMMENT 'brouillon | publie | archive',
+  status STRING NOT NULL COMMENT 'brouillon | en_validation | publie | archive (publie uniquement via publication_requests)',
   current_version INT NOT NULL COMMENT 'Version active (agent_versions.version)',
   owner STRING NOT NULL COMMENT 'E-mail du propriétaire',
   created_at TIMESTAMP NOT NULL,
@@ -248,3 +248,29 @@ CREATE TABLE IF NOT EXISTS dataops_dev.ai_studio.agent_kpi_daily (
   computed_at TIMESTAMP NOT NULL COMMENT 'Date du calcul',
   CONSTRAINT agent_kpi_daily_pk PRIMARY KEY (jour, agent_id)
 ) COMMENT 'Indicateurs de qualite par agent (grain : 1 ligne par jour et par agent), recalcules depuis conversations et tool_calls (fenetre glissante remplacee)';
+
+
+-- Agentic Mesh phase 2 : publication des agents par domaine
+CREATE TABLE IF NOT EXISTS dataops_dev.ai_studio.domain_owners (
+  domaine STRING NOT NULL COMMENT 'Supply Chain | PTE | UDR | Transverse',
+  email STRING NOT NULL COMMENT 'Responsable de domaine habilite a valider les publications',
+  added_by STRING NOT NULL COMMENT 'Administrateur DISCOVERY ayant designe le responsable',
+  added_at TIMESTAMP NOT NULL,
+  CONSTRAINT domain_owners_pk PRIMARY KEY (domaine, email)
+) COMMENT 'Responsables de domaine (grain : 1 ligne par domaine et par responsable). Domaine sans ligne = validation par les administrateurs DISCOVERY (repli)';
+
+CREATE TABLE IF NOT EXISTS dataops_dev.ai_studio.publication_requests (
+  request_id STRING NOT NULL COMMENT 'Identifiant unique (32 hex)',
+  agent_id STRING NOT NULL COMMENT 'Agent -> agents',
+  agent_version INT NOT NULL COMMENT 'Version soumise : la validation ne vaut que pour elle',
+  domaine STRING COMMENT 'Domaine de la fiche contrat au moment de la demande',
+  contract_version INT COMMENT 'Version de la fiche contrat au moment de la demande',
+  contract_completeness DOUBLE COMMENT 'Completude de la fiche (0 a 1) au moment de la demande',
+  status STRING NOT NULL COMMENT 'en_attente | validee | refusee | annulee | obsolete',
+  origin STRING NOT NULL COMMENT 'soumission | reprise (agents publies avant la phase 2) | equipe (chef publie avec son equipe)',
+  requested_by STRING NOT NULL, requested_at TIMESTAMP NOT NULL,
+  decided_by STRING, decided_at TIMESTAMP,
+  decision_note STRING COMMENT 'Motif (obligatoire pour un refus)',
+  self_validation BOOLEAN COMMENT 'Vrai si le valideur est le demandeur',
+  CONSTRAINT publication_requests_pk PRIMARY KEY (request_id)
+) COMMENT 'Demandes et decisions de publication des agents (grain : 1 ligne par demande) : piste d audit de toute publication';

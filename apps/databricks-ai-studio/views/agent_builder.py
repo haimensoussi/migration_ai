@@ -363,7 +363,8 @@ if c2.button("Suivant", disabled=b["step"] == len(STEPS) - 1):
         st.rerun()
 
 
-def save(status: str):
+def save(status: str, submit: bool = False):
+    """Enregistre en brouillon ; submit=True soumet ensuite la version au responsable du domaine (phase 2)."""
     errs = errors_for(5)
     if errs:
         st.warning(" ".join(errs))
@@ -388,10 +389,17 @@ def save(status: str):
             cv = state.contract_repository().save(b["agent_id"], ctr, user.email) if declared else None
             if cv:
                 st.success(f"Fiche contrat version {cv} enregistrée (à valider).")
-            if status == "publie" and contracts_mod.missing(ctr):
-                st.warning("Agent publié avec une fiche contrat incomplète : " + ", ".join(contracts_mod.missing(ctr)))
         except Exception as e:  # noqa: BLE001
             st.warning(f"Agent enregistré, mais la fiche contrat n'a pas pu l'être : {e}")
+        if submit:
+            try:
+                _, warns = state.publication_service().submit(b["agent_id"], user.email)
+                st.success("Agent soumis pour publication : il sera publié après validation par le responsable "
+                           "de son domaine (page Validation).")
+                for w in warns:
+                    st.warning(w)
+            except Exception as e:  # noqa: BLE001
+                st.error(f"Agent enregistré en brouillon, mais non soumis : {e}")
         if b.get("join_team"):
             try:
                 _t = next(t for t in state.teams() if t["team_id"] == b["join_team"])
@@ -409,5 +417,6 @@ def save(status: str):
 
 if c3.button("Enregistrer en brouillon"):
     save("brouillon")
-if c4.button("Enregistrer et publier", type="primary"):
-    save("publie")
+if c4.button("Enregistrer et soumettre", type="primary",
+             help="La publication est validée par le responsable du domaine indiqué dans la fiche contrat."):
+    save("brouillon", submit=True)

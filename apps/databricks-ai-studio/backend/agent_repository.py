@@ -28,6 +28,12 @@ def with_default_tools(tool_ids: list | None) -> list:
 CREATED_EXECUTORS = ("tools.custom_tools:", "tools.flow_tools:call_flow")
 
 
+def _no_direct_publish(status: str | None) -> None:
+    """Agentic Mesh phase 2 : un agent n'est publié que par backend.publication (validation traçée)."""
+    if status in ("publie", "en_validation"):
+        raise ValueError("La publication d'un agent passe par une demande de validation (Mes agents > Soumettre).")
+
+
 def _is_created(executor: str) -> bool:
     """Outil créé dans DISCOVERY (outil générique ou flux Power Automate), par opposition aux outils intégrés."""
     return executor.startswith(CREATED_EXECUTORS[0]) or executor == CREATED_EXECUTORS[1]
@@ -108,6 +114,7 @@ class AgentRepository:
 
     def create_agent(self, meta: dict, cfg: dict, user: str, status: str = "brouillon") -> str:
         """La version est écrite avant l'en-tête : un échec intermédiaire ne laisse qu'une version orpheline."""
+        _no_direct_publish(status)
         agent_id = uuid.uuid4().hex
         self._check_persona(meta, agent_id)
         cfg = {**cfg, "tool_ids": with_default_tools(cfg.get("tool_ids"))}
@@ -142,6 +149,7 @@ class AgentRepository:
                 raise ValueError(" ".join(errs))
 
     def save_version(self, agent_id: str, meta: dict, cfg: dict, user: str, status: str | None = None) -> int:
+        _no_direct_publish(status)
         r = self.sql.query(f"SELECT coalesce(max(version), 0) + 1 AS v FROM {self.s.table('agent_versions')} "
                            "WHERE agent_id = :agent_id", {"agent_id": agent_id})
         version = int(r["rows"][0]["v"])
@@ -160,7 +168,8 @@ class AgentRepository:
         return version
 
     def set_status(self, agent_id: str, status: str) -> None:
-        if status not in ("brouillon", "publie", "archive"):
+        _no_direct_publish(status)
+        if status not in ("brouillon", "archive"):
             raise ValueError(status)
         self.sql.execute(f"UPDATE {self.s.table('agents')} SET status = :status, updated_at = current_timestamp() "
                          "WHERE agent_id = :agent_id", {"agent_id": agent_id, "status": status})

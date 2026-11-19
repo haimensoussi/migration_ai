@@ -7,6 +7,13 @@ st.title("Chat & Test")
 user = state.current_user()
 try:
     agents = [a for a in state.agents() if a["status"] == "publie" or a["owner"] == user.email]
+    try:   # les valideurs testent les agents soumis dans leurs domaines
+        _doms = set(state.publication_service().validable_domains(user.email))
+        _ctr = state.contracts() if _doms else {}
+        agents += [a for a in state.agents() if a["status"] == "en_validation" and a not in agents
+                   and (_ctr.get(a["agent_id"]) or {}).get("domaine") in _doms]
+    except Exception:  # noqa: BLE001 - tables de publication absentes : comportement inchangé
+        pass
 except Exception as e:  # noqa: BLE001
     st.error(f"Lecture des agents impossible : {e}")
     st.stop()

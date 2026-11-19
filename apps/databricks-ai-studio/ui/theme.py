@@ -93,6 +93,7 @@ footer, [data-testid="stFooter"] { display: none !important; }
 .ais-badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: .74rem; font-weight: 600; }
 .ais-publie { background: #E6F4EA; color: #2E8B57; }
 .ais-brouillon { background: #FFF1DD; color: #C26A00; }
+.ais-en_validation { background: #E8F0FE; color: #1A56B8; }
 .ais-planifie, .ais-indisponible, .ais-archive { background: #EEF0F5; color: $MUTED; }
 
 /* --- Tableau des agents récents --- */

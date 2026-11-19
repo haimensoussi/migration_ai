@@ -187,6 +187,13 @@ def contract_repository():
     return ContractRepository(repository().sql, settings())
 
 
+@st.cache_resource
+def publication_service():
+    """Agentic Mesh phase 2 : soumission et validation des publications par domaine."""
+    from backend.publication import PublicationService
+    return PublicationService(repository().sql, settings())
+
+
 def contracts(force: bool = False) -> dict:
     if force or "_contracts_cache" not in st.session_state:
         st.session_state["_contracts_cache"] = contract_repository().latest_all()

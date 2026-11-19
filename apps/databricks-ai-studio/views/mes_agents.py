@@ -13,8 +13,9 @@ user = state.current_user()
 
 f1, f2, f3 = st.columns([3, 2, 1])
 query = f1.text_input("Rechercher", placeholder="Nom, description, catégorie")
-status = f2.selectbox("Statut", ["Tous", "publie", "brouillon"],
-                      format_func=lambda s: {"Tous": "Tous", "publie": "Publié", "brouillon": "Brouillon"}[s])
+status = f2.selectbox("Statut", ["Tous", "publie", "en_validation", "brouillon"],
+                      format_func=lambda s: {"Tous": "Tous", "publie": "Publié", "en_validation": "En validation",
+                                             "brouillon": "Brouillon"}[s])
 if f3.button("Actualiser"):
     state.refresh_data()
 
@@ -29,6 +30,12 @@ items = [a for a in items if (status == "Tous" or a["status"] == status)
          and (not q or q.lstrip("@") in f"{a['name']} {a.get('handle')} {a.get('persona')} {a.get('tagline')} {a.get('description')} {a.get('category')} {' '.join(a.get('aliases') or [])}".lower())]
 if not items:
     st.info("Aucun agent. Créez-en un avec l'Agent Builder.")
+
+if st.session_state.get("_submit_msg"):
+    _n, _w = st.session_state.pop("_submit_msg")
+    st.success(f"« {_n} » est soumis : il sera publié après validation (page Validation).")
+    for _x in _w:
+        st.warning(_x)
 
 st.markdown(CARD_CSS, unsafe_allow_html=True)
 tool_cats = {t.tool_id: t.category for t in state.cached_tools()}
@@ -57,12 +64,27 @@ for start in range(0, len(items), PER_ROW):
                     st.session_state["builder_edit_id"] = a["agent_id"]
                     st.session_state.pop("builder", None)
                     st.switch_page("views/agent_builder.py")
-                target = "brouillon" if a["status"] == "publie" else "publie"
-                label = "Dépublier" if target == "brouillon" else "Publier"
-                if st.button(label, key=f"p_{a['agent_id']}", disabled=not mine, use_container_width=True):
-                    state.repository().set_status(a["agent_id"], target)
-                    state.refresh_data()
-                    st.rerun()
+                if a["status"] == "publie":
+                    if st.button("Dépublier", key=f"p_{a['agent_id']}", disabled=not mine, use_container_width=True):
+                        state.repository().set_status(a["agent_id"], "brouillon")
+                        state.refresh_data()
+                        st.rerun()
+                elif a["status"] == "en_validation":
+                    st.caption("En attente de validation par le responsable du domaine.")
+                    if st.button("Annuler la demande", key=f"p_{a['agent_id']}", disabled=not mine,
+                                 use_container_width=True):
+                        state.publication_service().cancel(a["agent_id"], user.email)
+                        state.refresh_data()
+                        st.rerun()
+                elif st.button("Soumettre pour publication", key=f"p_{a['agent_id']}", disabled=not mine,
+                               use_container_width=True):
+                    try:
+                        _, warns = state.publication_service().submit(a["agent_id"], user.email)
+                        state.refresh_data()
+                        st.session_state["_submit_msg"] = (a["name"], warns)
+                        st.rerun()
+                    except Exception as e:  # noqa: BLE001
+                        st.error(str(e))
                 if st.button(":material/auto_fix_high: Améliorer avec l'IA", key=f"ai_{a['agent_id']}",
                              disabled=not mine, use_container_width=True):
                     st.session_state["builder_edit_id"] = a["agent_id"]

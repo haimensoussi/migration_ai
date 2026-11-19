@@ -85,7 +85,8 @@ def do_save(data: dict, mode: str, publish: bool, publish_lead: bool) -> None:
             data = {**data, "lead_agent_id": trepo.create_lead(data, user.email)}
             state.refresh_data()
             if publish_lead and is_admin:
-                state.repository().set_status(data["lead_agent_id"], "publie")
+                state.publication_service().record(data["lead_agent_id"], user.email, "equipe",
+                                                   f"Chef de l'équipe {data.get('name')} publié avec l'équipe")
         try:
             tid = trepo.save(data, user.email)
         except Exception:

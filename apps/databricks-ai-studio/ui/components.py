@@ -4,7 +4,7 @@ import html
 
 import streamlit as st
 
-STATUS_LABELS = {"publie": "Publié", "brouillon": "Brouillon", "planifie": "Planifié",
+STATUS_LABELS = {"publie": "Publié", "brouillon": "Brouillon", "en_validation": "En validation", "planifie": "Planifié",
                  "indisponible": "Indisponible", "archive": "Archivé"}
 
 
