@@ -43,6 +43,17 @@ def test_tool_footer_flags():
     assert [i for i, _, _ in f] == ["play", "alert", "shield"]
 
 
+def test_team_footer_merges_members_and_style_override():
+    cats = {"a": "SQL", "c": "Visualisation"}
+    f = cc.team_footer([["a"], None, ["c", "a"]], cats)
+    assert [i for i, _, _ in f] == ["database", "chart"]
+    h = cc.card_html("Équipe X", "m", "SQL", f, "", cc.FILIERE_STYLE["UDR"])
+    assert cc.TONES["vert"][0] in h and cc.TONES["bleu"][0] not in h
+    assert cc.TONES["bleu"][0] in cc.card_html("x", "y", "SQL", [], "", ("shield", "inconnu"))   # ton invalide ignoré
+    for fil in ("Transverse", "Supply Chain", "PTE", "UDR"):
+        assert fil in cc.FILIERE_STYLE
+
+
 def test_all_builtin_tools_render():
     for t in BUILTIN_TOOLS:
         h = cc.card_html(t.name, t.description, t.category, cc.tool_footer(t.executor, t.read_only,

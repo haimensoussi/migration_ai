@@ -1,6 +1,7 @@
 import streamlit as st
 
 from ui import state
+from ui.avatars import agent_avatar_uri
 from ui.catalog_cards import CARD_CSS, agent_footer, card_html
 from ui.components import badge
 
@@ -36,7 +37,8 @@ for start in range(0, len(items), PER_ROW):
     for col, a in zip(cols, items[start:start + PER_ROW]):
         with col:
             st.markdown(card_html(a["name"], a.get("description") or a.get("tagline") or "", a.get("category"),
-                                  agent_footer(a.get("tool_ids"), tool_cats), badge(a["status"])),
+                                  agent_footer(a.get("tool_ids"), tool_cats), badge(a["status"]),
+                                  avatar=agent_avatar_uri(a)),
                         unsafe_allow_html=True)
             mine = a["owner"] == user.email
             b1, b2 = st.columns(2)

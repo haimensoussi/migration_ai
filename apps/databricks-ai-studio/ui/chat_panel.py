@@ -119,6 +119,20 @@ def _inject_css():
 from backend.personas import AI_BADGE  # noqa: E402
 
 _DISPLAY: dict[str, str] = {}   # nom de l'agent -> « Prénom, rôle » (alimenté à chaque affichage du chat)
+_AVATAR: dict[str, str] = {}    # nom de l'agent -> fichier SVG de son avatar (ui.avatars)
+
+
+def _agent_avatar(name: str, agent: dict | None = None, category: str | None = None) -> str:
+    """Avatar propre à l'agent ; repli sur l'avatar DISCOVERY générique en cas d'échec."""
+    if name in _AVATAR:
+        return _AVATAR[name]
+    if agent is None:
+        return AV["assistant"]
+    try:
+        from ui.avatars import agent_avatar_file
+        return agent_avatar_file({**agent, "category": agent.get("category") or category})
+    except Exception:  # noqa: BLE001 - l'avatar ne doit jamais bloquer le chat
+        return AV["assistant"]
 
 
 def mention_key(key: str, a: dict) -> str:
@@ -142,16 +156,17 @@ def render_discovery_message(role: str, content: str, agent_name: str = "", chip
             st.markdown('<span class="dsc-msg-user"></span>', unsafe_allow_html=True)
             st.markdown(content)
         return
-    with st.chat_message("assistant", avatar=AV["assistant"]):
+    with st.chat_message("assistant", avatar=_agent_avatar(agent_name)):
         label = f"{team} · {_shown(agent_name)}" if team and agent_name else _shown(agent_name)
         head = f'<div class="dsc-agent">{html.escape(label)}</div>' if agent_name else ""
         st.markdown(head + chips_html([tuple(c) for c in (chips or [])]), unsafe_allow_html=True)
         st.markdown(content)
 
 
-def _welcome(cfg: AgentConfig):
+def _welcome(cfg: AgentConfig, category: str | None = None):
     caps = capabilities_for(cfg.tool_ids)
-    with st.chat_message("assistant", avatar=AV["assistant"]):
+    me = {"agent_id": cfg.agent_id, "name": cfg.name, "tool_ids": cfg.tool_ids, "category": category}
+    with st.chat_message("assistant", avatar=_agent_avatar(cfg.name, me, category)):
         body = (f'<div class="dsc-agent">{html.escape(_shown(cfg.name or "Agent"))}</div>'
                 "<p>Bonjour ! Je peux vous accompagner dans l'exploration et l'analyse de vos données Databricks.</p>")
         if caps:
@@ -182,8 +197,13 @@ def render_chat(cfg: AgentConfig, key: str, persist: bool = True, category: str 
 
     for wmsg in s.get("orch_warnings") or []:
         st.caption(f"Orchestration : {wmsg}")
+    try:
+        from ui.avatars import agent_avatar_file
+        _AVATAR.update({a["name"]: agent_avatar_file(a) for a in state.agents() if a.get("name")})
+    except Exception:  # noqa: BLE001 - repli sur l'avatar générique
+        pass
     if not s["display"]:
-        _welcome(cfg)
+        _welcome(cfg, category)
     for item in s["display"]:
         if item["kind"] == "notice":
             st.caption(item["content"])

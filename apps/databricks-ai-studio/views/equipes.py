@@ -3,6 +3,10 @@ import streamlit as st
 
 from backend import personas, teams as T
 from ui import state
+from ui.catalog_cards import CARD_CSS, FILIERE_STYLE, card_html, team_footer
+from ui.components import esc
+
+PER_ROW = 4
 
 user = state.current_user()
 trepo = state.team_repository()
@@ -110,31 +114,54 @@ with tab_org:
     visible = [t for t in all_teams if t["status"] == "publie" or t.get("owner") == user.email or is_admin]
     if not visible:
         st.info("Aucune équipe pour l'instant. Créez la première dans l'onglet « Créer une équipe ».")
+    def team_details(n: dict):
+        """Fiche d'une équipe : responsable, chef, membres et activité (calculée à l'ouverture seulement)."""
+        st.markdown(f"`@{n['handle']}` · {n['filiere']} · {STATUS.get(n['status'], n['status'])}")
+        st.write(n["mission"] or "_Mission à préciser._")
+        st.caption("Responsable humain : " + (n["human_owner"] or "à désigner"))
+        if n["lead_agent_id"]:
+            st.markdown(f"Chef d'équipe : {label(n['lead_agent_id'])}")
+        for m in n["members"]:
+            a = by_id.get(m, {})
+            st.markdown(f"- {label(m)}" + (f" — {a.get('tagline')}" if a.get("tagline") else ""))
+        try:
+            act = trepo.activity(([n["lead_agent_id"]] if n["lead_agent_id"] else []) + n["members"])
+            rate = f"{100 * act['succes'] / act['appels']:.0f} %" if act["appels"] else "—"
+            st.caption(f"30 derniers jours : {act['conversations']} conversation(s), {act['appels']} appel(s) "
+                       f"d'outils, succès {rate}")
+        except Exception:  # noqa: BLE001
+            st.caption("Activité indisponible.")
+
+    dialog = getattr(st, "dialog", None) or getattr(st, "experimental_dialog", None)
+    tool_cats = {tl.tool_id: tl.category for tl in state.cached_tools()}
+    st.markdown(CARD_CSS, unsafe_allow_html=True)
+    opened = None
     for fil in T.FILIERES:
         group = [t for t in visible if (t.get("filiere") or "Transverse") == fil]
         if not group:
             continue
         st.subheader(fil)
-        for t in group:
-            n = T.normalize(t)
-            with st.container(border=True):
-                h1, h2 = st.columns([4, 1])
-                h1.markdown(f":material/{n['icon']}: **Équipe {n['name']}** · `@{n['handle']}`")
-                h2.caption(STATUS.get(t["status"], t["status"]))
-                st.write(n["mission"] or "_Mission à préciser._")
-                st.caption("Responsable humain : " + (n["human_owner"] or "à désigner"))
-                if n["lead_agent_id"]:
-                    st.markdown(f"Chef d'équipe : {label(n['lead_agent_id'])}")
-                for m in n["members"]:
-                    a = by_id.get(m, {})
-                    st.markdown(f"- {label(m)}" + (f" — {a.get('tagline')}" if a.get("tagline") else ""))
-                try:
-                    act = trepo.activity(([n["lead_agent_id"]] if n["lead_agent_id"] else []) + n["members"])
-                    rate = f"{100 * act['succes'] / act['appels']:.0f} %" if act["appels"] else "—"
-                    st.caption(f"30 derniers jours : {act['conversations']} conversation(s), {act['appels']} appel(s) "
-                               f"d'outils, succès {rate}")
-                except Exception:  # noqa: BLE001
-                    st.caption("Activité indisponible.")
+        for start in range(0, len(group), PER_ROW):
+            cols = st.columns(PER_ROW)
+            for col, t in zip(cols, group[start:start + PER_ROW]):
+                n = {**T.normalize(t), "status": t["status"], "filiere": fil}
+                ids = ([n["lead_agent_id"]] if n["lead_agent_id"] else []) + n["members"]
+                size = len(n["members"]) + (1 if n["lead_agent_id"] else 0)
+                desc = f"@{n['handle']} · {size} agent(s) · " + (n["mission"] or "Mission à préciser.")
+                tag = (f'<span class="ais-badge ais-{esc(t["status"])}">'
+                       f'{esc(STATUS.get(t["status"], t["status"]))}</span>')
+                with col:
+                    st.markdown(card_html(f"Équipe {n['name']}", desc, None,
+                                          team_footer([by_id.get(i, {}).get("tool_ids") for i in ids], tool_cats),
+                                          tag, FILIERE_STYLE.get(fil)), unsafe_allow_html=True)
+                    if st.button("Voir l'équipe", key=f"org_{t['team_id']}", use_container_width=True):
+                        opened = n
+    if opened is not None and dialog:
+        dialog(f"Équipe {opened['name']}", width="large")(team_details)(opened)
+    elif opened is not None:
+        st.divider()
+        st.markdown(f"### Équipe {opened['name']}")
+        team_details(opened)
 
 with tab_new:
     data, mode = team_form("new", None)

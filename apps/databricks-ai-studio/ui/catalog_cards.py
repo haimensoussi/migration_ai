@@ -43,6 +43,14 @@ CATEGORY_STYLE = {
 }
 DEFAULT_STYLE = ("code", "rose")
 
+# Filière d'une équipe -> (pictogramme, ton)
+FILIERE_STYLE = {
+    "Transverse": ("play", "prune"),
+    "Supply Chain": ("database", "orange"),
+    "PTE": ("chart", "bleu"),
+    "UDR": ("shield", "vert"),
+}
+
 # Pictogrammes de pied de carte : catégorie d'outil -> (pictogramme, couleur, libellé)
 FOOTER_BY_CATEGORY = {
     "Visualisation": ("chart", "#7A3E9D", "Visualisation"),
@@ -91,6 +99,12 @@ def agent_footer(tool_ids: list | None, tool_categories: dict[str, str]) -> list
     return out[:MAX_FOOTER]
 
 
+def team_footer(member_tool_ids: list[list | None], tool_categories: dict[str, str]) -> list[tuple[str, str, str]]:
+    """Capacités réunies des agents d'une équipe (chef + membres)."""
+    merged = [tid for ids in member_tool_ids for tid in (ids or [])]
+    return agent_footer(merged, tool_categories)
+
+
 def tool_footer(executor: str, read_only: bool, requires_confirmation: bool) -> list[tuple[str, str, str]]:
     """Pictogrammes d'un outil : type d'exécution, lecture seule, validation humaine."""
     ex = (executor or "").lower()
@@ -116,15 +130,20 @@ def tool_footer(executor: str, read_only: bool, requires_confirmation: bool) -> 
 
 
 def card_html(title: str, description: str, category: str | None = None,
-              footer: list[tuple[str, str, str]] | None = None, tag: str = "") -> str:
-    """Carte complète. `tag` : HTML déjà sûr (badge de statut) affiché en bas à gauche."""
-    icon, tone = style_for(category)
+              footer: list[tuple[str, str, str]] | None = None, tag: str = "",
+              style: tuple[str, str] | None = None, avatar: str = "") -> str:
+    """Carte complète. `tag` : HTML déjà sûr (badge de statut) affiché en bas à gauche ;
+    `style` : (pictogramme, ton) imposé, sinon déduit de la catégorie ;
+    `avatar` : data URI d'avatar (ui.avatars) affiché à la place de la pastille."""
+    icon, tone = style if style and style[1] in TONES else style_for(category)
     bg, fg = TONES[tone]
     foot = "".join(f'<img src="{colored_icon_uri(n, c)}" alt="{esc(l)}" title="{esc(l)}">' for n, c, l in footer or [])
     return (
         f'<div class="dsc-gcard" title="{esc(title)}">'
-        f'<div class="dsc-gcard-head"><div class="dsc-gcard-ico" style="background:{bg}">'
-        f'<img src="{colored_icon_uri(icon, fg)}" alt="" aria-hidden="true"></div>'
+        f'<div class="dsc-gcard-head">'
+        + (f'<img class="dsc-gcard-avatar" src="{esc(avatar)}" alt="" aria-hidden="true">' if avatar else
+           f'<div class="dsc-gcard-ico" style="background:{bg}">'
+           f'<img src="{colored_icon_uri(icon, fg)}" alt="" aria-hidden="true"></div>') +
         f'<div class="dsc-gcard-title">{esc(title)}</div></div>'
         f'<div class="dsc-gcard-desc" title="{esc(description)}">{esc(description)}</div>'
         f'<div class="dsc-gcard-foot"><div>{tag}</div><div class="dsc-gcard-icons">{foot}</div></div>'
@@ -142,6 +161,7 @@ CARD_CSS = """
 .dsc-gcard-ico { width:50px; height:50px; border-radius:8px; flex:none; display:flex; align-items:center;
   justify-content:center; }
 .dsc-gcard-ico img { width:26px; height:26px; }
+.dsc-gcard-avatar { width:52px; height:52px; border-radius:50%; flex:none; box-shadow:0 1px 3px rgba(43,27,51,.15); }
 .dsc-gcard-title { color:#242424; font-weight:600; font-size:1.02rem; line-height:1.4; display:-webkit-box;
   -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
 .dsc-gcard-desc { color:#424242; font-size:.95rem; line-height:1.5; margin-top:14px; display:-webkit-box;
