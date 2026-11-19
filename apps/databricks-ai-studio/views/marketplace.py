@@ -1,6 +1,7 @@
 import streamlit as st
 
 from ui import state
+from ui.agent_sheet import open_sheet
 from ui.avatars import agent_avatar_uri
 from ui.catalog_cards import CARD_CSS, agent_footer, card_html
 
@@ -26,8 +27,11 @@ for start in range(0, len(items), PER_ROW):
             st.markdown(card_html(a["name"], a.get("description") or a.get("tagline") or "", a.get("category"),
                                   agent_footer(a.get("tool_ids"), tool_cats), avatar=agent_avatar_uri(a)),
                         unsafe_allow_html=True)
-            if st.button("Utiliser", key=f"m_{a['agent_id']}", use_container_width=True):
+            b1, b2 = st.columns(2)
+            if b1.button("Utiliser", key=f"m_{a['agent_id']}", use_container_width=True):
                 st.session_state["chat_agent_id"] = a["agent_id"]
                 st.switch_page("views/chat.py")
+            if b2.button("Fiche", key=f"f_{a['agent_id']}", use_container_width=True):
+                open_sheet(a)
 if not items:
     st.info("Aucun agent publié ne correspond à ce filtre.")

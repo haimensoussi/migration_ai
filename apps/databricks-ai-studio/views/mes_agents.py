@@ -1,6 +1,7 @@
 import streamlit as st
 
 from ui import state
+from ui.agent_sheet import open_sheet
 from ui.avatars import agent_avatar_uri
 from ui.catalog_cards import CARD_CSS, agent_footer, card_html
 from ui.components import badge
@@ -48,6 +49,8 @@ for start in range(0, len(items), PER_ROW):
             with b2.popover("Actions", use_container_width=True):
                 st.caption(f"v{a.get('current_version')} · {a.get('owner')} · modèle : {a.get('model_endpoint')} · "
                            f"outils : {len(a.get('tool_ids') or [])}")
+                if st.button(":material/assignment: Fiche produit", key=f"f_{a['agent_id']}", use_container_width=True):
+                    open_sheet(a)
                 if not mine:
                     st.caption("Actions réservées au propriétaire de l'agent.")
                 if st.button("Modifier", key=f"e_{a['agent_id']}", disabled=not mine, use_container_width=True):

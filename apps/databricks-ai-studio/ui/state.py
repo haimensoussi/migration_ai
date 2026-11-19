@@ -164,6 +164,7 @@ def refresh_data():
     cached_tools.clear()
     st.session_state.pop("_agents_cache", None)
     st.session_state.pop("_teams_cache", None)
+    st.session_state.pop("_contracts_cache", None)
 
 
 def agents(force: bool = False) -> list[dict]:
@@ -177,6 +178,35 @@ def transformation_service():
     """HakimAI Transformation : tables transformation_* via le compte de l'App, règles dans le service."""
     from backend.transformation import SqlTransformationStore, TransformationService
     return TransformationService(SqlTransformationStore(repository().sql, settings().table))
+
+
+@st.cache_resource
+def contract_repository():
+    """Agentic Mesh phase 1 : fiches contrat et indicateurs des agents (compte de l'App)."""
+    from backend.agent_contracts import ContractRepository
+    return ContractRepository(repository().sql, settings())
+
+
+def contracts(force: bool = False) -> dict:
+    if force or "_contracts_cache" not in st.session_state:
+        st.session_state["_contracts_cache"] = contract_repository().latest_all()
+    return st.session_state["_contracts_cache"]
+
+
+def agent_kpis(days: int = 30) -> dict:
+    """Indicateurs par agent ; recalcul de la fenêtre glissante au plus une fois par jour et par session."""
+    import datetime as _dt
+    key = f"_kpi_cache_{days}"
+    if st.session_state.get("_kpi_day") != _dt.date.today():
+        try:
+            contract_repository().refresh_kpi(days + 5)
+        except Exception:  # noqa: BLE001 - affichage sur les dernières valeurs calculées
+            pass
+        st.session_state["_kpi_day"] = _dt.date.today()
+        st.session_state.pop(key, None)
+    if key not in st.session_state:
+        st.session_state[key] = contract_repository().kpi_by_agent(days)
+    return st.session_state[key]
 
 
 __all__ = ["settings", "repository", "user_session", "current_user", "registry", "chat_endpoints",

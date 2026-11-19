@@ -1,6 +1,7 @@
-"""Assistant de création d'agent en 6 étapes."""
+"""Assistant de création d'agent en 7 étapes (dont la fiche contrat Agentic Mesh)."""
 import streamlit as st
 
+from backend import agent_contracts as contracts_mod
 from backend import flux as flux_mod
 from backend.agent_repository import DEFAULT_TOOLS
 from backend.agent_runtime import AgentConfig
@@ -8,7 +9,7 @@ from ui import state
 from ui.chat_panel import render_chat
 from ui.components import ICONS
 
-STEPS = ["Informations", "Modèle IA", "Instructions", "Outils", "Connaissances", "Test et publication"]
+STEPS = ["Informations", "Modèle IA", "Instructions", "Outils", "Connaissances", "Fiche contrat", "Test et publication"]
 CATEGORIES = ["Général", "Qualité des données", "Analyse", "FinOps", "Documents", "Gouvernance", "Exploitation", "Orchestration"]
 s_cfg = state.settings()
 user = state.current_user()
@@ -17,7 +18,7 @@ if "builder" not in st.session_state:
     b = {"step": 0, "agent_id": None, "name": "", "description": "", "icon": "smart_toy", "category": "Général",
          "handle": "", "persona": "", "tagline": "", "call_examples": [], "aliases": [],
          "model_endpoint": s_cfg.default_model, "instructions": "", "tool_ids": list(DEFAULT_TOOLS), "knowledge_tables": [],
-         "temperature": 0.1, "max_iterations": s_cfg.max_iterations}
+         "temperature": 0.1, "max_iterations": s_cfg.max_iterations, "contract": {}}
     edit_id = st.session_state.pop("builder_edit_id", None)
     if edit_id:
         a = state.repository().get_agent(edit_id)
@@ -30,6 +31,10 @@ if "builder" not in st.session_state:
                      max_iterations=cfg.max_iterations, handle=a.get("handle") or "",
                      persona=a.get("persona") or "", tagline=a.get("tagline") or "",
                      call_examples=a.get("call_examples") or [], aliases=a.get("aliases") or [])
+            try:
+                b["contract"] = dict(state.contracts().get(edit_id) or {})
+            except Exception:  # noqa: BLE001 - table absente : fiche vide
+                b["contract"] = {}
     st.session_state["builder"] = b
 b = st.session_state["builder"]
 
@@ -296,6 +301,38 @@ with st.container(border=True):
         if st.button("Ajouter") and manual.count(".") == 2:
             b["knowledge_tables"] = sorted(set(b["knowledge_tables"]) | {manual.strip()})
             st.rerun()
+    elif step == 5:
+        c = contracts_mod.normalize(b.get("contract"), b["knowledge_tables"])
+        st.write("La fiche contrat décrit l'agent comme un produit : pour qui, sur quelles données, avec quelles "
+                 "limites et sous quelle responsabilité métier. Elle est versionnée et repasse « à valider » à "
+                 "chaque modification.")
+        d1, d2, d3 = st.columns([2, 3, 2])
+        doms = [""] + contracts_mod.DOMAINES
+        c["domaine"] = d1.selectbox("Domaine", doms, index=doms.index(c["domaine"]),
+                                    format_func=lambda x: x or "— choisir —")
+        c["responsable_metier"] = d2.text_input("Responsable métier (e-mail)", c["responsable_metier"],
+                                                help="Data Owner ou Data Steward qui répond du périmètre de l'agent.")
+        c["date_revue"] = d3.date_input("Prochaine revue", c["date_revue"] or contracts_mod.default_review_date(),
+                                        format="DD/MM/YYYY")
+        c["perimetre"] = st.text_area("Périmètre métier : ce que fait l'agent et pour qui", c["perimetre"],
+                                      max_chars=contracts_mod.MAX_TEXT, height=90)
+        c["donnees"] = st.text_area("Données lues (une par ligne ; prérempli avec les tables autorisées)",
+                                    c["donnees"], max_chars=contracts_mod.MAX_TEXT, height=90)
+        c["limites"] = st.text_area("Limites connues et cas à ne pas traiter", c["limites"],
+                                    max_chars=contracts_mod.MAX_TEXT, height=90)
+        specs = {t.tool_id: t for t in state.cached_tools()}
+        acts = contracts_mod.derive_actions(b["tool_ids"], specs)
+        st.markdown("**Actions possibles** (déduites des outils choisis)")
+        st.caption(" · ".join(
+            f"{x['id'][6:] if x['type'] == 'agent' else x['id']}"
+            + (" (agent consulté)" if x["type"] == "agent" else " (écriture" + (", validée par l'utilisateur)"
+                                                                                if x["validation"] else ")")
+               if x["ecriture"] else "") for x in acts) or "Aucun outil.")
+        b["contract"] = {**c, "actions": acts}
+        miss = contracts_mod.missing(c)
+        st.progress(contracts_mod.completeness(c), text=f"Fiche complète à {round(contracts_mod.completeness(c) * 100)} %")
+        if miss:
+            st.caption("À compléter : " + ", ".join(miss) + ". Une fiche incomplète n'empêche pas l'enregistrement.")
     else:
         errs = errors_for(5)
         if errs:
@@ -343,6 +380,18 @@ def save(status: str):
         else:
             b["agent_id"] = repo.create_agent(meta, cfg, user.email, status)
             st.success(f"Agent créé ({status}).")
+        try:
+            specs = {t.tool_id: t for t in state.cached_tools()}
+            ctr = {**contracts_mod.normalize(b.get("contract"), b["knowledge_tables"]),
+                   "actions": contracts_mod.derive_actions(b["tool_ids"], specs)}
+            declared = any(ctr[k] for k in ("domaine", "perimetre", "limites", "responsable_metier"))
+            cv = state.contract_repository().save(b["agent_id"], ctr, user.email) if declared else None
+            if cv:
+                st.success(f"Fiche contrat version {cv} enregistrée (à valider).")
+            if status == "publie" and contracts_mod.missing(ctr):
+                st.warning("Agent publié avec une fiche contrat incomplète : " + ", ".join(contracts_mod.missing(ctr)))
+        except Exception as e:  # noqa: BLE001
+            st.warning(f"Agent enregistré, mais la fiche contrat n'a pas pu l'être : {e}")
         if b.get("join_team"):
             try:
                 _t = next(t for t in state.teams() if t["team_id"] == b["join_team"])

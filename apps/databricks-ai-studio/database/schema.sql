@@ -217,3 +217,34 @@ CREATE TABLE IF NOT EXISTS dataops_dev.ai_studio.flux_demandes (
   termine_at TIMESTAMP COMMENT 'Reponse ou erreur',
   CONSTRAINT flux_demandes_pk PRIMARY KEY (demande_id)
 ) COMMENT 'Demandes des agents aux flux Power Automate (grain : 1 ligne par demande). Ecrite par le service principal de l App, lue et mise a jour par Power Automate (connecteur Azure Databricks)';
+
+
+-- Agentic Mesh phase 1 : l'agent comme produit (fiche contrat + indicateurs de qualite)
+CREATE TABLE IF NOT EXISTS dataops_dev.ai_studio.agent_contracts (
+  agent_id STRING NOT NULL COMMENT 'Agent -> agents',
+  version INT NOT NULL COMMENT 'Version de la fiche (1, 2, ...) ; la plus recente fait foi',
+  domaine STRING COMMENT 'Supply Chain | PTE | UDR | Transverse',
+  perimetre STRING COMMENT 'Perimetre metier : ce que l agent fait et pour qui',
+  donnees STRING COMMENT 'Donnees lues (tables, sources), une par ligne',
+  actions STRING COMMENT 'Actions possibles deduites de la configuration (JSON : outils, ecriture, validation humaine)',
+  limites STRING COMMENT 'Limites connues et cas a ne pas traiter',
+  responsable_metier STRING COMMENT 'E-mail du responsable metier (Data Owner / Data Steward)',
+  date_revue DATE COMMENT 'Prochaine revue de la fiche',
+  statut_validation STRING NOT NULL COMMENT 'a_valider | valide | refuse (validation par le responsable de domaine : phase 2)',
+  created_by STRING NOT NULL, created_at TIMESTAMP NOT NULL,
+  CONSTRAINT agent_contracts_pk PRIMARY KEY (agent_id, version)
+) COMMENT 'Fiches contrat des agents (grain : 1 ligne par agent et par version, historique conserve)';
+
+CREATE TABLE IF NOT EXISTS dataops_dev.ai_studio.agent_kpi_daily (
+  jour DATE NOT NULL, agent_id STRING NOT NULL,
+  conversations BIGINT COMMENT 'Conversations distinctes du jour',
+  utilisateurs BIGINT COMMENT 'Utilisateurs distincts du jour',
+  questions BIGINT COMMENT 'Messages utilisateur',
+  reponses BIGINT COMMENT 'Reponses finales (messages assistant avec latence)',
+  latence_moy_ms DOUBLE, latence_max_ms BIGINT,
+  appels_outils BIGINT, appels_succes BIGINT, appels_erreur BIGINT, appels_refuse BIGINT,
+  taux_succes_outils DOUBLE COMMENT 'appels_succes / appels_outils ; NULL sans appel',
+  duree_outil_moy_ms DOUBLE,
+  computed_at TIMESTAMP NOT NULL COMMENT 'Date du calcul',
+  CONSTRAINT agent_kpi_daily_pk PRIMARY KEY (jour, agent_id)
+) COMMENT 'Indicateurs de qualite par agent (grain : 1 ligne par jour et par agent), recalcules depuis conversations et tool_calls (fenetre glissante remplacee)';
