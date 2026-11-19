@@ -6,7 +6,10 @@ import streamlit as st
 from backend import tool_builder as tb
 from backend.tool_registry import ToolContext, ToolError, ToolRegistry
 from ui import state
+from ui.catalog_cards import CARD_CSS, card_html, tool_footer
 from ui.components import badge
+
+PER_ROW = 4
 
 st.title("Catalogue d'outils")
 tools = [t for t in state.cached_tools() if t.category != "Flux"]   # flux : page Flux
@@ -42,40 +45,64 @@ with tab_cat:
     sel = [t for t in shown if (cat == "Toutes" or t.category == cat) and (stat == "Tous" or t.status == stat)
            and (not q or q in f"{t.tool_id} {t.name} {t.description}".lower())]
     st.caption(f"{len(sel)} outil(s)")
-    cols = st.columns(2)
-    for i, t in enumerate(sel):
-        with cols[i % 2].container(border=True):
-            st.markdown(f"#### {t.name}")
-            origin = f" · créé par {t.owner}" if tb.is_custom(t) else ""
-            st.markdown(f"`{t.tool_id}` · {t.category} · v{t.version}{origin} {badge(t.status)}", unsafe_allow_html=True)
-            st.write(t.description)
-            st.caption(f"Identité : {t.identity} · lecture seule : {'oui' if t.read_only else 'non'} · "
-                       f"validation humaine : {'oui' if t.requires_confirmation else 'non'}")
-            with st.expander("Fiche technique"):
-                st.markdown(f"Exécuteur : `{t.executor}`")
-                if t.config.get("sql"):
-                    st.code(t.config["sql"], language="sql")
-                if t.config.get("function"):
-                    st.markdown(f"Fonction : `{t.config['function']}`")
-                st.caption("Schéma d'entrée")
-                st.json(t.input_schema)
-                st.caption("Schéma de sortie")
-                st.json(t.output_schema)
-            if t.status == "publie" or (tb.is_custom(t) and t.owner == me):
-                with st.expander("Tester l'outil"):
-                    example = (t.config.get("examples") if tb.is_custom(t) else None) or \
-                        {k: "" for k in t.input_schema.get("required", [])}
-                    raw = st.text_area("Arguments JSON", json.dumps(example, ensure_ascii=False), key=f"args_{t.tool_id}")
-                    if st.button("Exécuter", key=f"run_{t.tool_id}"):
-                        try:
-                            w_, sql_, _ = state.user_session()
-                            out = ToolRegistry([t]).run(t, ToolContext(sql_, w_, max_rows=state.settings().max_rows),
-                                                        json.loads(raw or "{}"))
-                            st.json(out)
-                        except (ToolError, json.JSONDecodeError) as e:
-                            st.error(str(e))
-                        except Exception as e:  # noqa: BLE001
-                            st.error(f"Erreur technique : {e}")
+
+    def tool_details(t):
+        """Fiche détaillée d'un outil : identité, fiche technique et test."""
+        origin = f" · créé par {t.owner}" if tb.is_custom(t) else ""
+        st.markdown(f"`{t.tool_id}` · {t.category} · v{t.version}{origin} {badge(t.status)}", unsafe_allow_html=True)
+        st.write(t.description)
+        st.caption(f"Identité : {t.identity} · lecture seule : {'oui' if t.read_only else 'non'} · "
+                   f"validation humaine : {'oui' if t.requires_confirmation else 'non'}")
+        with st.expander("Fiche technique"):
+            st.markdown(f"Exécuteur : `{t.executor}`")
+            if t.config.get("sql"):
+                st.code(t.config["sql"], language="sql")
+            if t.config.get("function"):
+                st.markdown(f"Fonction : `{t.config['function']}`")
+            st.caption("Schéma d'entrée")
+            st.json(t.input_schema)
+            st.caption("Schéma de sortie")
+            st.json(t.output_schema)
+        if t.status == "publie" or (tb.is_custom(t) and t.owner == me):
+            with st.expander("Tester l'outil", expanded=True):
+                example = (t.config.get("examples") if tb.is_custom(t) else None) or \
+                    {k: "" for k in t.input_schema.get("required", [])}
+                raw = st.text_area("Arguments JSON", json.dumps(example, ensure_ascii=False), key=f"args_{t.tool_id}")
+                if st.button("Exécuter", key=f"run_{t.tool_id}", type="primary"):
+                    try:
+                        w_, sql_, _ = state.user_session()
+                        out = ToolRegistry([t]).run(t, ToolContext(sql_, w_, max_rows=state.settings().max_rows),
+                                                    json.loads(raw or "{}"))
+                        st.json(out)
+                    except (ToolError, json.JSONDecodeError) as e:
+                        st.error(str(e))
+                    except Exception as e:  # noqa: BLE001
+                        st.error(f"Erreur technique : {e}")
+
+    dialog = getattr(st, "dialog", None) or getattr(st, "experimental_dialog", None)
+    st.markdown(CARD_CSS, unsafe_allow_html=True)
+    opened = None
+    for start in range(0, len(sel), PER_ROW):
+        cols = st.columns(PER_ROW)
+        for col, t in zip(cols, sel[start:start + PER_ROW]):
+            with col:
+                tag = badge(t.status) if t.status != "publie" else ""
+                st.markdown(card_html(t.name, t.description, t.category,
+                                      tool_footer(t.executor, t.read_only, t.requires_confirmation), tag),
+                            unsafe_allow_html=True)
+                if st.button("Voir l'outil", key=f"open_{t.tool_id}", use_container_width=True):
+                    opened = t
+    # La fenêtre s'ouvre au clic ; ses propres interactions (Exécuter) ne relancent qu'elle-même.
+    if opened is not None and dialog:
+        dialog(opened.name, width="large")(tool_details)(opened)
+    elif opened is not None:
+        S["tc_open"] = opened.tool_id
+    if not dialog and S.get("tc_open"):
+        fallback = next((t for t in sel if t.tool_id == S["tc_open"]), None)
+        if fallback is not None:
+            st.divider()
+            st.markdown(f"### {fallback.name}")
+            tool_details(fallback)
 
 # --- Créer avec l'IA -------------------------------------------------------------------------------------------
 with tab_new:
