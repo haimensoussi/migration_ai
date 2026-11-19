@@ -14,7 +14,8 @@ from ui import state
 
 WRITE_TOOLS = {t.tool_id for t in hakim.TOOLS if t.requires_confirmation}
 
-EXAMPLES = ["Montre la fréquentation 2025 par Direction Régionale Gares et fais-en un rapport",
+EXAMPLES = ["Guide-moi pour transformer mon activité avec l'IA, étape par étape",
+            "Montre la fréquentation 2025 par Direction Régionale Gares et fais-en un rapport",
             "Crée-moi un agent qui résume les anomalies qualité par dimension",
             "Crée un outil qui compte les gares par région", "Quels agents sont disponibles ?",
             ]
@@ -45,6 +46,8 @@ def page_context() -> dict:
         sel = st.session_state.get("mine_sel")
         if sel:
             ctx["equipe_selectionnee"] = next((t["name"] for t in state.teams() if t["team_id"] == sel), None)
+        if st.session_state.get("transfo_plan"):
+            ctx["plan_transformation"] = st.session_state["transfo_plan"]
     except Exception:  # noqa: BLE001
         pass
     return ctx
@@ -56,7 +59,8 @@ def runtime():
     trepo = state.team_repository()
     plat = Platform(state.repository(), trepo, ident.email, trepo.is_admin(ident.email), page_context(),
                     conv=s["conv"], drafts=s["drafts"], designer=state.build_designer,
-                    tool_designer=state.build_tool_designer, visuals=s["visuals"], reports=s["reports"])
+                    tool_designer=state.build_tool_designer, visuals=s["visuals"], reports=s["reports"],
+                    transformation=state.transformation_service())
     ctx = ToolContext(sql=sql, workspace=w, max_rows=cfg_s.max_rows, user_email=ident.email, platform=plat)
     guard = lambda tid, args, msgs: hakim_guard.presentation_issue(tid, args, msgs, s["drafts"])  # noqa: E731
     return (AgentRuntime(ModelClient(w), ToolRegistry(hakim.TOOLS), ctx, before_confirm=guard),

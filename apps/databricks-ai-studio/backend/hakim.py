@@ -10,6 +10,7 @@ import os
 
 from backend.agent_runtime import AgentConfig
 from backend.tool_registry import ToolSpec
+from backend.transformation import CONTEXT_FIELDS
 from tools.hakim_tools import GUIDE, PAGES, TOURS
 
 AGENT_ID = "hakimai"
@@ -198,6 +199,41 @@ TOOLS += [
        ["type_objet", "objet"]),
 ]
 
+
+def _x(tool_id, name, description, props=None, required=None):
+    """Transformation : écrit dans un plan de l'utilisateur, sans fiche (tout reste « propose », décision sur la page)."""
+    return ToolSpec(tool_id=tool_id, name=name, category="HakimAI", description=description,
+                    input_schema={"type": "object", "properties": props or {}, "required": required or []},
+                    output_schema=_OBJ, executor=f"tools.hakim_transformation_tools:{tool_id}",
+                    read_only=tool_id in ("transformation_plans", "transformation_etat"), requires_confirmation=False)
+
+
+_PLAN = _s("Identifiant du plan (tp_...), renvoyé par transformation_plans ou transformation_creer_plan")
+TOOLS += [
+    _x("transformation_plans", "Plans de transformation", "Plans de transformation visibles par l'utilisateur (les "
+       "siens ; tous pour un administrateur) avec l'étape en cours. À appeler en premier pour la transformation."),
+    _x("transformation_etat", "État d'un plan", "État complet d'un plan : étapes, cadrage et champs manquants, "
+       "résumé de la découverte, éléments proposés/validés/rejetés.", {"plan": _PLAN}, ["plan"]),
+    _x("transformation_creer_plan", "Créer un plan", "Crée un plan de transformation dont l'utilisateur est "
+       "propriétaire.", {"nom": _s("Nom du plan, ex. Transformation IA - Gares et Connexions")}, ["nom"]),
+    _x("transformation_cadrage", "Enregistrer le cadrage", "Étape 1 : enregistre les réponses de l'utilisateur, avec "
+       "ses mots. Seuls les champs fournis sont mis à jour.",
+       {"plan": _PLAN, **{k: _s(v) for k, v in CONTEXT_FIELDS.items()}},
+       ["plan"]),
+    _x("transformation_decouvrir", "Découvrir les données", "Étape 2 : lit la structure des tables data_ (Unity "
+       "Catalog, droits de l'utilisateur) et calcule des statistiques agrégées (lignes, remplissage, valeurs "
+       "distinctes, périodes, clés candidates, liens probables). Aucune ligne n'est lue.", {"plan": _PLAN}, ["plan"]),
+    _x("transformation_proposer", "Proposer des éléments", "Étape 3 : ajoute au plan des objectifs, domaines métier "
+       "ou processus au statut « propose ». Domaine et processus citent au moins une table découverte. 15 au plus.",
+       {"plan": _PLAN, "elements": {"type": "array", "maxItems": 15, "items": {"type": "object", "properties": {
+           "type": _s("Type d'élément", enum=["objectif", "domaine", "processus"]),
+           "nom": _s("Nom court"), "description": _s("Ce que couvre l'élément, d'après le cadrage et les données"),
+           "tables": {**_LIST, "description": "Tables découvertes qui le justifient (nom complet ou court)"},
+           "hypotheses": {**_LIST, "description": "Hypothèses à vérifier par le métier"},
+           "domaine": _s("Processus : domaine de rattachement")}, "required": ["type", "nom"]}}},
+       ["plan", "elements"]),
+]
+
 INSTRUCTIONS = f"""Tu es {NAME}, {PERSONA} DISCOVERY (SNCF Réseau). Tu guides les utilisateurs dans la plateforme :
 agents IA, outils, équipes d'agents, chat et @mentions, catalogue d'outils, monitoring.
 
@@ -268,9 +304,31 @@ Qualité attendue d'un outil :
 - Un agent publié se modifie dans Agent Builder.
 - Après une création, indique comment tester (Chat & Test) et propose ouvrir_page.
 
+Transformation vers l'entreprise augmentée par l'IA (lot A : étapes 1 à 3 sur 7) :
+- Tu guides pas à pas ; tu PROPOSES, l'utilisateur décide sur la page Transformation. Tu ne valides ni ne
+  rejettes jamais un élément, et tu ne dis jamais qu'un élément est validé s'il est « propose ».
+- Commence par transformation_plans. Sans plan, propose un nom et crée-le (transformation_creer_plan). Pour
+  reprendre un plan, transformation_etat.
+- UNE étape par message : termine l'étape, présente son résultat, puis demande à l'utilisateur s'il veut passer
+  à la suivante. N'enchaîne jamais deux étapes dans le même message (l'application le refuse).
+- Étape 1 Cadrage : pose au plus 3 questions à la fois (activité, objectifs, irritants, contraintes, périmètre).
+  Enregistre les réponses avec transformation_cadrage, avec les mots de l'utilisateur, sans rien inventer.
+- Étape 2 Découverte : transformation_decouvrir. Présente les tables (lignes, périodes), les colonnes
+  incomplètes, les clés candidates et les liens probables. Ce sont des constats statistiques, sans lecture de
+  lignes, et pas des exigences métier ; un lien probable reste à vérifier.
+- Étape 3 Cartographie : reprends les objectifs du cadrage (type objectif), puis déduis des domaines métier et des
+  processus à partir des tables découvertes et du cadrage. Chaque domaine ou processus cite ses tables (preuves) et
+  ses hypothèses. Dans le même message : présente D'ABORD la proposition en texte (tableau court), ENSUITE
+  appelle transformation_proposer, puis demande de valider ou rejeter sur la page Transformation
+  (ouvrir_page transformation).
+- Ne propose pas un élément déjà présent ; n'invente ni donnée absente, ni règle, ni seuil SNCF Réseau.
+- Étapes 4 à 7 (cas d'usage IA, agents, équipes, flux, outils, feuille de route, génération) : pas encore
+  disponibles (lot B). Dis-le si on te le demande, sans les simuler.
+- Seul le propriétaire d'un plan le modifie ; un administrateur peut le consulter.
+
 Règles :
 - Si la question dépend de la page (« ici », « cet agent »), appelle d'abord contexte_page.
-- Hors des outils de création ci-dessus, tu ne modifies et n'exécutes rien : explique comment faire et ouvre la page.
+- Hors des outils de création et de transformation ci-dessus, tu ne modifies et n'exécutes rien : explique comment faire et ouvre la page.
 - Un refus d'accès est normal : signale-le tel quel, sans le contourner.
 - N'invente aucun agent, outil, chiffre ou résultat. Dis quand une information n'est pas disponible.
 - Recopie les valeurs renvoyées par les outils caractère pour caractère (libellés, noms, chiffres). Si une valeur

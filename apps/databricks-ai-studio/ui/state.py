@@ -172,31 +172,12 @@ def agents(force: bool = False) -> list[dict]:
     return st.session_state["_agents_cache"]
 
 
-# -- SaaS multi-entreprises ------------------------------------------------------------------------------
 @st.cache_resource
-def tenant_service():
-    """Tenant Manager : tables saas_* via le service principal de l'App, droits décidés côté serveur."""
-    import os
-    from backend.saas.store import SqlStore
-    from backend.saas.tenant_service import TenantService
-    s = settings()
-    return TenantService(SqlStore(repository().sql, s.table), s.platform_admins, s.tenant_catalog,
-                         os.environ.get("DATABRICKS_CLIENT_ID", ""))
-
-
-def saas_identity():
-    """Identité vérifiée par Databricks (current-user avec le jeton de l'utilisateur), mise en cache par jeton."""
-    from backend.saas.tenant_service import verified_identity
-    w, _, ident = user_session()
-    key = st.session_state.get("_user_session", (None,))[0]
-    cached = st.session_state.get("_saas_identity")
-    if cached and cached[0] == key:
-        return cached[1]
-    source = "jeton_utilisateur" if ident.mode == "utilisateur" else "developpement"
-    value = verified_identity(w, source)
-    st.session_state["_saas_identity"] = (key, value)
-    return value
+def transformation_service():
+    """HakimAI Transformation : tables transformation_* via le compte de l'App, règles dans le service."""
+    from backend.transformation import SqlTransformationStore, TransformationService
+    return TransformationService(SqlTransformationStore(repository().sql, settings().table))
 
 
 __all__ = ["settings", "repository", "user_session", "current_user", "registry", "chat_endpoints",
-           "build_runtime", "refresh_data", "agents", "ToolEvent", "UserAuthMissing"]
+           "build_runtime", "refresh_data", "agents", "ToolEvent", "UserAuthMissing", "transformation_service"]

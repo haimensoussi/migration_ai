@@ -28,6 +28,8 @@ PAGES = {
     "assessment": ("views/assessment.py", "Assessment Center", "Évaluation des agents"),
     "monitoring": ("views/monitoring.py", "Monitoring", "Appels d'outils, erreurs, latences"),
     "parametres": ("views/parametres.py", "Paramètres", "Configuration de l'application"),
+    "transformation": ("views/transformation.py", "Transformation", "Plan de transformation guidé par HakimAI : "
+                       "cadrage, découverte des données, cartographie à valider"),
 }
 
 ACTIONS = {   # actions réellement disponibles sur chaque page (référence pour HakimAI ; ne rien ajouter d'autre)
@@ -46,6 +48,10 @@ ACTIONS = {   # actions réellement disponibles sur chaque page (référence pou
     "Catalogue d'outils": ["consulter les outils et leurs statuts", "créer un outil SQL paramétré, une fonction UC ou un "
                            "appel HTTP via connexion UC, avec l'assistant", "tester puis enregistrer un outil, voir ses versions"],
     "Monitoring": ["voir les appels d'outils récents, les taux d'erreur et les latences"],
+    "Transformation": ["choisir ou créer un plan de transformation", "voir l'avancement des 7 étapes (1 à 3 disponibles)",
+                       "modifier le cadrage", "lancer la découverte des données",
+                       "valider, rejeter ou rouvrir les éléments proposés par HakimAI",
+                       "revenir à la conversation HakimAI"],
     "HakimAI": ["poser une question sur la plateforme", "obtenir un diagnostic ou une visite guidée",
                 "ouvrir la page proposée via le bouton « Ouvrir … »", "recommencer une conversation"],
 }
@@ -98,6 +104,8 @@ class Platform:
     tool_designer: Any = None                         # fabrique ToolDesigner (droits de l'utilisateur)
     visuals: dict = field(default_factory=dict)       # visuels de la conversation (lot 3b)
     reports: dict = field(default_factory=dict)       # rapports de la conversation (lot 3b)
+    transformation: Any = None                        # TransformationService (créé à la demande, injecté en test)
+    transfo_steps: set = field(default_factory=set)   # étapes de transformation faites pendant CE tour (1 au plus)
 
     def t(self, name: str) -> str:
         return self.repo.s.table(name)

@@ -76,10 +76,18 @@ def run(c, tid, **a):
     return REG.run(REG.specs[tid], c, a)
 
 
+# Exception explicite : écritures dans le plan de transformation de l'utilisateur, sans fiche ; tout y reste
+# « propose » jusqu'à sa décision sur la page Transformation (aucun agent, outil ou équipe n'est touché).
+PLAN_WRITES = {"transformation_creer_plan", "transformation_cadrage", "transformation_decouvrir",
+               "transformation_proposer"}
+
+
 def test_writes_need_confirmation_and_design_does_not():
     for t in hakim.TOOLS:
         assert t.requires_confirmation == (t.tool_id in WRITES), t.tool_id
-        assert t.read_only == (t.tool_id not in WRITES)
+        assert t.read_only == (t.tool_id not in WRITES | PLAN_WRITES), t.tool_id
+    assert all(t.executor.startswith("tools.hakim_transformation_tools:") for t in hakim.TOOLS
+               if t.tool_id in PLAN_WRITES)
     assert "publier" not in " ".join(t.tool_id for t in hakim.TOOLS if t.tool_id != "soumettre_publication")
 
 

@@ -35,11 +35,5 @@ env:
   # Administrateurs des équipes : seuls habilités à publier une équipe d'agents
   - name: AI_STUDIO_TEAM_ADMINS
     value: "phsi10251@commun.ad.sncf.fr"
-  # SaaS : administrateurs de la plateforme (créent et suspendent les organisations)
-  - name: AI_STUDIO_PLATFORM_ADMINS
-    value: "phsi10251@commun.ad.sncf.fr"
-  # SaaS : catalogue des schémas dédiés aux organisations (saas_t_<code>) ; à remplacer par un catalogue dédié
-  - name: AI_STUDIO_TENANT_CATALOG
-    value: dataops_dev
   - name: STREAMLIT_BROWSER_GATHER_USAGE_STATS
     value: "false"

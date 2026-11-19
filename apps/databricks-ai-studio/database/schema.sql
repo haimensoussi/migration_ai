@@ -172,6 +172,32 @@ CREATE TABLE IF NOT EXISTS dataops_dev.ai_studio.copilot_actions (
   CONSTRAINT copilot_actions_pk PRIMARY KEY (action_id)
 ) COMMENT 'Journal d audit des actions ecrites par HakimAI (lot 2) et demandes de publication';
 
+-- HakimAI Transformation (lot A : cadrage, découverte, cartographie). HakimAI propose, le propriétaire décide.
+CREATE TABLE IF NOT EXISTS dataops_dev.ai_studio.transformation_plans (
+  plan_id STRING NOT NULL COMMENT 'Identifiant du plan (tp_ + 12 hex)',
+  name STRING NOT NULL COMMENT 'Nom du plan',
+  owner STRING NOT NULL COMMENT 'Propriétaire (seul à modifier et décider)',
+  status STRING NOT NULL COMMENT 'en_cours | archive',
+  context STRING COMMENT 'Cadrage JSON : secteur, objectifs, irritants, contraintes, perimetre',
+  discovery STRING COMMENT 'Dernière découverte JSON : structure et statistiques agrégées, jamais de lignes',
+  created_at TIMESTAMP NOT NULL, updated_at TIMESTAMP NOT NULL,
+  CONSTRAINT transformation_plans_pk PRIMARY KEY (plan_id)
+) COMMENT 'HakimAI Transformation : plans de transformation (grain : 1 ligne par plan)';
+
+CREATE TABLE IF NOT EXISTS dataops_dev.ai_studio.transformation_items (
+  plan_id STRING NOT NULL COMMENT 'Plan -> transformation_plans',
+  item_id STRING NOT NULL COMMENT 'Identifiant (ti_ + 12 hex)',
+  item_type STRING NOT NULL COMMENT 'objectif | domaine | processus (lot A) ; cas_usage | agent | equipe | flux | outil (lot B)',
+  name STRING NOT NULL COMMENT 'Nom de l élément',
+  payload STRING COMMENT 'Contenu JSON : description, hypotheses, domaine',
+  evidence STRING COMMENT 'Preuves JSON : tables découvertes citées',
+  status STRING NOT NULL COMMENT 'propose | valide | rejete',
+  origin STRING NOT NULL COMMENT 'hakim | utilisateur',
+  created_by STRING NOT NULL, created_at TIMESTAMP NOT NULL,
+  decided_by STRING COMMENT 'Auteur de la décision humaine', decided_at TIMESTAMP, decision_note STRING,
+  CONSTRAINT transformation_items_pk PRIMARY KEY (plan_id, item_id)
+) COMMENT 'HakimAI Transformation : éléments proposés et décisions (grain : 1 ligne par élément)';
+
 
 -- Rubrique Flux (lot 1) : boite d'echange entre les agents et les flux Power Automate
 CREATE TABLE IF NOT EXISTS dataops_dev.ai_studio.flux_demandes (
