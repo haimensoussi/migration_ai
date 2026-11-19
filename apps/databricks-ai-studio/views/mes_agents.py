@@ -1,7 +1,10 @@
 import streamlit as st
 
 from ui import state
-from ui.components import agent_card
+from ui.catalog_cards import CARD_CSS, agent_footer, card_html
+from ui.components import badge
+
+PER_ROW = 4
 
 st.title("Mes agents")
 user = state.current_user()
@@ -25,29 +28,39 @@ items = [a for a in items if (status == "Tous" or a["status"] == status)
 if not items:
     st.info("Aucun agent. Créez-en un avec l'Agent Builder.")
 
-cols = st.columns(3)
-for i, a in enumerate(items):
-    with cols[i % 3].container(border=True):
-        agent_card(a)
-        st.caption(f"Modèle : {a.get('model_endpoint')} · outils : {len(a.get('tool_ids') or [])}")
-        b1, b2, b3 = st.columns(3)
-        if b1.button("Tester", key=f"t_{a['agent_id']}"):
-            st.session_state["chat_agent_id"] = a["agent_id"]
-            st.switch_page("views/chat.py")
-        mine = a["owner"] == user.email
-        if b2.button("Modifier", key=f"e_{a['agent_id']}", disabled=not mine):
-            st.session_state["builder_edit_id"] = a["agent_id"]
-            st.session_state.pop("builder", None)
-            st.switch_page("views/agent_builder.py")
-        target = "brouillon" if a["status"] == "publie" else "publie"
-        label = "Dépublier" if target == "brouillon" else "Publier"
-        if b3.button(label, key=f"p_{a['agent_id']}", disabled=not mine):
-            state.repository().set_status(a["agent_id"], target)
-            state.refresh_data()
-            st.rerun()
-        if st.button(":material/auto_fix_high: Améliorer avec l'IA", key=f"ai_{a['agent_id']}", disabled=not mine,
-                     use_container_width=True):
-            st.session_state["builder_edit_id"] = a["agent_id"]
-            st.session_state["builder_improve"] = True
-            st.session_state.pop("builder", None)
-            st.switch_page("views/agent_builder.py")
+st.markdown(CARD_CSS, unsafe_allow_html=True)
+tool_cats = {t.tool_id: t.category for t in state.cached_tools()}
+st.caption(f"{len(items)} agent(s)")
+for start in range(0, len(items), PER_ROW):
+    cols = st.columns(PER_ROW)
+    for col, a in zip(cols, items[start:start + PER_ROW]):
+        with col:
+            st.markdown(card_html(a["name"], a.get("description") or a.get("tagline") or "", a.get("category"),
+                                  agent_footer(a.get("tool_ids"), tool_cats), badge(a["status"])),
+                        unsafe_allow_html=True)
+            mine = a["owner"] == user.email
+            b1, b2 = st.columns(2)
+            if b1.button("Tester", key=f"t_{a['agent_id']}", use_container_width=True):
+                st.session_state["chat_agent_id"] = a["agent_id"]
+                st.switch_page("views/chat.py")
+            with b2.popover("Actions", use_container_width=True):
+                st.caption(f"v{a.get('current_version')} · {a.get('owner')} · modèle : {a.get('model_endpoint')} · "
+                           f"outils : {len(a.get('tool_ids') or [])}")
+                if not mine:
+                    st.caption("Actions réservées au propriétaire de l'agent.")
+                if st.button("Modifier", key=f"e_{a['agent_id']}", disabled=not mine, use_container_width=True):
+                    st.session_state["builder_edit_id"] = a["agent_id"]
+                    st.session_state.pop("builder", None)
+                    st.switch_page("views/agent_builder.py")
+                target = "brouillon" if a["status"] == "publie" else "publie"
+                label = "Dépublier" if target == "brouillon" else "Publier"
+                if st.button(label, key=f"p_{a['agent_id']}", disabled=not mine, use_container_width=True):
+                    state.repository().set_status(a["agent_id"], target)
+                    state.refresh_data()
+                    st.rerun()
+                if st.button(":material/auto_fix_high: Améliorer avec l'IA", key=f"ai_{a['agent_id']}",
+                             disabled=not mine, use_container_width=True):
+                    st.session_state["builder_edit_id"] = a["agent_id"]
+                    st.session_state["builder_improve"] = True
+                    st.session_state.pop("builder", None)
+                    st.switch_page("views/agent_builder.py")
