@@ -1,4 +1,4 @@
-"""Transformation : plan guidé par HakimAI (lot A : cadrage, découverte, cartographie). L'utilisateur décide ici."""
+"""Transformation : plan guidé par HakimAI (étapes 1 à 5). L'utilisateur décide ici."""
 import pandas as pd
 import streamlit as st
 
@@ -6,7 +6,7 @@ from backend import transformation as T
 from ui import state
 from ui.components import error_box
 
-ST_LABEL = {"fait": "Fait", "en_cours": "En cours", "a_faire": "À faire", "lot_b": "Lot B"}
+ST_LABEL = {"fait": "Fait", "en_cours": "En cours", "a_faire": "À faire", "lot_b2": "Lot B2"}
 ITEM_STATUS = {"propose": "Proposé", "valide": "Validé", "rejete": "Rejeté"}
 
 st.title("Transformation")
@@ -73,10 +73,13 @@ if not owner:
 steps = svc.progress(plan, items)
 for col, s in zip(st.columns(len(steps)), steps):
     col.metric(f"{s['etape']}. {s['libelle']}", ST_LABEL[s["statut"]])
+for warning in svc.coherence(items):
+    st.warning(warning)
 if st.button("Continuer avec HakimAI", type="primary"):
     st.switch_page("views/hakim.py")
 
-t1, t2, t3 = st.tabs(["1. Cadrage", "2. Découverte des données", "3. Cartographie"])
+t1, t2, t3, t4, t5 = st.tabs(["1. Cadrage", "2. Découverte des données", "3. Cartographie",
+                              "4. Diagnostic et opportunités", "5. Conception de la cible"])
 
 with t1:
     ctx = plan["context"]
@@ -120,14 +123,15 @@ with t2:
         st.markdown("**Constats statistiques**")
         st.markdown("\n".join(f"* {c}" for c in d["constats"]) or "Aucun.")
 
-with t3:
-    if not items:
-        st.info("Aucun élément proposé. Demandez à HakimAI de proposer la cartographie après la découverte.")
-    for kind in T.ITEM_TYPES_LOT_A:
+def render_items(kinds, empty: str) -> None:
+    """Éléments d'une étape, avec leurs preuves, rattachements et décisions."""
+    if not any(i["item_type"] in kinds for i in items):
+        st.info(empty)
+    for kind in kinds:
         group = [i for i in items if i["item_type"] == kind]
         if not group:
             continue
-        st.subheader(T.ITEM_LABELS[kind] + ("s" if len(group) > 1 else ""))
+        st.subheader(T.ITEM_PLURALS[kind] if len(group) > 1 else T.ITEM_LABELS[kind])
         for i in group:
             with st.container(border=True):
                 a, b = st.columns([4, 1])
@@ -140,6 +144,26 @@ with t3:
                     a.caption("Preuves : " + ", ".join(i["evidence"]["tables"]))
                 if i["payload"].get("hypotheses"):
                     a.caption("Hypothèses à vérifier : " + " ; ".join(i["payload"]["hypotheses"]))
+                pl, details = i["payload"], []
+                if pl.get("processus"):
+                    details.append(f"Processus : {pl['processus']}")
+                if pl.get("objectif"):
+                    details.append(f"Objectif : {pl['objectif']}")
+                if pl.get("cas_usage"):
+                    details.append("Cas d'usage servis : " + ", ".join(pl["cas_usage"]))
+                if pl.get("mode"):
+                    details.append("Mode : " + T.MODES.get(pl["mode"], pl["mode"]) + (
+                        f" — {pl.get('existant_nom') or pl['existant']} ({pl['existant']})" if pl.get("existant") else ""))
+                if pl.get("membres"):
+                    details.append("Membres : " + ", ".join(pl["membres"]))
+                if pl.get("outils"):
+                    details.append("Outils : " + ", ".join(pl["outils"]))
+                if details:
+                    a.caption(" | ".join(details))
+                if pl.get("gain_attendu"):
+                    a.write("Gain attendu : " + pl["gain_attendu"])
+                if pl.get("limites"):
+                    a.caption("Limites : " + " ; ".join(pl["limites"]))
                 if i["status"] != "propose":
                     a.caption(f"Décision : {i.get('decided_by')} le {i.get('decided_at')}"
                               + (f" — {i['decision_note']}" if i.get("decision_note") else ""))
@@ -156,3 +180,14 @@ with t3:
                     elif b.button("Rouvrir", key=f"re_{i['item_id']}"):
                         act("Décision impossible", lambda i=i: svc.decide(plan_id, i["item_id"], me, "propose"),
                             f"« {i['name']} » remis en proposition.")
+
+
+with t3:
+    render_items(T.ITEM_TYPES_LOT_A, "Aucun élément proposé. Demandez à HakimAI de proposer la cartographie après la "
+                                     "découverte.")
+with t4:
+    render_items(("cas_usage",), "Aucun cas d'usage. Validez des processus (onglet 3), puis demandez à HakimAI le "
+                                 "diagnostic.")
+with t5:
+    render_items(T.TARGET_TYPES, "Aucun élément de la cible. Validez des cas d'usage (onglet 4), puis demandez à "
+                                 "HakimAI de concevoir la cible. Rien n'est créé dans la plateforme à cette étape.")

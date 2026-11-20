@@ -48,7 +48,7 @@ ACTIONS = {   # actions réellement disponibles sur chaque page (référence pou
     "Catalogue d'outils": ["consulter les outils et leurs statuts", "créer un outil SQL paramétré, une fonction UC ou un "
                            "appel HTTP via connexion UC, avec l'assistant", "tester puis enregistrer un outil, voir ses versions"],
     "Monitoring": ["voir les appels d'outils récents, les taux d'erreur et les latences"],
-    "Transformation": ["choisir ou créer un plan de transformation", "voir l'avancement des 7 étapes (1 à 3 disponibles)",
+    "Transformation": ["choisir ou créer un plan de transformation", "voir l'avancement des 7 étapes (1 à 5 disponibles)",
                        "modifier le cadrage", "lancer la découverte des données",
                        "valider, rejeter ou rouvrir les éléments proposés par HakimAI",
                        "revenir à la conversation HakimAI"],
@@ -244,7 +244,7 @@ def lister_equipes(ctx: ToolContext) -> dict:
     p = _p(ctx)
     names = {a["agent_id"]: a for a in p.repo.list_agents()}
     show = lambda i: personas.display(names[i]) if i in names else i  # noqa: E731
-    rows = [{"equipe": t["name"], "appel": "@" + t["handle"], "statut": t["status"], "filiere": t.get("filiere"),
+    rows = [{"team_id": t["team_id"], "equipe": t["name"], "appel": "@" + t["handle"], "statut": t["status"], "filiere": t.get("filiere"),
              "mission": t.get("mission"), "chef": show(t["lead_agent_id"]) if t.get("lead_agent_id") else None,
              "membres": [show(m) for m in t["members"]], "responsable_humain": t.get("human_owner") or "à désigner"}
             for t in p.teams.list_teams()

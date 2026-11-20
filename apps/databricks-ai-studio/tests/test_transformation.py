@@ -152,8 +152,8 @@ def test_propose_requires_evidence_and_lot_a_types(svc):
         svc.propose(pid, ME, [{"type": "domaine", "nom": "Gares"}])
     with pytest.raises(T.TransformationError, match="absente"):
         svc.propose(pid, ME, [{"type": "domaine", "nom": "Gares", "tables": ["data_inventee"]}])
-    with pytest.raises(T.TransformationError, match="lot A"):
-        svc.propose(pid, ME, [{"type": "agent", "nom": "Agent gares"}])
+    with pytest.raises(T.TransformationError, match="non disponible"):
+        svc.propose(pid, ME, [{"type": "feuille_de_route", "nom": "Vague 1"}])
     with pytest.raises(T.TransformationError, match="15"):
         svc.propose(pid, ME, [{"type": "objectif", "nom": f"o{i}"} for i in range(16)])
     res = svc.propose(pid, ME, [{"type": "domaine", "nom": "Gares", "tables": ["data_gares"]},
@@ -162,7 +162,7 @@ def test_propose_requires_evidence_and_lot_a_types(svc):
     assert len(res["ajoutes"]) == 2 and {i["status"] for i in items} == {"propose"}
     assert items[0]["evidence"]["tables"] == [GARES["full_name"]]          # nom court résolu en nom complet
     again = svc.propose(pid, ME, [{"type": "domaine", "nom": "gares", "tables": ["data_gares"]}])
-    assert again == {"ajoutes": [], "deja_presents": ["gares"]}
+    assert again == {"etape": 3, "ajoutes": [], "deja_presents": ["gares"]}
 
 
 def test_propose_without_discovery_only_objectives(svc):
@@ -179,7 +179,7 @@ def test_decide_owner_only_and_progress(svc):
                           {"type": "processus", "nom": "Suivi de fréquentation", "tables": ["data_frequentation"]}])
     dom, proc = svc.items(pid, ME, False)
     plan = svc.get(pid, ME, False)
-    assert [s["statut"] for s in svc.progress(plan, svc.items(pid, ME, False))][:4] == ["fait", "fait", "en_cours", "lot_b"]
+    assert [s["statut"] for s in svc.progress(plan, svc.items(pid, ME, False))][:4] == ["fait", "fait", "en_cours", "a_faire"]
     with pytest.raises(T.TransformationError):
         svc.decide(pid, dom["item_id"], ADMIN, "valide")
     with pytest.raises(T.TransformationError, match="Statut"):
@@ -204,7 +204,7 @@ def test_tool_catalog_cannot_decide():
     assert not any("statut" in t.input_schema["properties"] or "status" in t.input_schema["properties"]
                    for t in TRANSFO.values())
     kinds = TRANSFO["transformation_proposer"].input_schema["properties"]["elements"]["items"]["properties"]["type"]
-    assert kinds["enum"] == list(T.ITEM_TYPES_LOT_A)
+    assert kinds["enum"] == list(T.ITEM_TYPES_AVAILABLE)
     assert {t.tool_id for t in TRANSFO.values() if t.read_only} == {"transformation_plans", "transformation_etat"}
     assert all(t.tool_id in hakim.config("m").tool_ids for t in TRANSFO.values())
 

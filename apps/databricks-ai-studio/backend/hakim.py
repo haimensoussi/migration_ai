@@ -10,7 +10,7 @@ import os
 
 from backend.agent_runtime import AgentConfig
 from backend.tool_registry import ToolSpec
-from backend.transformation import CONTEXT_FIELDS
+from backend.transformation import CONTEXT_FIELDS, ITEM_TYPES_AVAILABLE, MODES
 from tools.hakim_tools import GUIDE, PAGES, TOURS
 
 AGENT_ID = "hakimai"
@@ -223,14 +223,26 @@ TOOLS += [
     _x("transformation_decouvrir", "Découvrir les données", "Étape 2 : lit la structure des tables data_ (Unity "
        "Catalog, droits de l'utilisateur) et calcule des statistiques agrégées (lignes, remplissage, valeurs "
        "distinctes, périodes, clés candidates, liens probables). Aucune ligne n'est lue.", {"plan": _PLAN}, ["plan"]),
-    _x("transformation_proposer", "Proposer des éléments", "Étape 3 : ajoute au plan des objectifs, domaines métier "
-       "ou processus au statut « propose ». Domaine et processus citent au moins une table découverte. 15 au plus.",
+    _x("transformation_proposer", "Proposer des éléments", "Ajoute au plan des éléments d'UNE étape au statut "
+       "« propose » (15 au plus) : étape 3 objectif/domaine/processus ; étape 4 cas_usage (processus VALIDÉ + tables) ; "
+       "étape 5 agent/outil/flux/equipe (cas d'usage VALIDÉS + mode ; réutilisation = identifiant exact existant).",
        {"plan": _PLAN, "elements": {"type": "array", "maxItems": 15, "items": {"type": "object", "properties": {
-           "type": _s("Type d'élément", enum=["objectif", "domaine", "processus"]),
+           "type": _s("Type d'élément", enum=list(ITEM_TYPES_AVAILABLE)),
            "nom": _s("Nom court"), "description": _s("Ce que couvre l'élément, d'après le cadrage et les données"),
            "tables": {**_LIST, "description": "Tables découvertes qui le justifient (nom complet ou court)"},
            "hypotheses": {**_LIST, "description": "Hypothèses à vérifier par le métier"},
-           "domaine": _s("Processus : domaine de rattachement")}, "required": ["type", "nom"]}}},
+           "domaine": _s("Processus : domaine de rattachement"),
+           "processus": _s("cas_usage : nom exact d'un processus VALIDÉ du plan"),
+           "objectif": _s("cas_usage : objectif VALIDÉ servi (facultatif)"),
+           "gain_attendu": _s("cas_usage : gain attendu en mots, sans chiffre inventé"),
+           "limites": {**_LIST, "description": "cas_usage : limites des données ou du cas (maille, couverture...)"},
+           "cas_usage": {**_LIST, "description": "Étape 5 : cas d'usage VALIDÉS servis (noms exacts)"},
+           "mode": _s("Étape 5 : reutiliser, adapter (objet existant) ou creer", enum=list(MODES)),
+           "existant": _s("Étape 5, reutiliser/adapter : identifiant exact (agent_id, outil, team_id) lu avec "
+                          "lister_agents, lister_outils ou lister_equipes"),
+           "membres": {**_LIST, "description": "equipe : agents du plan (nom) ou agents existants (agent_id)"},
+           "outils": {**_LIST, "description": "agent : outils du plan (nom) ou outils existants (identifiant)"}},
+           "required": ["type", "nom"]}}},
        ["plan", "elements"]),
 ]
 
@@ -304,7 +316,7 @@ Qualité attendue d'un outil :
 - Un agent publié se modifie dans Agent Builder.
 - Après une création, indique comment tester (Chat & Test) et propose ouvrir_page.
 
-Transformation vers l'entreprise augmentée par l'IA (lot A : étapes 1 à 3 sur 7) :
+Transformation vers l'entreprise augmentée par l'IA (étapes 1 à 5 sur 7 disponibles) :
 - Tu guides pas à pas ; tu PROPOSES, l'utilisateur décide sur la page Transformation. Tu ne valides ni ne
   rejettes jamais un élément, et tu ne dis jamais qu'un élément est validé s'il est « propose ».
 - Commence par transformation_plans. Sans plan, propose un nom et crée-le (transformation_creer_plan). Pour
@@ -321,9 +333,23 @@ Transformation vers l'entreprise augmentée par l'IA (lot A : étapes 1 à 3 sur
   ses hypothèses. Dans le même message : présente D'ABORD la proposition en texte (tableau court), ENSUITE
   appelle transformation_proposer, puis demande de valider ou rejeter sur la page Transformation
   (ouvrir_page transformation).
+- Étape 4 Diagnostic et opportunités (après validation de processus) : transformation_etat, puis pour chaque
+  processus VALIDÉ repère ce que l'IA peut améliorer (tâches manuelles, données dispersées, information tardive)
+  d'après le cadrage et les données découvertes. Type cas_usage : processus (nom exact validé), tables (preuves),
+  gain_attendu en mots (aucun chiffre ni seuil inventé), limites (maille, couverture, colonnes incomplètes).
+  Un cas d'usage que les données ne permettent pas encore se signale dans ses limites, sans le masquer.
+- Étape 5 Conception de la cible (après validation de cas d'usage) : transformation_etat, puis lister_agents,
+  lister_outils et lister_equipes pour RÉUTILISER d'abord l'existant. Pour chaque cas d'usage VALIDÉ, propose les
+  agents, outils (SQL sur les tables découvertes), flux et équipes nécessaires : cas_usage (noms exacts validés),
+  mode reutiliser / adapter (identifiant exact dans existant) ou creer. Une équipe cite ses membres ; un agent ses
+  outils. Rien n'est créé dans la plateforme à cette étape : ce sont des éléments du plan. Plus tard, un outil se
+  crée avec concevoir_outil ou dans le Catalogue d'outils, un agent avec concevoir_agent ou dans Agent Builder.
+- Aux étapes 3, 4 et 5 : présente D'ABORD en texte, ENSUITE transformation_proposer, puis renvoie vers la page.
+  Le texte présenté et les éléments envoyés sont identiques (mêmes noms, mêmes cas d'usage rattachés).
+  Si transformation_etat signale des incoherences, présente-les à l'utilisateur.
 - Ne propose pas un élément déjà présent ; n'invente ni donnée absente, ni règle, ni seuil SNCF Réseau.
-- Étapes 4 à 7 (cas d'usage IA, agents, équipes, flux, outils, feuille de route, génération) : pas encore
-  disponibles (lot B). Dis-le si on te le demande, sans les simuler.
+- Étapes 6 et 7 (feuille de route, génération des brouillons) : pas encore disponibles (lot B2). Dis-le si on te
+  le demande, sans les simuler.
 - Seul le propriétaire d'un plan le modifie ; un administrateur peut le consulter.
 
 Règles :
