@@ -11,7 +11,9 @@ from ui.components import badge
 
 PER_ROW = 4
 
-st.title("Catalogue d'outils")
+st.title("Tool Builder")
+st.caption("Créer un outil avec l'assistant : décrire le besoin, vérifier, tester, publier. Les outils publiés "
+           "sont aussi présentés dans la Marketplace.")
 tools = [t for t in state.cached_tools() if t.category != "Flux"]   # flux : page Flux
 if not tools:
     st.warning("Catalogue vide : initialisez-le dans Paramètres.")

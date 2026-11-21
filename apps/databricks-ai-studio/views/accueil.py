@@ -48,7 +48,7 @@ if r[0].button("Créer un agent", type="primary", use_container_width=True, key=
     st.session_state.pop("builder", None)
     st.switch_page("views/agent_builder.py")
 r[1].page_link("views/mes_agents.py", label="Mes agents", icon=":material/work:", use_container_width=True)
-r[2].page_link("views/tool_catalog.py", label="Catalogue d'outils", icon=":material/grid_view:", use_container_width=True)
+r[2].page_link("views/tool_catalog.py", label="Tool Builder", icon=":material/handyman:", use_container_width=True)
 r[3].page_link("views/marketplace.py", label="Marketplace", icon=":material/storefront:", use_container_width=True)
 r[4].page_link("views/monitoring.py", label="Monitoring", icon=":material/bar_chart:", use_container_width=True)
 st.write("")

@@ -23,8 +23,9 @@ PAGES = {
     "equipes": ("views/equipes.py", "Équipes", "Organigramme, création et gestion des équipes d'agents"),
     "agent_builder": ("views/agent_builder.py", "Agent Builder", "Créer ou modifier un agent, avec l'assistant de conception"),
     "chat": ("views/chat.py", "Chat & Test", "Discuter avec un agent, mentionner @agent ou @équipe"),
-    "catalogue_outils": ("views/tool_catalog.py", "Catalogue d'outils", "Outils disponibles, création d'outils SQL, fonction UC ou HTTP"),
-    "marketplace": ("views/marketplace.py", "Marketplace", "Agents partagés"),
+    "catalogue_outils": ("views/tool_catalog.py", "Tool Builder", "Outils disponibles, création d'outils SQL, fonction UC ou HTTP"),
+    "flux_builder": ("views/flux.py", "Flux Builder", "Flux Power Automate utilisables par les agents : création, test, suivi"),
+    "marketplace": ("views/marketplace.py", "Marketplace", "Agents, outils et flux publiés"),
     "assessment": ("views/assessment.py", "Assessment Center", "Évaluation des agents"),
     "monitoring": ("views/monitoring.py", "Monitoring", "Appels d'outils, erreurs, latences"),
     "parametres": ("views/parametres.py", "Paramètres", "Configuration de l'application"),
@@ -45,7 +46,12 @@ ACTIONS = {   # actions réellement disponibles sur chaque page (référence pou
                       "instructions, modèle, outils, tables autorisées", "rejoindre une équipe", "enregistrer en brouillon ou publier"],
     "Chat & Test": ["choisir un agent et discuter", "mentionner @agent ou @équipe", "valider ou refuser une action en attente",
                     "voir les outils appelés sous chaque réponse"],
-    "Catalogue d'outils": ["consulter les outils et leurs statuts", "créer un outil SQL paramétré, une fonction UC ou un "
+    "Flux Builder": ["voir ses flux et les flux publiés", "créer ou modifier un flux (paramètres, valeurs fixes, réponse, "
+                     "délai)", "tester un flux au banc de test", "obtenir les requêtes de configuration Power Automate",
+                     "consulter l'historique des demandes"],
+    "Marketplace": ["onglet Agents : rechercher par domaine et catégorie, utiliser un agent, ouvrir sa fiche",
+                    "onglets Outils et Flux : consulter les outils et flux publiés"],
+    "Tool Builder": ["consulter les outils et leurs statuts", "créer un outil SQL paramétré, une fonction UC ou un "
                            "appel HTTP via connexion UC, avec l'assistant", "tester puis enregistrer un outil, voir ses versions"],
     "Monitoring": ["voir les appels d'outils récents, les taux d'erreur et les latences"],
     "Transformation": ["choisir ou créer un plan de transformation", "voir l'avancement des 7 étapes (1 à 5 disponibles)",
@@ -61,7 +67,7 @@ GUIDE = {
               "(prénom, rôle, nom d'appel @). Création dans Agent Builder, en brouillon ; chaque enregistrement crée une version.",
     "outils": "Un outil est une action que l'agent peut appeler : lecture Unity Catalog, SQL en lecture seule, carte, "
               "Smart Office, HTTP. On peut créer des outils SQL paramétrés, des fonctions UC ou des appels HTTP via une "
-              "connexion UC dans le Catalogue d'outils. Les outils qui écrivent ou envoient exigent une confirmation.",
+              "connexion UC dans le Tool Builder. Les outils qui écrivent ou envoient exigent une confirmation.",
     "equipes": "Une équipe regroupe des agents autour d'une mission. @équipe envoie la question au chef (agent coordinateur) "
                "qui consulte les membres et rend une synthèse. Un chef ne dirige qu'une équipe ; un membre peut appartenir à plusieurs.",
     "mentions": "Dans le chat, tapez @ pour adresser un message à un agent ou une équipe. Tab complète, plusieurs mentions "
@@ -78,7 +84,7 @@ GUIDE = {
                              "relit avec decrire_outil, se rejoue avec tester_outil et s'améliore avec ameliorer_outil "
                              "(nouvelle version). Outils HTTP : lister_connexions (connexion UC existante requise), puis "
                              "concevoir et vérifier ; un appel autre que GET n'est envoyé qu'après votre validation "
-                             "(tester_appel_http). Publication : Catalogue d'outils.",
+                             "(tester_appel_http). Publication : Tool Builder.",
     "chat": "Chat & Test permet d'essayer un agent, y compris en brouillon pour son propriétaire. Les appels d'outils sont "
             "visibles sous chaque réponse.",
 }

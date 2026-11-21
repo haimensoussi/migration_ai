@@ -4,7 +4,7 @@
 - Rien n'est publié : la publication reste dans les écrans de la plateforme (soumettre_publication la demande).
 - Agents : seul le propriétaire modifie ou archive ; un agent publié se modifie dans Agent Builder.
 - Équipes : règles du dépôt des équipes (créateur ou administrateur ; modification non-admin -> brouillon).
-- Outils : SQL paramétré ou fonction UC ; test réussi obligatoire avant enregistrement (comme le Catalogue d'outils).
+- Outils : SQL paramétré ou fonction UC ; test réussi obligatoire avant enregistrement (comme le Tool Builder).
 """
 from __future__ import annotations
 
@@ -339,10 +339,10 @@ def ameliorer_outil(ctx: ToolContext, outil: str, demande: str = "") -> dict:
     if s.owner != p.user:
         raise ToolError(f"Seul le propriétaire de « {s.tool_id} » peut le modifier.")
     if s.status == "publie":
-        raise ToolError(f"« {s.tool_id} » est publié : sa modification se fait dans le Catalogue d'outils "
+        raise ToolError(f"« {s.tool_id} » est publié : sa modification se fait dans le Tool Builder "
                         "(onglet Mes outils), pour ne pas interrompre les agents qui l'utilisent.")
     if _kind(s) not in HAKIM_TOOL_KINDS:
-        raise ToolError("Type d'outil non pris en charge par HakimAI : modifiez-le dans le Catalogue d'outils.")
+        raise ToolError("Type d'outil non pris en charge par HakimAI : modifiez-le dans le Tool Builder.")
     if not callable(p.tool_designer):
         raise ToolError("Assistant d'outils indisponible.")
     current = tb.draft_from_spec(s)
@@ -372,7 +372,7 @@ def creer_outil(ctx, p, brouillon_id: str) -> tuple:
         raise ToolError("Test réussi requis avant l'enregistrement : lancez verifier_outil.")
     cur = next((s for s in p.repo.list_tools() if s.tool_id == d["draft"]["tool_id"]), None)
     if cur is not None and cur.status == "publie":
-        raise ToolError(f"« {cur.tool_id} » est publié : sa modification se fait dans le Catalogue d'outils.")
+        raise ToolError(f"« {cur.tool_id} » est publié : sa modification se fait dans le Tool Builder.")
     before = {"version": cur.version, "statut": cur.status} if cur is not None else None
     spec = tb.build_spec(d["draft"], p.user, status="brouillon")
     v = p.repo.save_custom_tool(spec, p.user, d["test"],
@@ -380,7 +380,7 @@ def creer_outil(ctx, p, brouillon_id: str) -> tuple:
     return spec.tool_id, before, {"tool_id": spec.tool_id, "version": v, "statut": "brouillon"}, {
         "outil": spec.tool_id, "version": v, "statut": "brouillon", "nouvelle_version": cur is not None,
         "suite": "Tester dans un agent en brouillon (modifier_agent ajoute l'outil une fois publié), puis publier "
-                 "depuis le Catalogue d'outils (onglet Mes outils)."}
+                 "depuis le Tool Builder (onglet Mes outils)."}
 
 
 # --- Équipes ----------------------------------------------------------------------------------------------

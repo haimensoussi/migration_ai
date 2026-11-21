@@ -16,7 +16,7 @@ repo = state.repository()
 admins = set(state.settings().tool_admins)
 S.setdefault("fx_rev", 0)
 
-st.title("Flux")
+st.title("Flux Builder")
 st.caption("Flux Power Automate utilisables comme outils par les agents. L'agent dépose une demande dans une table "
            "Delta ; le flux la lit avec le connecteur Azure Databricks, l'exécute et y écrit sa réponse. Aucun appel "
            "sortant depuis Databricks.")
