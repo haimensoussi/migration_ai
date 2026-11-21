@@ -13,6 +13,7 @@ pages = {
     "Plateforme": [
         st.Page("views/accueil.py", title="Accueil", icon=":material/home:", default=True),
         st.Page("views/hakim.py", title="HakimAI", icon=":material/assistant:"),
+        st.Page("views/hakim_voix.py", title="HakimAI Voix", icon=":material/mic:"),
         st.Page("views/transformation.py", title="Transformation", icon=":material/route:"),
         st.Page("views/mes_agents.py", title="Mes agents", icon=":material/work:"),
         st.Page("views/equipes.py", title="Équipes", icon=":material/groups:"),

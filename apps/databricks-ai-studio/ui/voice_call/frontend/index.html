@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<style>
+  body { font-family: "Source Sans Pro", system-ui, sans-serif; margin: 0; color: #172342; }
+  .bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  button { border: 0; border-radius: 8px; padding: 10px 18px; font-size: 15px; cursor: pointer; }
+  #start { background: #B0124F; color: #fff; }
+  #stop { background: #4A1942; color: #fff; }
+  #mute { background: #F6F6F8; color: #4A1942; border: 1px solid #7A3E9D; }
+  button:disabled { opacity: .45; cursor: default; }
+  #status { font-size: 14px; color: #4A1942; }
+  #timer { font-size: 13px; color: #7A3E9D; margin-left: auto; }
+  #log { margin-top: 10px; max-height: 300px; overflow-y: auto; background: #F6F6F8; border-radius: 8px;
+         padding: 8px 12px; font-size: 14px; }
+  .l { margin: 4px 0; } .u b { color: #172342; } .a b { color: #B0124F; } .t { color: #7A3E9D; font-size: 12px; }
+  .err { color: #a00; }
+</style>
+</head>
+<body>
+<div class="bar">
+  <button id="start">Démarrer la conversation</button>
+  <button id="mute" disabled>Couper le micro</button>
+  <button id="stop" disabled>Raccrocher</button>
+  <span id="status">Prêt.</span>
+  <span id="timer"></span>
+</div>
+<div id="log"></div>
+<audio id="out" autoplay></audio>
+<script>
+(function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+  var S = { seq: 0, waitingSecret: false, usedNonce: null, pc: null, dc: null, mic: null, t0: 0, timer: null,
+            pending: {}, sent: {}, toolCount: 0, args: {} };
+
+  function post(type, data) {
+    var m = { isStreamlitMessage: true, type: type };
+    for (var k in (data || {})) { m[k] = data[k]; }
+    window.parent.postMessage(m, "*");
+  }
+  function height() { post("streamlit:setFrameHeight", { height: document.body.scrollHeight + 8 }); }
+  function emit(v) {
+    S.seq += 1; v.seq = S.seq + "_" + Date.now();
+    post("streamlit:setComponentValue", { value: v, dataType: "json" });
+    return v.seq;
+  }
+  function status(t, err) { var e = $("status"); e.textContent = t; e.className = err ? "err" : ""; height(); }
+  function line(cls, who, text) {
+    var d = document.createElement("div"); d.className = "l " + cls;
+    if (who) { var b = document.createElement("b"); b.textContent = who + " : "; d.appendChild(b); }
+    d.appendChild(document.createTextNode(text));
+    $("log").appendChild(d); $("log").scrollTop = 1e9; height();
+  }
+  function ui(active) { $("start").disabled = active; $("stop").disabled = !active; $("mute").disabled = !active; }
+  function dcSend(o) { if (S.dc && S.dc.readyState === "open") { S.dc.send(JSON.stringify(o)); } }
+
+  function pendingList() {
+    var out = [];
+    for (var id in S.pending) { out.push(S.pending[id]); }
+    return out;
+  }
+
+  function onToolCall(ev) {
+    S.toolCount += 1;
+    if (S.toolCount > (S.args.max_tool_calls || 20)) {
+      dcSend({ type: "conversation.item.create", item: { type: "function_call_output", call_id: ev.call_id,
+               output: JSON.stringify({ erreur: "Limite d'appels d'outils atteinte pour cette session." }) } });
+      dcSend({ type: "response.create" });
+      return;
+    }
+    S.pending[ev.call_id] = { call_id: ev.call_id, name: ev.name, arguments: ev.arguments || "{}" };
+    line("t", "", "Outil demandé : " + ev.name);
+    emit({ kind: "tools", calls: pendingList() });
+  }
+
+  function applyResults(results) {
+    var any = false;
+    (results || []).forEach(function (r) {
+      if (S.pending[r.call_id] && !S.sent[r.call_id]) {
+        dcSend({ type: "conversation.item.create", item: { type: "function_call_output", call_id: r.call_id, output: r.output } });
+        S.sent[r.call_id] = true; delete S.pending[r.call_id]; any = true;
+      }
+    });
+    if (any && pendingList().length === 0) { dcSend({ type: "response.create" }); }
+  }
+
+  function onEvent(msg) {
+    var ev; try { ev = JSON.parse(msg.data); } catch (e) { return; }
+    switch (ev.type) {
+      case "response.function_call_arguments.done": onToolCall(ev); break;
+      case "conversation.item.input_audio_transcription.completed": if (ev.transcript) { line("u", "Vous", ev.transcript.trim()); } break;
+      case "response.output_audio_transcript.done":
+      case "response.audio_transcript.done": if (ev.transcript) { line("a", "HakimAI", ev.transcript.trim()); } break;
+      case "error": line("err", "", "Erreur OpenAI : " + ((ev.error && ev.error.message) || "inconnue")); break;
+      default: break;
+    }
+  }
+
+  async function connect(secret) {
+    try {
+      status("Connexion…");
+      S.pc = new RTCPeerConnection();
+      S.pc.ontrack = function (e) { $("out").srcObject = e.streams[0]; };
+      S.pc.onconnectionstatechange = function () {
+        if (["failed", "disconnected"].indexOf(S.pc && S.pc.connectionState) >= 0) { hangup("Connexion audio perdue."); }
+      };
+      S.mic = await navigator.mediaDevices.getUserMedia({ audio: true });
+      S.mic.getTracks().forEach(function (t) { S.pc.addTrack(t, S.mic); });
+      S.dc = S.pc.createDataChannel("oai-events");
+      S.dc.onmessage = onEvent;
+      var offer = await S.pc.createOffer();
+      await S.pc.setLocalDescription(offer);
+      var r = await fetch(S.args.calls_url, { method: "POST", body: offer.sdp,
+        headers: { "Authorization": "Bearer " + secret, "Content-Type": "application/sdp" } });
+      if (!r.ok) { throw new Error("OpenAI HTTP " + r.status + " " + (await r.text()).slice(0, 200)); }
+      await S.pc.setRemoteDescription({ type: "answer", sdp: await r.text() });
+      S.t0 = Date.now(); ui(true); status("En conversation. Parlez.");
+      S.timer = setInterval(tick, 1000);
+    } catch (e) {
+      var m = String((e && e.message) || e);
+      if (m.indexOf("Permission") >= 0 || (e && e.name === "NotAllowedError")) { m = "Accès au micro refusé par le navigateur."; }
+      else if (e && e.name === "TypeError") { m = "api.openai.com injoignable depuis le poste (proxy ou pare-feu) : " + m; }
+      cleanup(); status(m, true); emit({ kind: "end", duration_s: 0, tool_calls: 0, error: m.slice(0, 300) });
+    }
+  }
+
+  function tick() {
+    var el = Math.floor((Date.now() - S.t0) / 1000), max = S.args.max_seconds || 300;
+    var rest = Math.max(0, max - el);
+    $("timer").textContent = "Temps restant " + Math.floor(rest / 60) + ":" + ("0" + (rest % 60)).slice(-2);
+    if (rest <= 0) { hangup("Durée maximale atteinte."); }
+  }
+
+  function cleanup() {
+    if (S.timer) { clearInterval(S.timer); S.timer = null; }
+    try { if (S.dc) { S.dc.close(); } } catch (e) {}
+    try { if (S.pc) { S.pc.close(); } } catch (e) {}
+    if (S.mic) { S.mic.getTracks().forEach(function (t) { t.stop(); }); }
+    S.pc = null; S.dc = null; S.mic = null; S.pending = {}; ui(false); $("timer").textContent = "";
+  }
+
+  function hangup(reason) {
+    if (!S.pc) { return; }
+    var dur = Math.floor((Date.now() - S.t0) / 1000), n = S.toolCount;
+    cleanup(); status(reason || "Conversation terminée.");
+    emit({ kind: "end", duration_s: dur, tool_calls: n });
+  }
+
+  $("start").onclick = function () {
+    if (!navigator.mediaDevices || !window.RTCPeerConnection) { status("Navigateur non compatible (WebRTC / micro).", true); return; }
+    S.waitingSecret = true; S.toolCount = 0; S.sent = {}; $("log").innerHTML = "";
+    $("start").disabled = true; status("Préparation de la session…");
+    S.startSeq = emit({ kind: "start" });
+  };
+  $("stop").onclick = function () { hangup(); };
+  $("mute").onclick = function () {
+    if (!S.mic) { return; }
+    var t = S.mic.getAudioTracks()[0]; t.enabled = !t.enabled;
+    $("mute").textContent = t.enabled ? "Couper le micro" : "Réactiver le micro";
+  };
+
+  window.addEventListener("message", function (e) {
+    var d = e.data || {};
+    if (d.type !== "streamlit:render") { return; }
+    S.args = d.args || {};
+    // seules les réponses à la demande en cours sont prises en compte (pas celles d'un rendu précédent)
+    if (S.waitingSecret && S.args.error && S.args.error.for === S.startSeq) {
+      S.waitingSecret = false; $("start").disabled = false; status(S.args.error.message, true);
+    } else if (S.waitingSecret && S.args.secret && S.args.secret.nonce === S.startSeq && S.usedNonce !== S.startSeq) {
+      S.waitingSecret = false; S.usedNonce = S.args.secret.nonce; connect(S.args.secret.value);
+    }
+    applyResults(S.args.results);
+    height();
+  });
+  window.addEventListener("beforeunload", function () { cleanup(); });
+  post("streamlit:componentReady", { apiVersion: 1 });
+  height();
+})();
+</script>
+</body>
+</html>

@@ -35,5 +35,18 @@ env:
   # Administrateurs des équipes : seuls habilités à publier une équipe d'agents
   - name: AI_STUDIO_TEAM_ADMINS
     value: "phsi10251@commun.ad.sncf.fr"
+  # HakimAI Voix (prototype gpt-realtime, lecture seule) : désactivé tant que la clé, le réseau et l'accord
+  # sécurité ne sont pas en place. La clé vient de la ressource secret « openai-key » (jamais en clair ici).
+  - name: AI_STUDIO_VOICE_ENABLED
+    value: "false"
+  # À décommenter APRÈS avoir ajouté la ressource secret « openai-key » à l'App (sinon le déploiement échoue).
+  # - name: OPENAI_API_KEY
+  #   valueFrom: openai-key
+  - name: AI_STUDIO_VOICE_MODEL
+    value: gpt-realtime
+  - name: AI_STUDIO_VOICE_MAX_SECONDS
+    value: "300"
+  - name: AI_STUDIO_VOICE_MAX_TOOL_CALLS
+    value: "20"
   - name: STREAMLIT_BROWSER_GATHER_USAGE_STATS
     value: "false"
