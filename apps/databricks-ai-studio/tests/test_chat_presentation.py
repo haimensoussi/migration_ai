@@ -90,7 +90,7 @@ def panel(monkeypatch):
         logged = {}
         state.repository = lambda: types.SimpleNamespace(
             log_tool_call=lambda *a: None,
-            log_messages=lambda conv, cfg, *a: logged.setdefault("cfg", cfg) and 1)
+            log_messages=lambda conv, cfg, *a, **k: logged.setdefault("cfg", cfg) and 1)
         state.build_runtime = lambda **k: runtime
         state.build_runtime_for = lambda cfg, **k: (runtime, cfg, [])
         state.mentionable_agents = lambda: []
@@ -184,7 +184,7 @@ def mention_panel(monkeypatch):
                                             {"agent_id": "dq", "name": "Data Quality Advisor", "category": "Qualité des données"}]
         state.repository = lambda: types.SimpleNamespace(
             get_config=lambda aid: cfgs.get(aid), log_tool_call=lambda *a: None,
-            log_messages=lambda conv, c, u, msgs, idx, lat: log["msgs"].append((c.agent_id, [m["content"] for m in msgs])) or idx + len(msgs))
+            log_messages=lambda conv, c, u, msgs, idx, lat, usage=None: log["msgs"].append((c.agent_id, [m["content"] for m in msgs])) or idx + len(msgs))
 
         def build(c, **k):
             rt = Runtime(answers[c.agent_id])

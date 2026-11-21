@@ -97,7 +97,8 @@ def handle(res, logged_prefix: list[dict], warnings: list[dict] | None = None) -
         for ev in res.events:
             repo.log_tool_call(s["conv"], hakim.AGENT_ID, user, ev)
         s["logged"] = repo.log_messages(s["conv"], hakim.config(state.settings().default_model), user,
-                                        logged_prefix + list(res.new_messages), s["logged"], res.latency_ms)
+                                        logged_prefix + list(res.new_messages), s["logged"], res.latency_ms,
+                                        usage=res.usage)
     except Exception:  # noqa: BLE001
         pass
 

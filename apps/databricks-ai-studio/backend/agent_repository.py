@@ -27,6 +27,22 @@ def with_default_tools(tool_ids: list | None) -> list:
 
 CREATED_EXECUTORS = ("tools.custom_tools:", "tools.flow_tools:call_flow")
 
+# T103 : jetons du tour (format OpenAI renvoyé par Model Serving)
+TOKEN_KEYS = ("prompt_tokens", "completion_tokens", "total_tokens")
+
+
+def token_counts(usage: dict | None) -> dict:
+    """{prompt, completion, total} entiers ou None ; total recalculé si le modèle ne le fournit pas."""
+    u = usage or {}
+
+    def num(k):
+        v = u.get(k)
+        return int(v) if isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 0 else None
+    p, c, t = (num(k) for k in TOKEN_KEYS)
+    if t is None and p is not None and c is not None:
+        t = p + c
+    return {"prompt_tokens": p, "completion_tokens": c, "total_tokens": t}
+
 
 def _no_direct_publish(status: str | None) -> None:
     """Agentic Mesh phase 2 : un agent n'est publié que par backend.publication (validation traçée)."""
@@ -276,22 +292,31 @@ class AgentRepository:
         return int(r["rows"][0]["i"])
 
     def log_messages(self, conversation_id: str, cfg: AgentConfig, user: str, messages: list[dict],
-                     start_index: int, latency_ms: int | None = None) -> int:
+                     start_index: int, latency_ms: int | None = None, usage: dict | None = None) -> int:
+        """usage : jetons consommés par le tour (TurnResult.usage), portés comme la latence par la réponse finale."""
         rows, params = [], {"c": conversation_id, "a": cfg.agent_id, "v": cfg.version, "u": user}
+        model = getattr(cfg, "model_endpoint", None)
         # La latence du tour n'est portée que par la réponse finale (dernier message assistant sans appel d'outil)
         final = max((i for i, m in enumerate(messages) if m["role"] == "assistant" and not m.get("tool_calls")),
                     default=None)
+        tok = token_counts(usage)
         for i, m in enumerate(messages):
             content = m.get("content") or ""
             if m.get("tool_calls"):
                 content = json.dumps({"content": content, "tool_calls": m["tool_calls"]}, ensure_ascii=False)
+            fin = i == final
             params.update({f"i{i}": start_index + i, f"r{i}": m["role"], f"t{i}": content[:20000],
-                           f"l{i}": latency_ms if i == final else None})
-            rows.append(f"(:c, CAST(:i{i} AS INT), :a, CAST(:v AS INT), :u, :r{i}, :t{i}, CAST(:l{i} AS BIGINT), current_timestamp())")
+                           f"l{i}": latency_ms if fin else None, f"pt{i}": tok["prompt_tokens"] if fin else None,
+                           f"ct{i}": tok["completion_tokens"] if fin else None,
+                           f"tt{i}": tok["total_tokens"] if fin else None,
+                           f"me{i}": model if m["role"] == "assistant" else None})
+            rows.append(f"(:c, CAST(:i{i} AS INT), :a, CAST(:v AS INT), :u, :r{i}, :t{i}, CAST(:l{i} AS BIGINT), "
+                        f"current_timestamp(), CAST(:pt{i} AS BIGINT), CAST(:ct{i} AS BIGINT), CAST(:tt{i} AS BIGINT), "
+                        f"CAST(:me{i} AS STRING))")
         if rows:
             self.sql.execute(f"INSERT INTO {self.s.table('conversations')} (conversation_id, message_index, agent_id, "
-                             "agent_version, user_name, role, content, latency_ms, created_at) VALUES "
-                             + ", ".join(rows), params)
+                             "agent_version, user_name, role, content, latency_ms, created_at, prompt_tokens, "
+                             "completion_tokens, total_tokens, model_endpoint) VALUES " + ", ".join(rows), params)
         return start_index + len(rows)
 
     def log_tool_call(self, conversation_id: str, agent_id: str, user: str, ev: ToolEvent) -> None:

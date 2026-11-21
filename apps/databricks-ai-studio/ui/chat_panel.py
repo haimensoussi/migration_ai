@@ -241,11 +241,12 @@ def render_chat(cfg: AgentConfig, key: str, persist: bool = True, category: str 
         s["orch_warnings"] = warns
         return rt_, exec_cfg
 
-    def log_msgs(speaker: AgentConfig, msgs: list[dict], latency):
+    def log_msgs(speaker: AgentConfig, msgs: list[dict], latency, usage=None):
         if not persist:
             return
         try:
-            s["next_index"] = repo.log_messages(s["conversation_id"], speaker, user.email, msgs, s["next_index"], latency)
+            s["next_index"] = repo.log_messages(s["conversation_id"], speaker, user.email, msgs, s["next_index"], latency,
+                                                usage=usage)
         except Exception as e:  # noqa: BLE001
             st.warning(f"Historique non enregistré : {e}")
 
@@ -273,7 +274,7 @@ def render_chat(cfg: AgentConfig, key: str, persist: bool = True, category: str 
             s["display"].append({"kind": "msg", "role": "assistant", "content": text, "agent": speaker.name,
                                  "team": team, "chips": chips_for(turn_events, cat)})
         log_msgs(speaker, ([log_user] if log_user else []) + [m for m in res.new_messages if m["role"] != "system"],
-                 res.latency_ms)
+                 res.latency_ms, getattr(res, "usage", None))
         return res
 
     def fail(speaker_name: str, cat, e: Exception):

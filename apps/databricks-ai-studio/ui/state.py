@@ -117,7 +117,7 @@ def build_runtime_for(cfg, on_tool_event=None, conversation_id: str = "", on_sub
 
 def team_repository():
     from backend.team_repository import TeamRepository
-    return TeamRepository(repository())
+    return TeamRepository(repository(), publication_service())
 
 
 def teams(force: bool = False) -> list[dict]:

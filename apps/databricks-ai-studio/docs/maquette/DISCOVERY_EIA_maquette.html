@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>DISCOVERY — Entreprise Intelligente Augmentée (maquette)</title>
+<style>
+  :root{--fr:#B0124F;--pr:#4A1942;--vi:#7A3E9D;--bg:#F6F6F8;--li:#E6E3EA;--tx:#26212B;--mu:#6E6875;--ok:#2E7D5B;--wa:#C27C0E;--ko:#B3261E}
+  *{box-sizing:border-box} body{margin:0;font-family:"Segoe UI",Arial,sans-serif;background:var(--bg);color:var(--tx);font-size:14px}
+  .app{display:grid;grid-template-columns:240px 1fr;min-height:100vh}
+  nav{background:var(--pr);color:#fff;padding:18px 0}
+  .brand{padding:0 20px 18px;border-bottom:1px solid rgba(255,255,255,.15)}
+  .brand b{font-size:20px;letter-spacing:2px} .brand small{display:block;opacity:.75;margin-top:2px}
+  .grp{padding:14px 20px 4px;font-size:11px;text-transform:uppercase;letter-spacing:1px;opacity:.6}
+  .it{display:flex;align-items:center;gap:10px;padding:9px 20px;cursor:pointer;border-left:3px solid transparent}
+  .it:hover{background:rgba(255,255,255,.08)} .it.on{background:rgba(255,255,255,.14);border-left-color:var(--fr)}
+  .dot{width:8px;height:8px;border-radius:50%;background:#fff;opacity:.5} .it.on .dot{background:var(--fr);opacity:1}
+  .new{margin-left:auto;font-size:10px;background:var(--fr);padding:1px 6px;border-radius:8px}
+  .old{margin-left:auto;font-size:10px;opacity:.55}
+  main{padding:0 28px 40px}
+  .top{display:flex;align-items:center;justify-content:space-between;padding:18px 0 10px}
+  .top h1{margin:0;font-size:22px;color:var(--pr)} .top p{margin:2px 0 0;color:var(--mu)}
+  .warn{background:#FFF4E5;border:1px solid #F3D19C;color:#7A4B00;padding:7px 12px;border-radius:8px;font-size:12px;margin:6px 0 14px}
+  .btn{border:0;border-radius:8px;padding:8px 14px;font-weight:600;cursor:pointer;background:var(--fr);color:#fff}
+  .btn.s{background:#fff;color:var(--pr);border:1px solid var(--li)} .btn.sm{padding:4px 10px;font-size:12px}
+  .g{display:grid;gap:14px} .g4{grid-template-columns:repeat(4,1fr)} .g3{grid-template-columns:repeat(3,1fr)} .g2{grid-template-columns:1fr 1fr} .g21{grid-template-columns:2fr 1fr} .g12{grid-template-columns:1fr 2fr}
+  .card{background:#fff;border:1px solid var(--li);border-radius:12px;padding:16px}
+  .card h3{margin:0 0 10px;font-size:15px;color:var(--pr)}
+  .kpi .v{font-size:28px;font-weight:700;color:var(--pr)} .kpi .l{color:var(--mu);font-size:12px} .kpi .s{font-size:12px;margin-top:4px}
+  .tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:10px;background:var(--li);color:var(--pr);margin:2px 2px 0 0}
+  .tag.r{background:#E8F3EE;color:var(--ok)} .tag.w{background:#FFF1DC;color:var(--wa)} .tag.k{background:#FBE7E6;color:var(--ko)} .tag.f{background:#F8E3EB;color:var(--fr)}
+  table{width:100%;border-collapse:collapse} th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--li);font-size:13px} th{color:var(--mu);font-weight:600;font-size:12px}
+  .bar{height:8px;background:var(--li);border-radius:4px;overflow:hidden} .bar i{display:block;height:100%;background:linear-gradient(90deg,var(--vi),var(--fr))}
+  .real{font-size:10px;color:var(--ok);font-weight:700;margin-left:4px}
+  .view{display:none} .view.on{display:block}
+  .chat{display:flex;flex-direction:column;gap:10px;max-height:430px;overflow:auto}
+  .msg{padding:10px 12px;border-radius:10px;max-width:92%} .msg.u{align-self:flex-end;background:var(--pr);color:#fff} .msg.a{background:#F3EEF6}
+  .input{display:flex;gap:8px;margin-top:10px} .input input{flex:1;border:1px solid var(--li);border-radius:8px;padding:9px}
+  .reco{border:1px solid var(--li);border-left:4px solid var(--vi);border-radius:10px;padding:12px;margin-bottom:10px;background:#fff}
+  .reco .h{display:flex;justify-content:space-between;align-items:center} .reco b{color:var(--pr)}
+  .src{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed var(--li);font-size:13px}
+  .tree{font-size:13px} .tree .n{padding:6px 8px;border-radius:8px;cursor:pointer;margin:2px 0} .tree .n:hover,.tree .n.on{background:#F3EEF6}
+  .tree .l1{margin-left:16px} .tree .l2{margin-left:32px}
+  .mem{display:flex;align-items:center;gap:10px;padding:8px;border:1px solid var(--li);border-radius:10px;margin-bottom:8px}
+  .av{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:13px}
+  .av.h{background:#8D8794} .av.a{background:var(--vi)} .av.c{background:var(--fr)}
+  .flow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 0}
+  .step{border:1px solid var(--li);background:#fff;border-radius:10px;padding:10px 12px;min-width:130px;font-size:12px}
+  .step b{display:block;color:var(--pr);font-size:13px} .arrow{color:var(--vi);font-weight:700}
+  .tabs{display:flex;gap:6px;margin-bottom:12px} .tab{padding:6px 12px;border-radius:16px;background:#fff;border:1px solid var(--li);cursor:pointer;font-size:12px} .tab.on{background:var(--pr);color:#fff;border-color:var(--pr)}
+  .mut{color:var(--mu);font-size:12px}
+  svg text{font-family:"Segoe UI",Arial,sans-serif}
+  .pane{display:none} .pane.on{display:block}
+  .lane{display:grid;grid-template-columns:170px 1fr;gap:10px;align-items:center;padding:8px 0;border-bottom:1px dashed var(--li)}
+  .lane h4{margin:0;font-size:13px;color:var(--pr)}
+  .step.pain{border-color:var(--ko);background:#FFF8F7} .step.new{border:2px dashed var(--fr);background:#FDF3F7} .step.hum{border-color:#8D8794}
+  .who{display:block;font-size:11px;color:var(--mu);margin-top:3px}
+  .sim label{display:block;font-size:12px;color:var(--mu);margin-top:10px} .sim input[type=range]{width:100%;accent-color:var(--fr)}
+  .sim output{float:right;font-weight:700;color:var(--pr)}
+  .res{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--li)} .res b{color:var(--pr)}
+  .ok{color:var(--ok);font-weight:700} .ko{color:var(--ko);font-weight:700}
+  .legend span{display:inline-flex;align-items:center;gap:5px;margin-right:12px;font-size:12px} .legend i{width:12px;height:12px;border-radius:3px;display:inline-block}
+  .twin svg .nd{cursor:pointer} .twin svg .nd:hover circle,.twin svg .nd:hover rect{stroke:#26212B;stroke-width:2}
+  .seg{display:inline-flex;border:1px solid var(--li);border-radius:8px;overflow:hidden} .seg button{border:0;background:#fff;padding:7px 14px;cursor:pointer;font-weight:600;color:var(--pr)} .seg button.on{background:var(--pr);color:#fff}
+  .chk{font-size:12px;margin-right:10px}
+</style>
+</head>
+<body>
+<div class="app">
+<nav>
+  <div class="brand"><b>DISCOVERY</b><small>SNCF Réseau — Entreprise Intelligente Augmentée</small></div>
+  <div class="grp">Entreprise intelligente</div>
+  <div class="it" data-v="parcours"><span class="dot"></span>Parcours EIA<span class="new">guide</span></div>
+  <div class="it on" data-v="cockpit"><span class="dot"></span>Enterprise Cockpit<span class="new">nouveau</span></div>
+  <div class="it" data-v="transfo"><span class="dot"></span>Transformation<span class="new">évolué</span></div>
+  <div class="it" data-v="jumeau"><span class="dot"></span>Jumeau intelligent<span class="new">nouveau</span></div>
+  <div class="it" data-v="studio"><span class="dot"></span>Enterprise Studio<span class="new">nouveau</span></div>
+  <div class="it" data-v="auto"><span class="dot"></span>Automation Studio<span class="new">évolué</span></div>
+  <div class="it" data-v="mesh"><span class="dot"></span>Agent Mesh<span class="new">nouveau</span></div>
+  <div class="grp">Construire</div>
+  <div class="it" data-v="exist"><span class="dot"></span>HakimAI<span class="old">existant</span></div>
+  <div class="it" data-v="exist"><span class="dot"></span>Agent Builder<span class="old">existant</span></div>
+  <div class="it" data-v="exist"><span class="dot"></span>Mes agents<span class="old">existant</span></div>
+  <div class="it" data-v="toolb"><span class="dot"></span>Tool Builder<span class="old">existant</span></div>
+  <div class="it" data-v="fluxb"><span class="dot"></span>Flux Builder<span class="old">existant</span></div>
+  <div class="it" data-v="mkt"><span class="dot"></span>Marketplace outils et flux<span class="old">existant</span></div>
+  <div class="grp">Gouverner</div>
+  <div class="it" data-v="exist"><span class="dot"></span>Validation<span class="old">existant</span></div>
+  <div class="it" data-v="exist"><span class="dot"></span>Monitoring<span class="old">existant</span></div>
+  <div class="it" data-v="exist"><span class="dot"></span>Paramètres<span class="old">existant</span></div>
+</nav>
+
+<main>
+<div class="warn">Maquette de conception fonctionnelle, non développée. Les valeurs marquées <span class="real">RÉEL</span> viennent de dataops_dev.ai_studio (21/11/2026) ; toutes les autres sont illustratives et doivent être validées.</div>
+
+<!-- ============ COCKPIT ============ -->
+<section class="view on" id="cockpit">
+  <div class="top"><div><h1>Enterprise Cockpit</h1><p>Pilotage de l'entreprise intelligente : équipes, agents, outils, flux, coûts et gains.</p></div>
+    <div><button class="btn s">Périmètre : tous domaines</button> <button class="btn s">30 derniers jours</button></div></div>
+  <div class="g g4">
+    <div class="card kpi"><div class="l">Agents publiés<span class="real">RÉEL</span></div><div class="v">8 / 11</div><div class="s mut">3 en brouillon</div></div>
+    <div class="card kpi"><div class="l">Équipes intelligentes<span class="real">RÉEL</span></div><div class="v">2</div><div class="s mut">0 équipe hybride (humains + agents)</div></div>
+    <div class="card kpi"><div class="l">Flux d'automatisation</div><div class="v">6</div><div class="s mut">2 Power Automate, 4 Lakeflow Jobs</div></div>
+    <div class="card kpi"><div class="l">Gain de productivité</div><div class="v" style="color:var(--wa)">—</div><div class="s"><span class="tag w">situation de départ à mesurer</span></div></div>
+  </div>
+  <div class="g g21" style="margin-top:14px">
+    <div class="card"><h3>Maturité de transformation par domaine</h3>
+      <table><tr><th>Domaine</th><th>Cas d'usage couverts</th><th>Agents</th><th>Flux</th><th style="width:35%">Maturité</th></tr>
+        <tr><td>Supply Chain <span class="tag f">pilote</span></td><td>3 / 12</td><td>2</td><td>2</td><td><div class="bar"><i style="width:38%"></i></div></td></tr>
+        <tr><td>PTE</td><td>1 / 9</td><td>1</td><td>1</td><td><div class="bar"><i style="width:18%"></i></div></td></tr>
+        <tr><td>UDR</td><td>0 / 7</td><td>0</td><td>0</td><td><div class="bar"><i style="width:6%"></i></div></td></tr>
+        <tr><td>Transverse</td><td>2 / 5</td><td>8</td><td>3</td><td><div class="bar"><i style="width:52%"></i></div></td></tr>
+      </table>
+      <p class="mut">Maturité = part des cas d'usage validés ayant au moins un agent ou un flux publié et un indicateur suivi (formule à valider).</p></div>
+    <div class="card"><h3>Points d'attention</h3>
+      <div class="src"><span>Coûts par agent indisponibles</span><span class="tag k">tables système</span></div>
+      <div class="src"><span>Responsables de domaine non désignés<span class="real">RÉEL</span></span><span class="tag w">4 / 4</span></div>
+      <div class="src"><span>Recommandations en attente</span><span class="tag w">5</span></div>
+      <div class="src"><span>Flux en échec (7 j)</span><span class="tag k">1</span></div>
+      <div class="src"><span>Appels d'outils en échec<span class="real">RÉEL</span></span><span class="tag w">23 / 246</span></div>
+    </div>
+  </div>
+  <div class="g g3" style="margin-top:14px">
+    <div class="card"><h3>Performance des agents<span class="real">RÉEL</span></h3><table><tr><th>Agent</th><th>Conv. avec outils</th><th>Succès outils</th></tr>
+      <tr><td>Margot</td><td>7</td><td>100 %</td></tr><tr><td>Clara</td><td>5</td><td>86 %</td></tr><tr><td>Victor</td><td>4</td><td>78 %</td></tr><tr><td>Jules</td><td>3</td><td>100 %</td></tr></table>
+      <p class="mut">30 derniers jours, depuis tool_calls ; faibles volumes, taux peu significatifs.</p></div>
+    <div class="card"><h3>Retour sur investissement</h3><p class="mut">Calculé uniquement quand une situation de départ validée par le métier existe (temps, volume, coût).</p>
+      <div class="src"><span>Cas d'usage avec situation de départ</span><b>0</b></div><div class="src"><span>Gains mesurés</span><b>—</b></div>
+      <button class="btn sm" style="margin-top:8px">Saisir une situation de départ</button></div>
+    <div class="card"><h3>Coûts</h3><p class="mut">Jetons enregistrés depuis T103 ; conversion en euros quand l'accès à system.billing sera accordé.</p>
+      <div class="src"><span>Jetons consommés (30 j)</span><b>—</b></div><div class="src"><span>DBU (30 j)</span><span class="tag k">accès requis</span></div></div>
+  </div>
+</section>
+
+<!-- ============ TRANSFORMATION ============ -->
+<section class="view" id="transfo">
+  <div class="top"><div><h1>Enterprise Transformation</h1><p>HakimAI analyse les données autorisées et propose ; vous validez ; DISCOVERY construit.</p></div>
+    <div><button class="btn s">Domaine : Supply Chain</button> <button class="btn">Nouvelle analyse</button></div></div>
+  <div class="tabs" data-panes>
+    <span class="tab on" data-t="analyse">1. Analyse et dialogue</span><span class="tab" data-t="asis">2. AS-IS généré</span><span class="tab" data-t="tobe">3. TO-BE proposé</span><span class="tab" data-t="ecarts">4. Écarts</span><span class="tab" data-t="simu">5. Simulation</span>
+  </div>
+  <div class="pane on" data-pane="analyse">
+  <div class="g g12">
+    <div>
+      <div class="card"><h3>Sources consultées (avec vos droits)</h3>
+        <div class="src"><span>Organigramme</span><span class="tag w">à importer</span></div>
+        <div class="src"><span>Cas d'usage déjà identifiés</span><span class="tag r">HakimAI Transformation</span></div>
+        <div class="src"><span>Documentation interne</span><span class="tag r">Knowledge Assistant</span></div>
+        <div class="src"><span>Données opérationnelles</span><span class="tag r">Unity Catalog</span></div>
+        <div class="src"><span>Applications SI</span><span class="tag w">inventaire à créer</span></div>
+        <div class="src"><span>Indicateurs</span><span class="tag r">Genie / AI-BI</span></div>
+        <div class="src"><span>Flux existants</span><span class="tag r">Flux + Jobs</span></div>
+      </div>
+      <div class="card" style="margin-top:14px"><h3>Plan de construction</h3>
+        <div class="src"><span>Agent « Suivi des commandes »</span><span class="tag">à créer</span></div>
+        <div class="src"><span>Équipe hybride Approvisionnement</span><span class="tag">à créer</span></div>
+        <div class="src"><span>Flux relance fournisseur</span><span class="tag r">construit</span></div>
+        <button class="btn sm" style="margin-top:10px">Lancer la construction validée</button></div>
+    </div>
+    <div class="g g2">
+      <div class="card"><h3>Dialogue HakimAI</h3><div class="chat">
+        <div class="msg u">Quelles opportunités d'IA pour le suivi des commandes Supply Chain ?</div>
+        <div class="msg a">J'ai consulté les vues data_demo_sc_commandes et data_demo_sc_fournisseurs<span class="real">RÉEL</span>. Je n'ai pas d'organigramme ni de cas d'usage validé pour ce domaine : mes propositions restent à confirmer. J'en propose 3, listées à droite.</div>
+        <div class="msg u">Détaille la relance fournisseur.</div>
+        <div class="msg a">Flux déclenché par l'agent quand une commande dépasse sa date prévue ; validation humaine avant envoi ; gain à estimer avec le nombre de relances manuelles actuelles (donnée manquante).</div>
+      </div><div class="input"><input placeholder="Posez une question ou demandez une analyse…"><button class="btn">Envoyer</button></div></div>
+      <div class="card"><h3>Recommandations</h3>
+        <div class="reco"><div class="h"><b>Agent de suivi des commandes</b><span class="tag w">à valider</span></div>
+          <p class="mut">Type : agent · Outils : SQL, rapport · Données : commandes, fournisseurs</p>
+          <button class="btn sm">Valider</button> <button class="btn s sm">Modifier</button> <button class="btn s sm">Rejeter</button></div>
+        <div class="reco"><div class="h"><b>Flux de relance fournisseur</b><span class="tag w">à valider</span></div>
+          <p class="mut">Type : flux avec validation humaine · Moteur : Power Automate (mode local)</p>
+          <button class="btn sm">Valider</button> <button class="btn s sm">Modifier</button> <button class="btn s sm">Rejeter</button></div>
+        <div class="reco"><div class="h"><b>Équipe hybride Approvisionnement</b><span class="tag r">validée</span></div>
+          <p class="mut">1 responsable humain (à désigner) + 2 agents · Gain : non chiffré</p>
+          <button class="btn sm">Ajouter au plan</button></div>
+      </div>
+    </div>
+  </div>
+  </div>
+
+  <!-- AS-IS -->
+  <div class="pane" data-pane="asis">
+    <div class="g g21">
+      <div class="card"><h3>Représentation AS-IS — Supply Chain / Approvisionnement <span class="tag w">à confirmer</span></h3>
+        <p class="mut">Générée par HakimAI à partir du jumeau, des tables autorisées et de la documentation indexée. Chaque élément indique sa source ; ce qui n'a pas de source est une hypothèse.</p>
+        <div class="lane"><h4>Suivi des commandes<br><span class="mut">cas d'usage (exemple)</span></h4><div class="flow">
+          <div class="step hum"><b>Extraire les retards</b>manuel, tableur<span class="who">Gestionnaire achats · hypothèse</span></div><span class="arrow">→</span>
+          <div class="step"><b>Consulter les commandes</b>data_demo_sc_commandes<span class="real">RÉEL</span><span class="who">source : Unity Catalog</span></div><span class="arrow">→</span>
+          <div class="step pain"><b>Qualifier le retard</b>sans indicateur suivi<span class="who">irritant détecté</span></div></div></div>
+        <div class="lane"><h4>Relance fournisseur<br><span class="mut">cas d'usage (exemple)</span></h4><div class="flow">
+          <div class="step"><b>Identifier le fournisseur</b>data_demo_sc_fournisseurs<span class="real">RÉEL</span><span class="who">source : Unity Catalog</span></div><span class="arrow">→</span>
+          <div class="step pain"><b>Rédiger la relance</b>e-mail manuel, répétitif<span class="who">irritant · volume à mesurer</span></div><span class="arrow">→</span>
+          <div class="step hum"><b>Suivre la réponse</b>boîte mail<span class="who">Gestionnaire achats · hypothèse</span></div></div></div>
+        <div style="margin-top:10px"><button class="btn sm">Confirmer l'AS-IS</button> <button class="btn s sm">Corriger</button> <button class="btn s sm">Voir dans le jumeau</button></div>
+      </div>
+      <div>
+        <div class="card"><h3>Synthèse du diagnostic</h3>
+          <div class="src"><span>Cas d'usage décrits</span><b>2 (exemples)</b></div>
+          <div class="src"><span>Activités manuelles</span><b>3</b></div>
+          <div class="src"><span>Irritants détectés</span><span class="tag k">2</span></div>
+          <div class="src"><span>Applications identifiées</span><span class="tag w">à inventorier</span></div>
+          <div class="src"><span>Indicateurs suivis</span><span class="tag k">0</span></div></div>
+        <div class="card" style="margin-top:14px"><h3>Sources et confiance</h3>
+          <div class="src"><span>Tables Unity Catalog</span><span class="tag r">2 lues</span></div>
+          <div class="src"><span>Documentation</span><span class="tag w">non indexée</span></div>
+          <div class="src"><span>Organigramme</span><span class="tag w">non importé</span></div>
+          <p class="mut">Confiance faible tant que l'organigramme et les cas d'usage ne sont pas confirmés par leur responsable.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TO-BE -->
+  <div class="pane" data-pane="tobe">
+    <div class="g g21">
+      <div class="card"><h3>Architecture intelligente cible (TO-BE) <span class="tag w">proposée</span></h3>
+        <p class="mut">Cadres en pointillés framboise : éléments nouveaux. L'humain garde la décision à chaque envoi.</p>
+        <div class="lane"><h4>Suivi des commandes</h4><div class="flow">
+          <div class="step new"><b>Détecter les retards</b>chaque jour<span class="who">Flux planifié · Lakeflow Jobs</span></div><span class="arrow">→</span>
+          <div class="step new"><b>Qualifier le retard</b>analyse + indicateur<span class="who">Agent Suivi des commandes</span></div><span class="arrow">→</span>
+          <div class="step"><b>Contrôler les données</b>complétude, doublons<span class="who">Clara<span class="real">RÉEL</span> · partagée</span></div></div></div>
+        <div class="lane"><h4>Relance fournisseur</h4><div class="flow">
+          <div class="step new"><b>Préparer la relance</b>brouillon<span class="who">Agent Suivi des commandes</span></div><span class="arrow">→</span>
+          <div class="step hum"><b>Valider</b>avant envoi<span class="who">Gestionnaire achats</span></div><span class="arrow">→</span>
+          <div class="step new"><b>Envoyer et tracer</b>Outlook<span class="who">Flux Power Automate</span></div></div></div>
+        <div class="lane"><h4>Équipe hybride</h4><div>
+          <span class="tag">Responsable (à désigner)</span><span class="tag">Gestionnaire achats</span><span class="tag f">Chef d'équipe agent</span><span class="tag f">Agent Suivi des commandes</span><span class="tag">Clara</span><span class="tag f">2 flux</span></div></div>
+        <div style="margin-top:10px"><button class="btn sm">Simuler cette organisation</button> <button class="btn s sm">Voir dans le jumeau</button> <button class="btn s sm">Proposer une variante</button></div>
+      </div>
+      <div class="card"><h3>Composition proposée</h3>
+        <div class="src"><span>Agents à créer</span><b>2</b></div>
+        <div class="src"><span>Agents réutilisés</span><b>1 (Clara)</b></div>
+        <div class="src"><span>Équipe hybride</span><b>1</b></div>
+        <div class="src"><span>Flux</span><b>2 (1 planifié, 1 avec validation)</b></div>
+        <div class="src"><span>Outils / connecteurs</span><b>SQL, rapport, Outlook</b></div>
+        <div class="src"><span>Indicateurs à suivre</span><b>délai, taux de relance</b></div>
+        <p class="mut">Toute la composition reste « proposée » jusqu'à la décision du responsable de domaine.</p></div>
+    </div>
+  </div>
+
+  <!-- ECARTS -->
+  <div class="pane" data-pane="ecarts">
+    <div class="card"><h3>Écarts AS-IS → TO-BE</h3><table>
+      <tr><th>Activité</th><th>AS-IS</th><th>TO-BE</th><th>Changement</th><th>Prérequis</th><th>Décision</th></tr>
+      <tr><td>Extraire les retards</td><td>Humain, tableur</td><td>Flux planifié</td><td><span class="tag f">automatisation</span></td><td>Règle de retard validée</td><td><span class="tag w">à valider</span></td></tr>
+      <tr><td>Qualifier le retard</td><td>Humain, sans indicateur</td><td>Agent + indicateur</td><td><span class="tag f">nouvel agent</span></td><td>Définition de l'indicateur</td><td><span class="tag w">à valider</span></td></tr>
+      <tr><td>Contrôler les données</td><td>Aucun</td><td>Clara (partagée)</td><td><span class="tag">réutilisation</span></td><td>Partage entre domaines (T207)</td><td><span class="tag w">à valider</span></td></tr>
+      <tr><td>Rédiger la relance</td><td>Humain, e-mail</td><td>Agent, brouillon</td><td><span class="tag f">augmentation</span></td><td>Modèle de relance</td><td><span class="tag w">à valider</span></td></tr>
+      <tr><td>Valider l'envoi</td><td>—</td><td>Gestionnaire achats</td><td><span class="tag r">contrôle humain</span></td><td>Responsable désigné</td><td><span class="tag k">bloquant</span></td></tr>
+      <tr><td>Envoyer</td><td>Humain</td><td>Flux Power Automate</td><td><span class="tag f">automatisation</span></td><td>Power Automate sur serveur</td><td><span class="tag k">bloquant</span></td></tr>
+    </table></div>
+  </div>
+
+  <!-- SIMULATION -->
+  <div class="pane" data-pane="simu">
+    <div class="warn">Modèle de simulation illustratif. Toutes les valeurs d'entrée sont des hypothèses à remplacer par la situation de départ mesurée et validée.</div>
+    <div class="g g3">
+      <div class="card sim"><h3>1. Hypothèses</h3>
+        <label>Commandes en retard par mois <output id="o_vol"></output></label><input type="range" id="s_vol" min="20" max="1000" step="10" value="200">
+        <label>Temps manuel par relance (min) <output id="o_tm"></output></label><input type="range" id="s_tm" min="2" max="60" value="15">
+        <label>Part préparée par l'agent (%) <output id="o_p"></output></label><input type="range" id="s_p" min="0" max="100" step="5" value="70">
+        <label>Temps de validation humaine (min) <output id="o_tv"></output></label><input type="range" id="s_tv" min="0" max="15" value="2">
+        <label>Jetons par traitement <output id="o_tk"></output></label><input type="range" id="s_tk" min="1000" max="30000" step="500" value="8000">
+      </div>
+      <div class="card"><h3>2. Charge et coût simulés</h3>
+        <div class="res"><span>Charge humaine AS-IS</span><b id="r_asis"></b></div>
+        <div class="res"><span>Charge humaine TO-BE</span><b id="r_tobe"></b></div>
+        <div class="res"><span>Temps libéré (estimation)</span><b id="r_gain"></b></div>
+        <div class="res"><span>Jetons consommés par mois</span><b id="r_tok"></b></div>
+        <div class="res"><span>Envois validés par un humain</span><b>100 %</b></div>
+        <p class="mut">AS-IS = volume × temps manuel. TO-BE = volume × (1 − part agent) × temps manuel + volume × part agent × temps de validation. Coût en euros : quand l'accès aux tables système sera accordé.</p></div>
+      <div class="card"><h3>3. Contrôles avant construction</h3>
+        <div class="res"><span>Chaque agent et flux a un responsable</span><span class="ko">1 à désigner</span></div>
+        <div class="res"><span>Envois sous validation humaine</span><span class="ok">OK</span></div>
+        <div class="res"><span>Outils couverts par une politique<span class="real">RÉEL</span></span><span class="ok">POL-002</span></div>
+        <div class="res"><span>Données lisibles avec vos droits<span class="real">RÉEL</span></span><span class="ok">2 / 2 tables</span></div>
+        <div class="res"><span>Responsable de domaine désigné<span class="real">RÉEL</span></span><span class="ko">aucun</span></div>
+        <div class="res"><span>Flux exécutable sur le serveur</span><span class="ko">Power Automate bloqué</span></div>
+        <p><b class="ko">Verdict : non prêt — 3 prérequis bloquants.</b></p></div>
+    </div>
+    <div class="g g2" style="margin-top:14px">
+      <div class="card"><h3>4. Rejeu de cas réels (bac à sable)</h3>
+        <p class="mut">Les agents TO-BE, en brouillon, rejouent des demandes passées dans Chat &amp; Test, sans aucun envoi réel. On compare leurs réponses aux réponses attendues.</p>
+        <table><tr><th>Cas</th><th>Agent</th><th>Résultat</th></tr>
+          <tr><td>Commande en retard de 10 jours</td><td>Suivi des commandes</td><td><span class="tag r">conforme</span></td></tr>
+          <tr><td>Fournisseur sans contact</td><td>Suivi des commandes</td><td><span class="tag w">escalade humaine</span></td></tr>
+          <tr><td>Donnée de date manquante</td><td>Clara</td><td><span class="tag r">anomalie signalée</span></td></tr></table></div>
+      <div class="card"><h3>5. Scénarios</h3>
+        <table><tr><th>Scénario</th><th>Part agent</th><th>Temps libéré</th><th>Bloquants</th></tr>
+          <tr><td>Prudent</td><td>40 %</td><td>estimation</td><td>3</td></tr>
+          <tr><td>Proposé</td><td>70 %</td><td>estimation</td><td>3</td></tr></table>
+        <div style="margin-top:10px"><button class="btn s sm">Enregistrer le scénario</button> <button class="btn s sm">Comparer</button> <button class="btn sm">Soumettre l'organisation cible à validation</button></div>
+        <p class="mut">Après validation : le plan de construction est créé, puis la valeur réelle est mesurée dans le Cockpit et comparée à la simulation.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ JUMEAU INTELLIGENT ============ -->
+<section class="view" id="jumeau">
+  <div class="top"><div><h1>Jumeau intelligent de l'entreprise</h1><p>Organisation, équipes, humains, agents, flux et données, avec leurs liens. Basculez entre l'existant et la cible.</p></div>
+    <div class="seg" id="twinMode"><button class="on" data-m="asis">AS-IS</button><button data-m="tobe">TO-BE</button><button data-m="diff">Écarts</button></div></div>
+  <div class="g g21">
+    <div class="card twin">
+      <div class="legend" id="twinLegend"></div>
+      <div style="margin:8px 0" id="twinFilters"></div>
+      <svg id="twinSvg" viewBox="0 0 1060 540" width="100%"></svg>
+      <p class="mut">Organisation, domaines, équipes d'agents publiées et leurs membres, tables et flux marqués RÉEL viennent de dataops_dev.ai_studio. Humains et éléments TO-BE sont des exemples à valider.</p>
+    </div>
+    <div>
+      <div class="card" id="twinDetail"><h3>Fiche</h3><p class="mut">Cliquez sur un élément du jumeau.</p></div>
+      <div class="card" style="margin-top:14px"><h3>Synthèse <span class="mut" id="twinModeLbl">(AS-IS)</span></h3><div id="twinStats"></div></div>
+      <div class="card" style="margin-top:14px"><h3>Actions</h3>
+        <button class="btn sm">Simuler la cible</button> <button class="btn s sm">Ouvrir dans Enterprise Studio</button>
+        <p class="mut">Le jumeau est versionné : chaque TO-BE validé devient une version, comparée ensuite à la mesure réelle.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ ENTERPRISE STUDIO ============ -->
+<section class="view" id="studio">
+  <div class="top"><div><h1>Enterprise Studio</h1><p>Modéliser l'organisation et constituer des équipes hybrides : humains, agents et flux.</p></div>
+    <div><button class="btn s">Importer un organigramme (CSV)</button> <button class="btn">Nouvelle unité</button></div></div>
+  <div class="g g12">
+    <div class="card"><h3>Organigramme</h3><div class="tree">
+      <div class="n"><b>SNCF Réseau</b><span class="real">RÉEL</span></div>
+      <div class="n l1">Supply Chain<span class="real">RÉEL</span></div>
+      <div class="n l2 on">Équipe Approvisionnement <span class="tag">hybride</span></div>
+      <div class="n l2">Équipe Logistique</div>
+      <div class="n l1">PTE<span class="real">RÉEL</span></div>
+      <div class="n l1">UDR<span class="real">RÉEL</span></div>
+      <div class="n l1">Transverse<span class="real">RÉEL</span></div>
+      <div class="n l2">Qualité des données <span class="tag">agents</span><span class="real">RÉEL</span></div>
+      <div class="n l2">Analyse TER &amp; Gares <span class="tag">agents</span><span class="real">RÉEL</span></div>
+    </div><p class="mut">Directions et départements sous les domaines : à importer, aucun n'est inventé.</p></div>
+    <div class="g g2">
+      <div class="card"><h3>Équipe Approvisionnement</h3>
+        <div class="mem"><div class="av h">RH</div><div><b>Responsable (à désigner)</b><div class="mut">Humain · supervise et valide</div></div></div>
+        <div class="mem"><div class="av h">GA</div><div><b>Gestionnaire achats (à désigner)</b><div class="mut">Humain · traite les exceptions</div></div></div>
+        <div class="mem"><div class="av c">CH</div><div><b>Chef d'équipe agent</b><div class="mut">Agent coordinateur · répartit les demandes</div></div></div>
+        <div class="mem"><div class="av a">SC</div><div><b>Suivi des commandes</b><div class="mut">Agent · proposé par Transformation</div></div></div>
+        <div class="mem"><div class="av a">CL</div><div><b>Clara</b><span class="real">RÉEL</span><div class="mut">Agent qualité des données · partagé depuis Transverse</div></div></div>
+        <button class="btn s sm">+ Humain</button> <button class="btn s sm">+ Agent</button> <button class="btn s sm">+ Flux</button></div>
+      <div class="card"><h3>Mission et règles</h3>
+        <p><b>Mission</b><br><span class="mut">À rédiger par le responsable de l'équipe.</span></p>
+        <p><b>Objectifs suivis</b><br><span class="tag">délai de traitement</span><span class="tag">taux de relance</span><span class="mut"> (cibles à valider)</span></p>
+        <p><b>Cas d'usage rattachés</b><br><span class="tag">Suivi des commandes</span><span class="tag">Relance fournisseur</span></p>
+        <p><b>Données et outils</b><br><span class="tag">data_demo_sc_commandes</span><span class="tag">Exécuter une requête SQL</span><span class="tag">Générer un rapport</span></p>
+        <p><b>Supervision</b><br><span class="mut">Toute action d'écriture ou d'envoi : validation par un humain de l'équipe. Escalade au responsable après 48 h.</span></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ AUTOMATION STUDIO ============ -->
+<section class="view" id="auto">
+  <div class="top"><div><h1>Automation Studio</h1><p>Créer, affecter et suivre les flux : Lakeflow Jobs et Power Automate.</p></div>
+    <div><button class="btn s">Marketplace de flux</button> <button class="btn">Nouveau flux</button></div></div>
+  <div class="tabs"><span class="tab on">Tous</span><span class="tab">Déclenchés par un agent</span><span class="tab">Sur événement</span><span class="tab">Planifiés</span><span class="tab">Validation humaine</span><span class="tab">Inter-départements</span></div>
+  <div class="card"><table>
+    <tr><th>Flux</th><th>Déclencheur</th><th>Moteur</th><th>Cas d'usage</th><th>Équipe</th><th>Dernière exécution</th></tr>
+    <tr><td>Smart Office : envoyer<span class="real">RÉEL</span></td><td>Agent</td><td>Power Automate</td><td>—</td><td>—</td><td><span class="tag w">bloqué sur serveur</span></td></tr>
+    <tr><td>Relance fournisseur</td><td>Agent + validation humaine</td><td>Power Automate</td><td>Relance fournisseur</td><td>Approvisionnement</td><td><span class="tag">à construire</span></td></tr>
+    <tr><td>Rafraîchir les indicateurs agents</td><td>Planifié (quotidien)</td><td>Lakeflow Jobs</td><td>Pilotage</td><td>Transverse</td><td><span class="tag r">succès</span></td></tr>
+    <tr><td>Contrôle qualité commandes</td><td>Mise à jour de table</td><td>Lakeflow Jobs</td><td>Suivi des commandes</td><td>Qualité des données</td><td><span class="tag k">échec</span></td></tr>
+  </table></div>
+  <div class="card" style="margin-top:14px"><h3>Conception : Relance fournisseur</h3>
+    <div class="flow">
+      <div class="step"><b>Déclencheur</b>Agent Suivi des commandes : commande en retard</div><span class="arrow">→</span>
+      <div class="step"><b>Préparer</b>Brouillon de relance généré par l'agent</div><span class="arrow">→</span>
+      <div class="step" style="border-color:var(--fr)"><b>Validation humaine</b>Gestionnaire achats</div><span class="arrow">→</span>
+      <div class="step"><b>Envoyer</b>Power Automate (Outlook)</div><span class="arrow">→</span>
+      <div class="step"><b>Tracer</b>flux_demandes + tableau de bord</div>
+    </div>
+    <p class="mut">Tout flux qui écrit ou envoie passe par une validation humaine et par la publication par un administrateur des outils (règle existante).</p></div>
+</section>
+
+<!-- ============ AGENT MESH ============ -->
+<section class="view" id="mesh">
+  <div class="top"><div><h1>Agent Mesh</h1><p>Communication, délégation et politiques d'accès entre agents et équipes.</p></div>
+    <div><span class="tag w">Politiques : mode audit</span></div></div>
+  <div class="g g21">
+    <div class="card"><h3>Carte des collaborations</h3>
+      <svg viewBox="0 0 640 300" width="100%">
+        <g stroke="#C9BFD3" stroke-width="2">
+          <line x1="320" y1="50" x2="150" y2="140"/><line x1="320" y1="50" x2="490" y2="140"/>
+          <line x1="150" y1="140" x2="80" y2="240"/><line x1="150" y1="140" x2="220" y2="240"/>
+          <line x1="490" y1="140" x2="420" y2="240"/><line x1="490" y1="140" x2="560" y2="240"/>
+          <line x1="220" y1="240" x2="420" y2="240" stroke="#B0124F" stroke-dasharray="6 4"/>
+        </g>
+        <g font-size="12" text-anchor="middle">
+          <circle cx="320" cy="50" r="26" fill="#4A1942"/><text x="320" y="54" fill="#fff">Superviseur</text>
+          <circle cx="150" cy="140" r="24" fill="#B0124F"/><text x="150" y="144" fill="#fff">Jules</text><text x="150" y="180" fill="#6E6875">Chef Qualité</text>
+          <circle cx="490" cy="140" r="24" fill="#B0124F"/><text x="490" y="144" fill="#fff">Chef</text><text x="490" y="180" fill="#6E6875">Chef Analyse TER &amp; Gares</text>
+          <circle cx="80" cy="240" r="20" fill="#7A3E9D"/><text x="80" y="244" fill="#fff">Clara</text>
+          <circle cx="220" cy="240" r="20" fill="#7A3E9D"/><text x="220" y="244" fill="#fff">Victor</text>
+          <circle cx="420" cy="240" r="20" fill="#7A3E9D"/><text x="420" y="244" fill="#fff">Margot</text>
+          <circle cx="560" cy="240" r="20" fill="#7A3E9D"/><text x="560" y="244" fill="#fff">Romane</text>
+          <text x="320" y="232" fill="#B0124F">délégation entre équipes (cible)</text>
+        </g>
+      </svg>
+      <p class="mut">Équipes publiées réelles (Qualité des données : Jules, Clara, Victor ; Analyse TER &amp; Gares : Chef, Margot, Romane). Le superviseur global et le lien entre équipes sont la cible. Aujourd'hui : un seul niveau de délégation. Cible : superviseur global puis délégation entre équipes.</p></div>
+    <div class="card"><h3>Politiques d'accès<span class="real">RÉEL</span></h3>
+      <div class="src"><span>POL-004 Outils retirés</span><span class="tag k">refus</span></div>
+      <div class="src"><span>POL-001 Administrateurs plateforme</span><span class="tag r">autorise</span></div>
+      <div class="src"><span>POL-002 Outils publiés</span><span class="tag r">autorise</span></div>
+      <div class="src"><span>POL-003 Outils de son propriétaire</span><span class="tag r">autorise</span></div>
+      <p class="mut">Refus par défaut si aucune politique n'autorise. En mode audit, les refus sont journalisés sans bloquer.</p></div>
+  </div>
+  <div class="card" style="margin-top:14px"><h3>Journal des délégations <span class="mut">(exemple illustratif)</span></h3><table>
+    <tr><th>Heure</th><th>De</th><th>Vers</th><th>Tâche</th><th>Politique</th><th>Statut</th></tr>
+    <tr><td>10:42</td><td>Jules</td><td>Clara</td><td>Profiler la table des commandes</td><td>POL-002</td><td><span class="tag r">terminé</span></td></tr>
+    <tr><td>10:43</td><td>Jules</td><td>Victor</td><td>Contrôler les doublons</td><td>POL-002</td><td><span class="tag r">terminé</span></td></tr>
+    <tr><td>10:47</td><td>Chef Analyse TER &amp; Gares</td><td>Smart Office : envoyer</td><td>Envoyer la synthèse</td><td>—</td><td><span class="tag w">attente validation</span></td></tr>
+  </table></div>
+</section>
+
+<!-- ============ PARCOURS ============ -->
+<section class="view" id="parcours">
+  <div class="top"><div><h1>Parcours de l'entreprise intelligente</h1><p>Du diagnostic au pilotage : chaque étape réutilise une brique DISCOVERY existante ou un service Databricks natif.</p></div></div>
+  <div class="card"><div class="flow">
+    <div class="step"><b>1. Comprendre</b>Enterprise Studio, Jumeau<br><span class="mut">organigramme, équipes, applications</span></div><span class="arrow">→</span>
+    <div class="step"><b>2. Diagnostiquer</b>Transformation · AS-IS<br><span class="mut">généré par HakimAI, à confirmer</span></div><span class="arrow">→</span>
+    <div class="step"><b>3. Recommander</b>Transformation · TO-BE<br><span class="mut">agents, équipes hybrides, flux</span></div><span class="arrow">→</span>
+    <div class="step" style="border-color:var(--fr)"><b>4. Simuler et valider</b>Transformation · Simulation<br><span class="mut">charge, contrôles, rejeu ; décision humaine</span></div><span class="arrow">→</span>
+    <div class="step"><b>5. Construire</b>Agent Builder, Équipes, Automation Studio<br><span class="mut">préremplis par le plan</span></div><span class="arrow">→</span>
+    <div class="step"><b>6. Déployer</b>Validation<br><span class="mut">publication tracée</span></div><span class="arrow">→</span>
+    <div class="step"><b>7. Superviser</b>Cockpit, Agent Mesh<br><span class="mut">activité, incidents, politiques</span></div><span class="arrow">→</span>
+    <div class="step"><b>8. Mesurer et améliorer</b>Cockpit<br><span class="mut">valeur réelle vs simulation</span></div>
+  </div>
+  <p class="mut" style="color:var(--vi);font-weight:600">↺ La mesure alimente un nouveau diagnostic : le cycle recommence sur le jumeau mis à jour.</p></div>
+  <div class="card" style="margin-top:14px"><h3>Réutilisation</h3><table>
+    <tr><th>Module</th><th>Existant réutilisé</th><th>Natif Databricks</th><th>À développer</th></tr>
+    <tr><td>Enterprise Studio</td><td>Tables T201 (organisation, domaines, équipes humaines), équipes d'agents</td><td>Unity Catalog</td><td>Hiérarchie des unités, applications, équipes hybrides</td></tr>
+    <tr><td>Transformation</td><td>HakimAI Transformation, Assessment Center</td><td>Knowledge Assistant, Genie, Vector Search</td><td>Lecture des référentiels, recommandation → plan de construction</td></tr>
+    <tr><td>Automation Studio</td><td>Page Flux, Power Automate, validation humaine</td><td>Lakeflow Jobs (planifiés, sur événement)</td><td>Catalogue unifié des flux, affectation aux équipes et cas d'usage</td></tr>
+    <tr><td>Agent Mesh</td><td>Superviseur 1 niveau, mentions, publication validée</td><td>Model Serving, MLflow Tracing</td><td>Rôles, moteur de politiques, délégation multi-niveaux</td></tr>
+    <tr><td>Enterprise Cockpit</td><td>Monitoring, agent_kpi_daily, jetons (T103)</td><td>Tableaux de bord AI/BI, tables système (accès requis)</td><td>Situations de départ, gains, maturité</td></tr>
+  </table></div>
+</section>
+
+<!-- ============ TOOL BUILDER ============ -->
+<section class="view" id="toolb">
+  <div class="top"><div><h1>Tool Builder</h1><p>Créer un outil avec le copilote : décrire le besoin, vérifier, tester, publier.</p></div>
+    <div><button class="btn s">Catalogue d'outils</button> <button class="btn">Nouvel outil</button></div></div>
+  <div class="card"><div class="flow">
+    <div class="step"><b>1. Décrire</b>besoin en langage naturel</div><span class="arrow">→</span>
+    <div class="step"><b>2. Concevoir</b>le copilote propose la fiche<span class="who">nom, paramètres, requête</span></div><span class="arrow">→</span>
+    <div class="step"><b>3. Vérifier</b>contrôles automatiques<span class="who">lecture seule, tables, paramètres</span></div><span class="arrow">→</span>
+    <div class="step"><b>4. Tester</b>avec vos droits</div><span class="arrow">→</span>
+    <div class="step" style="border-color:var(--fr)"><b>5. Publier</b>par un administrateur si l'outil écrit ou envoie</div>
+  </div></div>
+  <div class="g g2" style="margin-top:14px">
+    <div class="card"><h3>Outils créés dans DISCOVERY<span class="real">RÉEL</span></h3><table>
+      <tr><th>Outil</th><th>Type</th><th>Statut</th></tr>
+      <tr><td>Gares voyageurs par département</td><td>Modèle SQL</td><td><span class="tag r">publié</span></td></tr>
+      <tr><td>Smart Office : consulter</td><td>Flux</td><td><span class="tag r">publié</span></td></tr>
+      <tr><td>Smart Office : envoyer</td><td>Flux (confirmation)</td><td><span class="tag r">publié</span></td></tr>
+      <tr><td>Essai DISCOVERY flux</td><td>Flux</td><td><span class="tag">brouillon</span></td></tr>
+      <tr><td>Compter les gares voyageurs par département</td><td>Modèle SQL</td><td><span class="tag k">retiré</span></td></tr>
+    </table></div>
+    <div class="card"><h3>Nouvel outil (exemple)</h3>
+      <div class="chat"><div class="msg u">Je veux un outil qui liste les commandes en retard d'un fournisseur.</div>
+        <div class="msg a">Proposition : modèle SQL en lecture seule sur data_demo_sc_commandes<span class="real">RÉEL</span>, paramètre « fournisseur ». Vérification : OK. Lancez un test avant de publier.</div></div>
+      <div style="margin-top:10px"><button class="btn sm">Tester</button> <button class="btn s sm">Améliorer</button> <button class="btn s sm">Publier</button></div>
+      <p class="mut">Lecture seule : publication par le propriétaire. Écriture ou envoi : publication réservée aux administrateurs des outils (règle existante).</p></div>
+  </div>
+</section>
+
+<!-- ============ FLUX BUILDER ============ -->
+<section class="view" id="fluxb">
+  <div class="top"><div><h1>Flux Builder</h1><p>Brancher un flux Power Automate comme outil d'agent : contrat d'échange, test, suivi.</p></div>
+    <div><button class="btn s">Suivi des demandes</button> <button class="btn">Nouveau flux</button></div></div>
+  <div class="g g12">
+    <div class="card"><h3>Fiche du flux</h3>
+      <div class="src"><span>Nom</span><b>Relance fournisseur (exemple)</b></div>
+      <div class="src"><span>Mode</span><b>Envoyer</b></div>
+      <div class="src"><span>Confirmation humaine</span><span class="ok">obligatoire</span></div>
+      <div class="src"><span>Adresse du déclencheur</span><span class="tag">secret, jamais affichée</span></div>
+      <div class="src"><span>Schéma d'entrée</span><span class="tag">JSON vérifié</span></div>
+      <div class="src"><span>Exécution</span><span class="tag w">locale OK, serveur bloqué</span></div>
+      <div style="margin-top:10px"><button class="btn sm">Vérifier</button> <button class="btn s sm">Tester</button> <button class="btn s sm">Publier</button></div></div>
+    <div class="g g2">
+      <div class="card"><h3>Contrat d'échange</h3><table>
+        <tr><th>Champ</th><th>Type</th><th>Obligatoire</th></tr>
+        <tr><td>destinataire</td><td>texte (e-mail)</td><td>oui</td></tr>
+        <tr><td>objet</td><td>texte</td><td>oui</td></tr>
+        <tr><td>message</td><td>texte</td><td>oui</td></tr>
+        <tr><td>reference_commande</td><td>texte</td><td>non</td></tr></table>
+        <p class="mut">Champs d'exemple : le contrat réel est défini avec le propriétaire du flux.</p></div>
+      <div class="card"><h3>Flux existants<span class="real">RÉEL</span></h3>
+        <div class="src"><span>Smart Office : consulter</span><span class="tag r">publié</span></div>
+        <div class="src"><span>Smart Office : envoyer</span><span class="tag r">publié</span></div>
+        <div class="src"><span>Suivre une demande de flux</span><span class="tag r">publié</span></div>
+        <div class="src"><span>Essai DISCOVERY flux</span><span class="tag">brouillon</span></div>
+        <div class="src"><span>Demandes enregistrées</span><b>2</b></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ MARKETPLACE ============ -->
+<section class="view" id="mkt">
+  <div class="top"><div><h1>Marketplace</h1><p>Agents, outils et flux publiés, réutilisables par toutes les équipes.</p></div>
+    <div><input placeholder="Rechercher…" style="border:1px solid var(--li);border-radius:8px;padding:8px"></div></div>
+  <div class="tabs" data-panes><span class="tab on" data-t="m_out">Outils (17)</span><span class="tab" data-t="m_flux">Flux (3)</span><span class="tab" data-t="m_ag">Agents (8)</span></div>
+  <div class="pane on" data-pane="m_out"><div class="card"><h3>Outils publiés par catégorie<span class="real">RÉEL</span></h3><table>
+    <tr><th>Catégorie</th><th>Outils</th><th>Nb</th></tr>
+    <tr><td>Visualisation</td><td>Afficher un graphique, des indicateurs, une carte ; Exporter en Excel ; Générer un rapport</td><td>5</td></tr>
+    <tr><td>Automatisation</td><td>Appel HTTP ; Smart Office : consulter, envoyer</td><td>3</td></tr>
+    <tr><td>Flux</td><td>Smart Office : consulter, envoyer ; Suivre une demande de flux</td><td>3</td></tr>
+    <tr><td>Unity Catalog</td><td>Lister les tables ; Décrire une table</td><td>2</td></tr>
+    <tr><td>SQL</td><td>Exécuter une requête SQL</td><td>1</td></tr>
+    <tr><td>Qualité des données</td><td>Profiler une table</td><td>1</td></tr>
+    <tr><td>Jobs</td><td>Suivre un Job</td><td>1</td></tr>
+    <tr><td>Données</td><td>Gares voyageurs par département</td><td>1</td></tr>
+  </table><p class="mut">Prévus ou indisponibles (non listés) : Déclencher un Job, Générer du SQL, Consommations Databricks, Lignage d'une table.</p></div></div>
+  <div class="pane" data-pane="m_flux"><div class="g g3">
+    <div class="card"><h3>Smart Office : consulter<span class="real">RÉEL</span></h3><p class="mut">Lecture seule</p><button class="btn s sm">Ajouter à un agent</button></div>
+    <div class="card"><h3>Smart Office : envoyer<span class="real">RÉEL</span></h3><p class="mut">Envoi avec confirmation humaine</p><button class="btn s sm">Ajouter à un agent</button></div>
+    <div class="card"><h3>Suivre une demande de flux<span class="real">RÉEL</span></h3><p class="mut">Lecture seule</p><button class="btn s sm">Ajouter à un agent</button></div>
+  </div><p class="mut">Cible : flux Lakeflow Jobs réutilisables publiés ici aussi.</p></div>
+  <div class="pane" data-pane="m_ag"><div class="card"><h3>Agents publiés<span class="real">RÉEL</span></h3>
+    <span class="tag">Hugo</span><span class="tag">Gael</span><span class="tag">Victor</span><span class="tag">Romane</span><span class="tag">Margot</span><span class="tag">Clara</span><span class="tag">Jules</span><span class="tag">Chef Analyse TER &amp; Gares</span></div></div>
+</section>
+
+<section class="view" id="exist">
+  <div class="top"><div><h1>Page existante</h1><p>Cette page existe déjà dans DISCOVERY et est conservée telle quelle dans la nouvelle navigation.</p></div></div>
+  <div class="card"><p>Les pages existantes (HakimAI, Agent Builder, Mes agents, Tool Builder, Flux Builder, Marketplace, Validation, Monitoring, Paramètres) sont regroupées sous « Construire » et « Gouverner ». Les nouvelles pages les réutilisent : par exemple, « Valider » une recommandation d'agent ouvre Agent Builder prérempli.</p></div>
+</section>
+</main>
+</div>
+<script>
+  document.querySelectorAll('.it').forEach(function(el){
+    el.addEventListener('click',function(){
+      document.querySelectorAll('.it').forEach(function(x){x.classList.remove('on')});
+      el.classList.add('on');
+      document.querySelectorAll('.view').forEach(function(v){v.classList.toggle('on', v.id===el.dataset.v)});
+      window.scrollTo(0,0);
+    });
+  });
+  document.querySelectorAll('.tabs').forEach(function(t){
+    t.querySelectorAll('.tab').forEach(function(x){x.addEventListener('click',function(){
+      t.querySelectorAll('.tab').forEach(function(y){y.classList.remove('on')}); x.classList.add('on');
+      if(t.hasAttribute('data-panes')){
+        t.parentNode.querySelectorAll('.pane').forEach(function(p){p.classList.toggle('on', p.dataset.pane===x.dataset.t)});
+      }});});
+  });
+
+  /* ---- Simulation (modèle illustratif) ---- */
+  function fmt(n){return Math.round(n).toLocaleString('fr-FR')}
+  function simulate(v){
+    var asis=v.vol*v.tm/60, tobe=v.vol*(1-v.p/100)*v.tm/60 + v.vol*(v.p/100)*v.tv/60;
+    return {asis:asis, tobe:tobe, gain:asis-tobe, tok:v.vol*(v.p/100)*v.tk};
+  }
+  function runSim(){
+    var ids=['vol','tm','p','tv','tk'], v={};
+    ids.forEach(function(k){var e=document.getElementById('s_'+k); if(!e)return; v[k]=+e.value; document.getElementById('o_'+k).textContent=fmt(v[k]);});
+    if(v.vol===undefined) return;
+    var r=simulate(v);
+    document.getElementById('r_asis').textContent=fmt(r.asis)+' h/mois';
+    document.getElementById('r_tobe').textContent=fmt(r.tobe)+' h/mois';
+    document.getElementById('r_gain').textContent=fmt(r.gain)+' h/mois';
+    document.getElementById('r_tok').textContent=fmt(r.tok);
+  }
+  document.querySelectorAll('.sim input').forEach(function(e){e.addEventListener('input',runSim)});
+  runSim();
+
+  /* ---- Jumeau intelligent ---- */
+  var TYPES={org:['Organisation','#4A1942'],dom:['Domaine','#7A3E9D'],team:['Équipe','#B0124F'],hum:['Humain','#8D8794'],agent:['Agent IA','#9B5BC0'],flow:['Flux','#2E7D5B'],data:['Données','#3A6EA5']};
+  var N=[
+    {id:'org',t:'org',x:530,y:40,l:'SNCF Réseau',r:1,i:'Organisation racine (table organizations).'},
+    {id:'sc',t:'dom',x:230,y:130,l:'Supply Chain',r:1,i:'Domaine pilote proposé.'},
+    {id:'pte',t:'dom',x:450,y:130,l:'PTE',r:1,i:'Domaine à modéliser.'},
+    {id:'udr',t:'dom',x:610,y:130,l:'UDR',r:1,i:'Domaine à modéliser.'},
+    {id:'tr',t:'dom',x:850,y:130,l:'Transverse',r:1,i:'Domaine des équipes d’agents actuelles.'},
+    {id:'appro',t:'team',x:380,y:240,l:'Éq. Approvisionnement',tb:1,i:'Équipe hybride proposée : humains, agents, flux.'},
+    {id:'d1',t:'data',x:60,y:370,l:'data_demo_sc_commandes',r:1,i:'Vue Unity Catalog lue par HakimAI.'},
+    {id:'d2',t:'data',x:60,y:450,l:'data_demo_sc_fournisseurs',r:1,i:'Vue Unity Catalog lue par HakimAI.'},
+    {id:'h1',t:'hum',x:200,y:370,l:'Gestionnaire achats',i:'Rôle humain (personne à désigner). Valide les envois en TO-BE.'},
+    {id:'h2',t:'hum',x:330,y:370,l:'Responsable équipe',tb:1,i:'Responsable humain à désigner (règle : tout élément a un responsable).'},
+    {id:'ca',t:'agent',x:540,y:300,l:'Chef équipe (agent)',tb:1,i:'Agent coordinateur à créer : répartit les demandes entre les membres de l’équipe hybride.'},
+    {id:'a1',t:'agent',x:450,y:370,l:'Agent Suivi commandes',tb:1,i:'Agent à créer : détecte et qualifie les retards, prépare les relances.'},
+    {id:'f1',t:'flow',x:250,y:470,l:'Flux détection retards',tb:1,i:'Flux planifié (Lakeflow Jobs), quotidien.'},
+    {id:'f2',t:'flow',x:420,y:470,l:'Flux relance (validation)',tb:1,i:'Flux Power Automate avec validation humaine avant envoi.'},
+    {id:'tq',t:'team',x:720,y:240,l:'Qualité des données',r:1,i:'Équipe d’agents publiée. Chef : Jules.'},
+    {id:'tt',t:'team',x:950,y:240,l:'Analyse TER & Gares',r:1,i:'Équipe d’agents publiée. Chef : Chef Analyse TER & Gares.'},
+    {id:'ju',t:'agent',x:640,y:370,l:'Jules (chef)',r:1,i:'Chef de l’équipe Qualité des données.'},
+    {id:'cl',t:'agent',x:720,y:370,l:'Clara',r:1,i:'Agent qualité des données. En TO-BE : partagée avec Approvisionnement.'},
+    {id:'vi',t:'agent',x:800,y:370,l:'Victor',r:1,i:'Membre de l’équipe Qualité des données.'},
+    {id:'ct',t:'agent',x:885,y:370,l:'Chef TER',r:1,i:'Chef de l’équipe Analyse TER & Gares.'},
+    {id:'ma',t:'agent',x:960,y:370,l:'Margot',r:1,i:'Membre de l’équipe Analyse TER & Gares.'},
+    {id:'ro',t:'agent',x:1030,y:370,l:'Romane',r:1,i:'Membre de l’équipe Analyse TER & Gares.'},
+    {id:'fs',t:'flow',x:850,y:470,l:'Smart Office : envoyer',r:1,i:'Flux Power Automate publié (bloqué sur le serveur, possible en local).'}
+  ];
+  var E=[['org','sc'],['org','pte'],['org','udr'],['org','tr'],['sc','d1'],['sc','d2'],['sc','h1'],['sc','appro',1],
+    ['appro','h1',1],['appro','h2',1],['appro','a1',1],['appro','ca',1],['ca','a1',1],['appro','f1',1],['a1','f2',1],['h1','f2',1],['appro','cl',1],
+    ['tr','tq'],['tr','tt'],['tq','ju'],['tq','cl'],['tq','vi'],['tt','ct'],['tt','ma'],['tt','ro'],['tr','fs']];
+  var mode='asis', hidden={};
+  function byId(id){return N.filter(function(n){return n.id===id})[0]}
+  function visible(n){return !hidden[n.t] && (mode!=='asis' || !n.tb)}
+  function drawTwin(){
+    var svg=document.getElementById('twinSvg'); if(!svg) return;
+    var s='';
+    E.forEach(function(e){var a=byId(e[0]),b=byId(e[1]); if(!visible(a)||!visible(b)) return;
+      var nw=e[2]&&mode!=='asis'; s+='<line x1="'+a.x+'" y1="'+a.y+'" x2="'+b.x+'" y2="'+b.y+'" stroke="'+(nw?'#B0124F':'#C9BFD3')+'" stroke-width="'+(nw?2.5:1.5)+'"'+(nw?' stroke-dasharray="6 4"':'')+'/>';});
+    N.forEach(function(n){ if(!visible(n)) return; var c=TYPES[n.t][1], dim=(mode==='diff'&&!n.tb)?' opacity="0.35"':'';
+      var sh=(n.t==='data'||n.t==='flow')?'<rect x="'+(n.x-11)+'" y="'+(n.y-11)+'" width="22" height="22" rx="5" fill="'+c+'"'+(n.tb?' stroke="#B0124F" stroke-width="3" stroke-dasharray="4 3"':'')+'/>'
+        :'<circle cx="'+n.x+'" cy="'+n.y+'" r="'+(n.t==='org'?18:13)+'" fill="'+c+'"'+(n.tb?' stroke="#B0124F" stroke-width="3" stroke-dasharray="4 3"':'')+'/>';
+      s+='<g class="nd" data-id="'+n.id+'"'+dim+'>'+sh+'<text x="'+n.x+'" y="'+(n.y+30)+'" font-size="11" text-anchor="middle" fill="#26212B">'+n.l.replace('&','&amp;')+'</text>'+(n.r?'<text x="'+n.x+'" y="'+(n.y+42)+'" font-size="8" text-anchor="middle" fill="#2E7D5B" font-weight="700">RÉEL</text>':'')+'</g>';});
+    svg.innerHTML=s;
+    svg.querySelectorAll('.nd').forEach(function(g){g.addEventListener('click',function(){showNode(byId(g.dataset.id))})});
+    var vis=N.filter(visible), cnt={}; vis.forEach(function(n){cnt[n.t]=(cnt[n.t]||0)+1});
+    var nb=N.filter(function(n){return n.tb}).length;
+    document.getElementById('twinStats').innerHTML=Object.keys(TYPES).filter(function(k){return cnt[k]}).map(function(k){return '<div class="src"><span>'+TYPES[k][0]+'</span><b>'+cnt[k]+'</b></div>'}).join('')+
+      (mode==='asis'?'':'<div class="src"><span>Éléments nouveaux (TO-BE)</span><span class="tag f">'+nb+'</span></div>');
+    document.getElementById('twinModeLbl').textContent='('+(mode==='asis'?'AS-IS':mode==='tobe'?'TO-BE':'écarts')+')';
+  }
+  function showNode(n){
+    document.getElementById('twinDetail').innerHTML='<h3>'+n.l.replace('&','&amp;')+'</h3><p><span class="tag">'+TYPES[n.t][0]+'</span>'+(n.r?'<span class="tag r">réel</span>':'<span class="tag w">exemple à valider</span>')+(n.tb?'<span class="tag f">TO-BE</span>':'')+'</p><p>'+n.i+'</p>'+
+      '<p class="mut">Lié à : '+E.filter(function(e){return e[0]===n.id||e[1]===n.id}).map(function(e){return byId(e[0]===n.id?e[1]:e[0]).l}).join(', ').replace(/&/g,'&amp;')+'</p>';
+  }
+  (function initTwin(){
+    var lg=document.getElementById('twinLegend'), fl=document.getElementById('twinFilters'); if(!lg) return;
+    lg.innerHTML=Object.keys(TYPES).map(function(k){return '<span><i style="background:'+TYPES[k][1]+'"></i>'+TYPES[k][0]+'</span>'}).join('')+'<span><i style="border:2px dashed #B0124F;background:#fff"></i>Nouveau (TO-BE)</span>';
+    fl.innerHTML=Object.keys(TYPES).filter(function(k){return k!=='org'}).map(function(k){return '<label class="chk"><input type="checkbox" checked data-k="'+k+'"> '+TYPES[k][0]+'</label>'}).join('');
+    fl.querySelectorAll('input').forEach(function(c){c.addEventListener('change',function(){hidden[c.dataset.k]=!c.checked; drawTwin();})});
+    document.querySelectorAll('#twinMode button').forEach(function(b){b.addEventListener('click',function(){
+      document.querySelectorAll('#twinMode button').forEach(function(x){x.classList.remove('on')}); b.classList.add('on'); mode=b.dataset.m; drawTwin();});});
+    drawTwin();
+  })();
+</script>
+</body>
+</html>

@@ -119,6 +119,63 @@ def test_only_owner_or_admin_edits():
                "autre@sncf.fr")
 
 
+# -- T102 : un chef publié dont les outils changent n'est jamais republié sans validation ----------------
+class _Pub:
+    def __init__(self, fail=False):
+        self.fail, self.calls = fail, []
+
+    def submit(self, agent_id, user):
+        self.calls.append((agent_id, user))
+        if self.fail:
+            from backend.publication import PublicationError
+            raise PublicationError("Renseignez le domaine dans la fiche contrat.")
+        return "rid", []
+
+
+def _lead_repo(status, lead_owner="owner@sncf.fr", publication=None, tools=("render_map", "agent:c")):
+    r, _ = trepo()
+    calls = []
+    cfg = types.SimpleNamespace(tool_ids=list(tools), model_endpoint="m", instructions="i", knowledge_tables=[],
+                                temperature=0.1, max_iterations=6)
+    r.agents.get_config = lambda aid: cfg
+    r.agents.get_agent = lambda aid: {"agent_id": aid, "status": status, "owner": lead_owner, "name": "Jules"}
+    r.agents.save_version = lambda aid, meta, c, user, status=None: calls.append(("version", aid, c["tool_ids"], status)) or 2
+    r.agents.set_status = lambda aid, s: calls.append(("status", aid, s))
+    r.publication = publication
+    return r, calls
+
+
+TEAM = {"lead_agent_id": "j", "members": ["c", "v"]}
+
+
+def test_sync_lead_draft_gets_new_version_only():
+    r, calls = _lead_repo("brouillon")
+    assert r._sync_lead(TEAM, "owner@sncf.fr") == "version"
+    assert calls == [("version", "j", ["render_map", "agent:c", "agent:v"], None)]
+
+
+def test_sync_lead_unchanged_does_nothing():
+    r, calls = _lead_repo("publie", tools=("render_map", "agent:c", "agent:v"))
+    assert r._sync_lead(TEAM, "owner@sncf.fr") == "" and calls == []
+
+
+def test_sync_lead_published_is_resubmitted_by_its_owner():
+    pub = _Pub()
+    r, calls = _lead_repo("publie", publication=pub)
+    assert r._sync_lead(TEAM, "owner@sncf.fr") == "revalidation"
+    assert pub.calls == [("j", "owner@sncf.fr")]
+    assert not any(c[0] == "status" for c in calls)          # statut géré par la publication (en_validation)
+
+
+@pytest.mark.parametrize("pub,user", [(None, "owner@sncf.fr"), (_Pub(fail=True), "owner@sncf.fr"),
+                                      (_Pub(), "admin@sncf.fr")])
+def test_sync_lead_published_falls_back_to_draft(pub, user):
+    r, calls = _lead_repo("publie", publication=pub)
+    assert r._sync_lead(TEAM, user) == "brouillon"
+    assert calls[-1] == ("status", "j", "brouillon")
+    if pub is not None and user == "admin@sncf.fr":
+        assert pub.calls == []                                  # seul le propriétaire peut soumettre
+
 
 def test_mention_buttons_have_unique_keys_when_team_shares_lead_id():
     import importlib

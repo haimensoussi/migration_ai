@@ -7,10 +7,17 @@ import uuid
 from backend import teams as T
 from backend.agent_repository import AgentRepository
 
+LIVE_STATUSES = ("publie", "en_validation")
+SYNC_NOTES = {"version": ", outils du chef mis à jour",
+              "revalidation": ", outils du chef mis à jour : chef resoumis à validation",
+              "brouillon": ", outils du chef mis à jour : chef repassé en brouillon (à resoumettre par son propriétaire)"}
+
 
 class TeamRepository:
-    def __init__(self, agents: AgentRepository):
+    def __init__(self, agents: AgentRepository, publication=None):
+        """publication : PublicationService (resoumission du chef publié dont les outils changent)."""
         self.agents, self.sql, self.s = agents, agents.sql, agents.s
+        self.publication = publication
 
     def admins(self) -> set[str]:
         return set(getattr(self.s, "team_admins", ()) or ()) or set(getattr(self.s, "tool_admins", ()) or ())
@@ -95,25 +102,40 @@ class TeamRepository:
                              {"t": tid, "a": aid, "r": role, "p": prim, "pos": pos, "u": user})
         synced = self._sync_lead(t, user)
         detail = note or ("Création" if current is None else "Modification") + \
-            f" : {len(t['members'])} membre(s)" + (", outils du chef mis à jour" if synced else "")
+            f" : {len(t['members'])} membre(s)" + SYNC_NOTES.get(synced, "")
         self._log(tid, user, "creation" if current is None else "modification", detail, {**t, "team_id": tid,
                                                                                            "status": status})
         return tid
 
-    def _sync_lead(self, t: dict, user: str) -> bool:
-        """Le chef consulte exactement les membres de l'équipe (nouvelle version si la liste change)."""
+    def _sync_lead(self, t: dict, user: str) -> str:
+        """Le chef consulte exactement les membres de l'équipe (nouvelle version si la liste change).
+
+        Renvoie "" (inchangé), "version" (chef en brouillon mis à jour), "revalidation" (chef publié resoumis
+        à validation) ou "brouillon" (chef publié repassé en brouillon : son propriétaire doit le resoumettre).
+        Une nouvelle version d'un chef publié n'est jamais publiée sans demande de validation (T102).
+        """
         lead = t["lead_agent_id"]
         if not lead:
-            return False
+            return ""
         cfg, meta = self.agents.get_config(lead), self.agents.get_agent(lead)
         want = T.lead_tool_ids(cfg.tool_ids, t["members"])
         if want == cfg.tool_ids:
-            return False
+            return ""
+        live = (meta or {}).get("status") in LIVE_STATUSES
         self.agents.save_version(lead, {k: meta.get(k) for k in ("name", "description", "icon", "category")},
                                  {"model_endpoint": cfg.model_endpoint, "instructions": cfg.instructions,
                                   "tool_ids": want, "knowledge_tables": cfg.knowledge_tables,
                                   "temperature": cfg.temperature, "max_iterations": cfg.max_iterations}, user)
-        return True
+        if not live:
+            return "version"
+        if self.publication is not None and (meta.get("owner") or "").lower() == user.lower():
+            try:
+                self.publication.submit(lead, user)
+                return "revalidation"
+            except ValueError:      # PublicationError (fiche contrat sans domaine...) : repli brouillon
+                pass
+        self.agents.set_status(lead, "brouillon")
+        return "brouillon"
 
     def create_lead(self, data: dict, user: str) -> str:
         """Chef d'équipe prérempli, en brouillon, à relire avant publication."""
