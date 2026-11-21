@@ -72,7 +72,7 @@ def test_one_step_per_proposal(svc, pid):
     with pytest.raises(T.TransformationError, match="qu'une étape"):
         svc.propose(pid, ME, [CU, {"type": "agent", "nom": "A", "cas_usage": ["x"], "mode": "creer"}],
                     existing=EXISTING)
-    with pytest.raises(T.TransformationError, match="non disponible"):
+    with pytest.raises(T.TransformationError, match="ordre"):
         svc.propose(pid, ME, [{"type": "vague", "nom": "Vague 1"}])
     assert svc.items(pid, ME, False)[-1]["item_type"] == "processus"           # rien n'a été ajouté
 
@@ -123,7 +123,7 @@ def test_target_rules(svc, pid):
 
 def test_progress_and_coherence(svc, pid):
     statuses = lambda: [s["statut"] for s in svc.progress(svc.get(pid, ME, False), svc.items(pid, ME, False))]  # noqa: E731
-    assert statuses() == ["fait", "fait", "fait", "en_cours", "a_faire", "lot_b2", "lot_b2"]
+    assert statuses() == ["fait", "fait", "fait", "en_cours", "a_faire", "a_faire", "a_faire"]
     svc.propose(pid, ME, [CU, CU2])
     _validate(svc, pid, "cas_usage")
     assert statuses()[3:5] == ["fait", "en_cours"]

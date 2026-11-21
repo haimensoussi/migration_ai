@@ -12,6 +12,7 @@ import re
 import unicodedata
 from itertools import combinations
 
+from backend import hakim_plan
 from backend.agent_runtime import ToolEvent, TurnResult, _parse_args, unanswered_calls
 
 GUARD_PREFIX = "[Contrôle automatique DISCOVERY]"
@@ -45,6 +46,9 @@ def _turn_text(messages: list[dict]) -> str:
 # -- 1. Présentation avant la fiche de validation ---------------------------------------------------------
 def presentation_issue(tool_id: str, args: dict, messages: list[dict], drafts: dict | None) -> str | None:
     """Message d'erreur renvoyé au modèle si la proposition n'a pas été présentée, sinon None."""
+    if tool_id == hakim_plan.PLAN_TOOL:   # même contrôle que l'exécuteur (le plan n'a plus de fiche)
+        from backend import hakim
+        return hakim_plan.issue(args, {t.tool_id for t in hakim.TOOLS})
     if tool_id not in CHECKED_WRITES:
         return None
     args = args or {}

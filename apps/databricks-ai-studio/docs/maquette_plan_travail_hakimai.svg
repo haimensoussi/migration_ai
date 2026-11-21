@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760" font-family="Segoe UI, Arial, sans-serif">
+  <defs>
+    <marker id="arr" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#5b6b7f"/></marker>
+  </defs>
+  <rect width="1200" height="760" fill="#f4f6f9"/>
+  <text x="40" y="48" font-size="24" font-weight="700" fill="#1b2a3a">HakimAI - Option B : plan de travail avant action (exemple)</text>
+  <text x="40" y="74" font-size="14" fill="#5b6b7f">Demande : « Prépare la feuille de route de mon plan IA Gares »  -  maquette, données d'exemple</text>
+
+  <g font-size="14">
+    <rect x="40" y="110" width="300" height="70" rx="10" fill="#ffffff" stroke="#c9d2dd"/>
+    <text x="60" y="140" font-weight="700" fill="#1b2a3a">1. Demande de l'utilisateur</text>
+    <text x="60" y="162" fill="#5b6b7f">Message dans la conversation</text>
+
+    <rect x="40" y="215" width="300" height="90" rx="10" fill="#e8f0fe" stroke="#4a7bd0"/>
+    <text x="60" y="245" font-weight="700" fill="#1b2a3a">2. Plan de travail</text>
+    <text x="60" y="267" fill="#33475b">outil hakim_plan_travail</text>
+    <text x="60" y="287" fill="#33475b">tracé dans copilot_actions (plan_id)</text>
+
+    <rect x="40" y="340" width="300" height="90" rx="10" fill="#fff4e0" stroke="#d99a2b"/>
+    <text x="60" y="370" font-weight="700" fill="#1b2a3a">3. Décision humaine</text>
+    <text x="60" y="392" fill="#33475b">Valider, ajuster ou annuler</text>
+    <text x="60" y="412" fill="#33475b">Aucune écriture avant validation</text>
+
+    <rect x="40" y="465" width="300" height="90" rx="10" fill="#e7f6ec" stroke="#3a9a5b"/>
+    <text x="60" y="495" font-weight="700" fill="#1b2a3a">4. Exécution contrôlée</text>
+    <text x="60" y="517" fill="#33475b">Seuls les outils annoncés sont permis</text>
+    <text x="60" y="537" fill="#33475b">Chaque action reliée au plan_id</text>
+
+    <rect x="40" y="590" width="300" height="90" rx="10" fill="#ffffff" stroke="#c9d2dd"/>
+    <text x="60" y="620" font-weight="700" fill="#1b2a3a">5. Compte rendu</text>
+    <text x="60" y="642" fill="#33475b">Fait / écart au plan / à décider</text>
+    <text x="60" y="662" fill="#33475b">Validation sur la page Transformation</text>
+
+    <line x1="190" y1="180" x2="190" y2="213" stroke="#5b6b7f" stroke-width="2" marker-end="url(#arr)"/>
+    <line x1="190" y1="305" x2="190" y2="338" stroke="#5b6b7f" stroke-width="2" marker-end="url(#arr)"/>
+    <line x1="190" y1="430" x2="190" y2="463" stroke="#5b6b7f" stroke-width="2" marker-end="url(#arr)"/>
+    <line x1="190" y1="555" x2="190" y2="588" stroke="#5b6b7f" stroke-width="2" marker-end="url(#arr)"/>
+    <path d="M340,385 C380,385 380,260 345,260" fill="none" stroke="#d99a2b" stroke-width="2" stroke-dasharray="5,4" marker-end="url(#arr)"/>
+    <text x="352" y="325" font-size="12" fill="#b07a16">ajuster</text>
+  </g>
+
+  <rect x="410" y="110" width="750" height="610" rx="14" fill="#ffffff" stroke="#4a7bd0" stroke-width="2"/>
+  <rect x="410" y="110" width="750" height="52" rx="14" fill="#4a7bd0"/>
+  <rect x="410" y="140" width="750" height="22" fill="#4a7bd0"/>
+  <text x="432" y="144" font-size="18" font-weight="700" fill="#ffffff">Plan de travail HakimAI</text>
+  <text x="1138" y="144" font-size="13" fill="#dbe6fb" text-anchor="end">Plan IA Gares - étape 6 Feuille de route</text>
+
+  <g font-size="14" fill="#1b2a3a">
+    <text x="432" y="192" font-weight="700" fill="#4a7bd0">Ce que j'ai compris</text>
+    <text x="432" y="213">Proposer des vagues de déploiement pour les éléments de cible validés.</text>
+
+    <text x="432" y="245" font-weight="700" fill="#4a7bd0">Ce que je sais déjà</text>
+    <text x="432" y="266">• 3 éléments de cible validés : Agent synthèse, Outil synthèse, Flux existant</text>
+    <text x="432" y="286">• 0 incohérence signalée  • aucune vague existante</text>
+
+    <text x="432" y="318" font-weight="700" fill="#4a7bd0">Hypothèses et questions</text>
+    <text x="432" y="339">• Valeur et effort restent qualitatifs (faible / moyen / fort), à confirmer par vous</text>
+    <text x="432" y="359">• L'outil doit exister avant l'agent qui l'utilise : à confirmer</text>
+
+    <text x="432" y="391" font-weight="700" fill="#4a7bd0">Étapes proposées</text>
+    <rect x="432" y="401" width="706" height="28" rx="5" fill="#f4f6f9"/>
+    <text x="444" y="420">1. Lire l'état du plan</text>
+    <text x="760" y="420" fill="#5b6b7f">transformation_etat</text>
+    <text x="1126" y="420" fill="#3a9a5b" text-anchor="end">lecture</text>
+    <rect x="432" y="433" width="706" height="28" rx="5" fill="#f4f6f9"/>
+    <text x="444" y="452">2. Vous présenter 2 vagues en texte</text>
+    <text x="760" y="452" fill="#5b6b7f">aucun outil</text>
+    <text x="1126" y="452" fill="#3a9a5b" text-anchor="end">aucune écriture</text>
+    <rect x="432" y="465" width="706" height="28" rx="5" fill="#f4f6f9"/>
+    <text x="444" y="484">3. Enregistrer les vagues au statut « proposé »</text>
+    <text x="760" y="484" fill="#5b6b7f">transformation_feuille_route</text>
+    <text x="1126" y="484" fill="#d99a2b" text-anchor="end">écriture tracée</text>
+
+    <text x="432" y="523" font-weight="700" fill="#4a7bd0">Points de décision</text>
+    <text x="432" y="544">• Vous validez ou rejetez chaque vague sur la page Transformation (onglet 6)</text>
+
+    <text x="432" y="576" font-weight="700" fill="#4a7bd0">Ce que je ne ferai pas</text>
+    <text x="432" y="597">• Pas de publication  • pas de lecture de lignes  • pas de seuil SNCF Réseau inventé</text>
+  </g>
+
+  <rect x="432" y="640" width="200" height="44" rx="8" fill="#3a9a5b"/>
+  <text x="532" y="668" font-size="15" font-weight="700" fill="#ffffff" text-anchor="middle">Valider le plan</text>
+  <rect x="648" y="640" width="200" height="44" rx="8" fill="#ffffff" stroke="#d99a2b" stroke-width="2"/>
+  <text x="748" y="668" font-size="15" font-weight="700" fill="#b07a16" text-anchor="middle">Ajuster</text>
+  <rect x="864" y="640" width="200" height="44" rx="8" fill="#ffffff" stroke="#c9d2dd" stroke-width="2"/>
+  <text x="964" y="668" font-size="15" fill="#5b6b7f" text-anchor="middle">Annuler</text>
+  <text x="432" y="706" font-size="12" fill="#5b6b7f">Trace : action_id act_… / plan_id tp_… - aucune écriture tant que le plan n'est pas validé</text>
+</svg>

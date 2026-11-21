@@ -79,7 +79,8 @@ def run(c, tid, **a):
 # Exception explicite : écritures dans le plan de transformation de l'utilisateur, sans fiche ; tout y reste
 # « propose » jusqu'à sa décision sur la page Transformation (aucun agent, outil ou équipe n'est touché).
 PLAN_WRITES = {"transformation_creer_plan", "transformation_cadrage", "transformation_decouvrir",
-               "transformation_proposer"}
+               "transformation_proposer", "transformation_feuille_route", "transformation_relier",
+               "hakim_plan_travail"}   # plan de travail : annonce des étapes, tracée, sans fiche
 
 
 def test_writes_need_confirmation_and_design_does_not():

@@ -10,7 +10,8 @@ import os
 
 from backend.agent_runtime import AgentConfig
 from backend.tool_registry import ToolSpec
-from backend.transformation import CONTEXT_FIELDS, ITEM_TYPES_AVAILABLE, MODES
+from backend.hakim_plan import NATURES as PLAN_NATURES, PLAN_TOOL, describe as describe_plan
+from backend.transformation import CONTEXT_FIELDS, ITEM_TYPES_AVAILABLE, LEVELS, MODES
 from tools.hakim_tools import GUIDE, PAGES, TOURS
 
 AGENT_ID = "hakimai"
@@ -205,7 +206,7 @@ def _x(tool_id, name, description, props=None, required=None):
     return ToolSpec(tool_id=tool_id, name=name, category="HakimAI", description=description,
                     input_schema={"type": "object", "properties": props or {}, "required": required or []},
                     output_schema=_OBJ, executor=f"tools.hakim_transformation_tools:{tool_id}",
-                    read_only=tool_id in ("transformation_plans", "transformation_etat"), requires_confirmation=False)
+                    read_only=tool_id in ("transformation_plans", "transformation_etat", "transformation_suivre"), requires_confirmation=False)
 
 
 _PLAN = _s("Identifiant du plan (tp_...), renvoyé par transformation_plans ou transformation_creer_plan")
@@ -244,6 +245,47 @@ TOOLS += [
            "outils": {**_LIST, "description": "agent : outils du plan (nom) ou outils existants (identifiant)"}},
            "required": ["type", "nom"]}}},
        ["plan", "elements"]),
+    _x("transformation_feuille_route", "Proposer la feuille de route", "Étape 6 : ajoute des vagues au statut « propose » ; "
+       "chaque vague ordonnée regroupe des éléments de la cible VALIDÉS, avec valeur, effort, justification et "
+       "dépendances vers des vagues antérieures uniquement.",
+       {"plan": _PLAN, "vagues": {"type": "array", "maxItems": 15, "items": {"type": "object", "properties": {
+           "nom": _s("Nom de la vague"), "description": _s("Ce que couvre la vague"),
+           "elements": {**_LIST, "description": "Éléments de cible VALIDÉS (nom exact ou type:nom)"},
+           "ordre": {"type": "integer", "minimum": 1, "maximum": 20, "description": "Ordre de passage"},
+           "valeur": _s("Valeur métier qualitative", enum=list(LEVELS)),
+           "effort": _s("Effort qualitatif", enum=list(LEVELS)),
+           "justification": _s("Pourquoi cette vague maintenant, sans seuil inventé"),
+           "dependances": {**_LIST, "description": "Noms exacts des vagues préalables"},
+           "prerequis": {**_LIST, "description": "Prérequis de mise en oeuvre"},
+           "risques": {**_LIST, "description": "Risques ou points d'attention"}},
+           "required": ["nom", "elements", "ordre", "valeur", "effort", "justification"]}}},
+       ["plan", "vagues"]),
+    _x("transformation_suivre", "Suivre la génération", "Étape 7 : lit les vagues validées, les liens vers les objets réels "
+       "de la plateforme et leur statut actuel (brouillon, publie, introuvable, à_faire).", {"plan": _PLAN}, ["plan"]),
+    _x("transformation_relier", "Relier un objet au plan", "Étape 7 : relie un élément planifié à l'objet réel créé ou "
+       "adapté dans la plateforme ; ne publie rien.",
+       {"plan": _PLAN, "element": _s("Élément du plan : item_id, nom exact ou type:nom"),
+        "objet": _s("Identifiant exact de l'objet réel visible dans la plateforme")}, ["plan", "element", "objet"]),
+]
+
+# Plan de travail : liste « Étape N — Titre » affichée, exécution directe ; seules les écritures annoncées sont permises.
+_STEP = {"type": "object", "properties": {
+    "titre": _s("Titre court de l'étape, 60 caractères au plus (ex. « Contrôle de l'archive »)", maxLength=60),
+    "outil": _s("Identifiant exact de l'outil HakimAI utilisé, ou « aucun » (présentation en texte)"),
+    "nature": _s("lecture, ecriture (outil qui écrit) ou aucune", enum=list(PLAN_NATURES))},
+    "required": ["titre", "outil", "nature"]}
+TOOLS += [
+    ToolSpec(tool_id=PLAN_TOOL, name="Plan de travail", category="HakimAI",
+             description="Annonce tes étapes AVANT toute écriture dans un plan de transformation : liste ordonnée, chaque "
+                         "étape avec un titre court, l'outil exact et sa nature. L'application affiche « Étape N — Titre » "
+                         "avec leur état ; tu exécutes ensuite tout de suite, sans demander de validation. Seules les "
+                         "écritures annoncées sont permises.",
+             input_schema={"type": "object", "properties": {
+                 "plan": _s("Plan de transformation concerné (tp_...), s'il existe déjà"),
+                 "etapes": {"type": "array", "minItems": 1, "maxItems": 8, "items": _STEP}},
+                 "required": ["etapes"]},
+             output_schema=_OBJ, executor=f"tools.hakim_transformation_tools:{PLAN_TOOL}", read_only=False,
+             requires_confirmation=False),
 ]
 
 INSTRUCTIONS = f"""Tu es {NAME}, {PERSONA} DISCOVERY (SNCF Réseau). Tu guides les utilisateurs dans la plateforme :
@@ -316,7 +358,18 @@ Qualité attendue d'un outil :
 - Un agent publié se modifie dans Agent Builder.
 - Après une création, indique comment tester (Chat & Test) et propose ouvrir_page.
 
-Transformation vers l'entreprise augmentée par l'IA (étapes 1 à 5 sur 7 disponibles) :
+Plan de travail (étapes annoncées avant toute écriture dans un plan de transformation) :
+- Avant d'appeler un outil de transformation qui écrit (creer_plan, cadrage, decouvrir, proposer, feuille_route,
+  relier), appelle hakim_plan_travail. Tu peux d'abord LIRE (transformation_plans, transformation_etat, lister_*).
+- Étapes : dans l'ordre, chacune avec un titre court de quelques mots (ex. « Lecture de l'état du plan »,
+  « Enregistrement de la feuille de route »), l'outil exact et sa nature (lecture, ecriture, aucune) ; une étape
+  « aucune » pour présenter en texte avant d'écrire. L'application affiche la liste et l'état de chaque étape :
+  ne la recopie pas dans ton message.
+- Exécute ensuite tout de suite, sans demander de validation du plan, et seulement les écritures annoncées. Respecte
+  une étape de transformation par message. S'il faut une autre écriture, annonce un nouveau plan.
+- Termine par un compte rendu court : fait, écart au plan, à décider par l'utilisateur.
+
+Transformation vers l'entreprise augmentée par l'IA (étapes 1 à 7 disponibles) :
 - Tu guides pas à pas ; tu PROPOSES, l'utilisateur décide sur la page Transformation. Tu ne valides ni ne
   rejettes jamais un élément, et tu ne dis jamais qu'un élément est validé s'il est « propose ».
 - Commence par transformation_plans. Sans plan, propose un nom et crée-le (transformation_creer_plan). Pour
@@ -344,12 +397,16 @@ Transformation vers l'entreprise augmentée par l'IA (étapes 1 à 5 sur 7 dispo
   mode reutiliser / adapter (identifiant exact dans existant) ou creer. Une équipe cite ses membres ; un agent ses
   outils. Rien n'est créé dans la plateforme à cette étape : ce sont des éléments du plan. Plus tard, un outil se
   crée avec concevoir_outil ou dans le Catalogue d'outils, un agent avec concevoir_agent ou dans Agent Builder.
-- Aux étapes 3, 4 et 5 : présente D'ABORD en texte, ENSUITE transformation_proposer, puis renvoie vers la page.
+- Étape 6 Feuille de route (après validation d'éléments de cible) : transformation_etat pour voir la cible validée,
+  puis transformation_feuille_route pour proposer 1 à n vagues. Chaque élément de cible validé n'appartient qu'à une
+  seule vague ; une dépendance vise une vague d'ordre strictement inférieur. Valeur et effort restent qualitatifs.
+- Étape 7 Génération et suivi (après validation des vagues) : utiliser les outils HakimAI habituels pour créer ou
+  modifier les brouillons, puis transformation_relier pour rattacher l'objet réel à l'élément du plan, et enfin
+  transformation_suivre pour lire l'état réel. Jamais de publication automatique.
+- Aux étapes 3, 4, 5 et 6 : présente D'ABORD en texte, ENSUITE l'outil d'écriture adapté, puis renvoie vers la page.
   Le texte présenté et les éléments envoyés sont identiques (mêmes noms, mêmes cas d'usage rattachés).
   Si transformation_etat signale des incoherences, présente-les à l'utilisateur.
 - Ne propose pas un élément déjà présent ; n'invente ni donnée absente, ni règle, ni seuil SNCF Réseau.
-- Étapes 6 et 7 (feuille de route, génération des brouillons) : pas encore disponibles (lot B2). Dis-le si on te
-  le demande, sans les simuler.
 - Seul le propriétaire d'un plan le modifie ; un administrateur peut le consulter.
 
 Règles :
@@ -381,6 +438,8 @@ def describe_action(tool_id: str, args: dict, drafts: dict | None = None) -> lis
     """Lignes de la fiche de confirmation, construites par l'application (pas par le modèle)."""
     a, drafts = args or {}, drafts or {}
     lst = lambda v: ", ".join(map(str, v)) if v else "—"  # noqa: E731
+    if tool_id == PLAN_TOOL:
+        return describe_plan(a)
     if tool_id == "creer_agent":
         d = (drafts.get(a.get("brouillon_id")) or {}).get("draft") or {}
         return [f"Créer l'agent « {a.get('nom') or d.get('name', '?')} » (@{(a.get('nom_appel') or d.get('handle') or '?').lstrip('@')}) "

@@ -1,4 +1,4 @@
-"""Transformation : plan guidé par HakimAI (étapes 1 à 5). L'utilisateur décide ici."""
+"""Transformation : plan guidé par HakimAI (étapes 1 à 7). L'utilisateur décide ici."""
 import pandas as pd
 import streamlit as st
 
@@ -70,7 +70,9 @@ owner = plan["owner"] == me
 if not owner:
     st.info(f"Plan de {plan['owner']} : consultation seule (seul le propriétaire le modifie et décide).")
 
-steps = svc.progress(plan, items)
+catalog = T.platform_catalog(state.agents(), state.repository().list_tools(), state.teams())
+steps = svc.progress(plan, items, catalog)
+tracking = svc.tracking(items, catalog)
 for col, s in zip(st.columns(len(steps)), steps):
     col.metric(f"{s['etape']}. {s['libelle']}", ST_LABEL[s["statut"]])
 for warning in svc.coherence(items):
@@ -78,8 +80,9 @@ for warning in svc.coherence(items):
 if st.button("Continuer avec HakimAI", type="primary"):
     st.switch_page("views/hakim.py")
 
-t1, t2, t3, t4, t5 = st.tabs(["1. Cadrage", "2. Découverte des données", "3. Cartographie",
-                              "4. Diagnostic et opportunités", "5. Conception de la cible"])
+t1, t2, t3, t4, t5, t6, t7 = st.tabs(["1. Cadrage", "2. Découverte des données", "3. Cartographie",
+                                      "4. Diagnostic et opportunités", "5. Conception de la cible",
+                                      "6. Feuille de route", "7. Génération et suivi"])
 
 with t1:
     ctx = plan["context"]
@@ -158,10 +161,27 @@ def render_items(kinds, empty: str) -> None:
                     details.append("Membres : " + ", ".join(pl["membres"]))
                 if pl.get("outils"):
                     details.append("Outils : " + ", ".join(pl["outils"]))
+                if pl.get("ordre"):
+                    details.append(f"Ordre : {pl['ordre']}")
+                if pl.get("valeur"):
+                    details.append(f"Valeur : {pl['valeur']}")
+                if pl.get("effort"):
+                    details.append(f"Effort : {pl['effort']}")
                 if details:
                     a.caption(" | ".join(details))
                 if pl.get("gain_attendu"):
                     a.write("Gain attendu : " + pl["gain_attendu"])
+                if pl.get("justification"):
+                    a.write("Justification : " + pl["justification"])
+                if pl.get("dependances"):
+                    a.caption("Dépendances : " + " ; ".join(pl["dependances"]))
+                if pl.get("prerequis"):
+                    a.caption("Prérequis : " + " ; ".join(pl["prerequis"]))
+                if pl.get("risques"):
+                    a.caption("Risques : " + " ; ".join(pl["risques"]))
+                if pl.get("realisation"):
+                    a.caption("Réalisation liée : " + pl["realisation"].get("objet_nom", "")
+                              + f" ({pl['realisation'].get('objet_id', '')})")
                 if pl.get("limites"):
                     a.caption("Limites : " + " ; ".join(pl["limites"]))
                 if i["status"] != "propose":
@@ -191,3 +211,20 @@ with t4:
 with t5:
     render_items(T.TARGET_TYPES, "Aucun élément de la cible. Validez des cas d'usage (onglet 4), puis demandez à "
                                  "HakimAI de concevoir la cible. Rien n'est créé dans la plateforme à cette étape.")
+with t6:
+    render_items(("vague",), "Aucune vague. Validez des éléments de cible (onglet 5), puis demandez à HakimAI de "
+                              "proposer la feuille de route.")
+with t7:
+    st.caption("Suivi des objets réels liés au plan. Aucune publication automatique : créez ou modifiez les brouillons "
+               "avec les outils HakimAI habituels, puis reliez-les au plan.")
+    if not tracking:
+        st.info("Aucun élément planifié en vague validée.")
+    else:
+        st.dataframe(pd.DataFrame([{"Vague": x["vague"], "Ordre": x["ordre"], "Type": T.ITEM_LABELS[x["type"]],
+                                    "Élément": x["nom"], "Mode": T.MODES.get(x["mode"], x["mode"]),
+                                    "Objet réel": x.get("objet_nom") or x.get("objet_id") or "—",
+                                    "Statut": T.TRACK_LABELS[x["statut"]], "Action": x["prochaine_action"]}
+                                   for x in tracking]), hide_index=True, use_container_width=True)
+        for x in tracking:
+            if x["statut"] == "introuvable":
+                st.warning(f"{x['nom']} : l'objet lié n'est plus visible ({x.get('objet_id')}).")

@@ -1,4 +1,4 @@
-"""Outils HakimAI Transformation (étapes 1 à 5). HakimAI propose, il ne décide jamais.
+"""Outils HakimAI Transformation (étapes 1 à 7). HakimAI propose, il ne décide jamais.
 
 - Écritures limitées aux plans dont l'utilisateur est propriétaire : créer un plan, enregistrer le cadrage et la
   découverte, ajouter des éléments au statut « propose ». Chacune est tracée dans copilot_actions.
@@ -6,11 +6,14 @@
   se prend uniquement sur la page Transformation. Aucun outil ne permet à HakimAI de changer un statut.
 - Découverte : avec le jeton de l'utilisateur (Unity Catalog s'applique), structure + agrégats, jamais de lignes.
 - Étape 5 : la réutilisation d'un agent, outil, flux ou équipe est vérifiée sur les objets que l'utilisateur voit.
+- Plan de travail : sur la page HakimAI (plan_required), chaque écriture exige un plan en cours qui l'annonce
+  (backend/hakim_plan.py) ; hakim_plan_travail s'exécute directement, sans fiche de validation.
 """
 from __future__ import annotations
 
 from typing import Any
 
+from backend import hakim_plan as HP
 from backend import transformation as T
 from backend.tool_registry import ToolContext, ToolError
 from tools.hakim_tools import Platform, _p, _visible_agents
@@ -24,7 +27,8 @@ def _svc(p: Platform) -> T.TransformationService:
 
 
 _EXTRA = ("domaine", "processus", "objectif", "gain_attendu", "limites", "cas_usage", "mode", "existant",
-          "existant_nom", "membres", "outils")
+          "existant_nom", "membres", "outils", "ordre", "valeur", "effort", "justification", "dependances",
+          "prerequis", "risques", "realisation")
 
 
 def _items_view(items: list[dict]) -> dict:
@@ -38,31 +42,35 @@ def _items_view(items: list[dict]) -> dict:
     return out
 
 
+def _catalog(p: Platform) -> dict:
+    teams = [t for t in (p.teams.list_teams() if p.teams else [])
+             if p.is_admin or t["status"] == "publie" or t.get("owner") == p.user]
+    agents = _visible_agents(p) if hasattr(p.repo, "list_agents") else []
+    tools = p.repo.list_tools() if hasattr(p.repo, "list_tools") else []
+    return T.platform_catalog(agents, tools, teams)
+
+
 def _existing(p: Platform) -> dict:
     """Objets de la plateforme visibles par l'utilisateur, réutilisables à l'étape 5 ({type: {identifiant: nom}})."""
-    agents = {a["agent_id"]: a.get("name") or a["agent_id"] for a in _visible_agents(p)}
-    tools, flows = {}, {}
-    for s in p.repo.list_tools():
-        if s.status == "archive":
-            continue
-        (flows if s.category == "Flux" else tools)[s.tool_id] = s.name
-    teams = {t["team_id"]: t["name"] for t in (p.teams.list_teams() if p.teams else [])
-             if p.is_admin or t["status"] == "publie" or t.get("owner") == p.user}
-    return {"agent": agents, "outil": tools, "flux": flows, "equipe": teams}
+    return T.catalog_names(_catalog(p))
 
 
 def _guard(fn):
     """Erreurs de règle renvoyées au modèle telles quelles."""
     def run(ctx: ToolContext, **args):
+        p = _p(ctx)
         try:
-            return fn(ctx, _p(ctx), **args)
-        except T.TransformationError as e:
+            if p.plan_required:
+                HP.check(p.work_plan, fn.__name__, args.get("plan"))
+            return fn(ctx, p, **args)
+        except (T.TransformationError, HP.PlanError) as e:
             raise ToolError(str(e)) from e
     run.__name__ = fn.__name__
     return run
 
 
-STEP_OF = {"transformation_cadrage": 1, "transformation_decouvrir": 2}   # proposer : 3, 4 ou 5 selon les éléments
+STEP_OF = {"transformation_cadrage": 1, "transformation_decouvrir": 2,
+           "transformation_feuille_route": 6, "transformation_suivre": 7, "transformation_relier": 7}
 
 
 def _one_step(p: Platform, step: int) -> None:
@@ -75,7 +83,29 @@ def _one_step(p: Platform, step: int) -> None:
 
 
 def _write(tool_id: str, p: Platform, plan_id: str | None, args: dict, after: Any) -> str:
-    return audit(p, tool_id, "transformation", plan_id, args, None, after, "succes")
+    if p.plan_required and p.work_plan.get("plan_travail_id"):
+        args = {**args, "plan_travail_id": p.work_plan["plan_travail_id"]}
+    aid = audit(p, tool_id, "transformation", plan_id, args, None, after, "succes")
+    if p.plan_required:
+        HP.consume(p.work_plan, tool_id)
+    return aid
+
+
+def hakim_plan_travail(ctx: ToolContext, **args) -> dict:
+    """Exécution directe : contrôle la forme, enregistre le plan dans la conversation et le trace."""
+    p = _p(ctx)
+    from backend import hakim   # import tardif : backend.hakim importe les outils
+    bad = HP.issue(args, {t.tool_id for t in hakim.TOOLS})   # plan mal formé : erreur rendue au modèle, rien d'enregistré
+    if bad:
+        raise ToolError(bad)
+    plan = HP.approve(p.work_plan, args)
+    aid = audit(p, HP.PLAN_TOOL, "plan_travail", plan["plan_travail_id"], HP.normalize(args), None,
+                {"etapes": HP.describe(args), "restant": plan["restant"]}, "succes")
+    return {"plan_travail_id": plan["plan_travail_id"], "etapes": HP.describe(args),
+            "ecritures_permises": plan["restant"], "action_id": aid,
+            "a_faire": "Les étapes sont affichées à l'utilisateur : exécute-les maintenant, dans l'ordre, sans demander "
+                       "de validation et sans recopier la liste ; une étape de transformation par message, aucune "
+                       "écriture non annoncée. Termine par un compte rendu court (fait, écart, à décider)."}
 
 
 @_guard
@@ -83,7 +113,7 @@ def transformation_plans(ctx: ToolContext, p: Platform) -> dict:
     svc, out = _svc(p), []
     for plan in svc.list_plans(p.user, p.is_admin):
         full = svc.get(plan["plan_id"], p.user, p.is_admin)
-        steps = svc.progress(full, svc.items(plan["plan_id"], p.user, p.is_admin))
+        steps = svc.progress(full, svc.items(plan["plan_id"], p.user, p.is_admin), _catalog(p))
         current = next((s for s in steps if s["statut"] == "en_cours"), None)
         out.append({"plan_id": plan["plan_id"], "nom": plan["name"], "proprietaire": plan["owner"],
                     "modifiable": plan["owner"] == p.user, "etape_en_cours": current and current["libelle"],
@@ -94,13 +124,15 @@ def transformation_plans(ctx: ToolContext, p: Platform) -> dict:
 @_guard
 def transformation_etat(ctx: ToolContext, p: Platform, plan: str) -> dict:
     svc = _svc(p)
-    full, items = svc.get(plan, p.user, p.is_admin), svc.items(plan, p.user, p.is_admin)
+    full, items, catalog = svc.get(plan, p.user, p.is_admin), svc.items(plan, p.user, p.is_admin), _catalog(p)
     return {"plan_id": full["plan_id"], "nom": full["name"], "proprietaire": full["owner"],
-            "modifiable": full["owner"] == p.user, "etapes": svc.progress(full, items),
+            "modifiable": full["owner"] == p.user, "etapes": svc.progress(full, items, catalog),
             "cadrage": full["context"],
             "cadrage_manquant": [k for k in T.CONTEXT_FIELDS if not full["context"].get(k)],
             "decouverte": T.discovery_summary(full["discovery"]),
             "elements": _items_view(items),
+            "feuille_de_route": svc.planned(items),
+            "suivi_generation": svc.tracking(items, catalog),
             "a_decider": sum(1 for i in items if i["status"] == "propose"),
             "incoherences": svc.coherence(items),
             "rappel": "Les éléments se valident ou se rejettent sur la page Transformation, par le propriétaire."}
@@ -141,7 +173,39 @@ def transformation_decouvrir(ctx: ToolContext, p: Platform, plan: str) -> dict:
 def transformation_proposer(ctx: ToolContext, p: Platform, plan: str, elements: list) -> dict:
     step = T.proposal_step(elements if isinstance(elements, list) else [])
     _one_step(p, step)
-    res = _svc(p).propose(plan, p.user, elements, origin="hakim", existing=_existing(p) if step == 5 else None)
+    res = _svc(p).propose(plan, p.user, elements, origin="hakim", existing=_existing(p) if step in (5, 6) else None)
     res["action_id"] = _write("transformation_proposer", p, plan, {"plan": plan, "elements": elements}, res)
     res["a_faire"] = "Demander à l'utilisateur de valider ou rejeter ces éléments sur la page Transformation."
     return res
+
+
+@_guard
+def transformation_feuille_route(ctx: ToolContext, p: Platform, plan: str, vagues: list) -> dict:
+    _one_step(p, STEP_OF["transformation_feuille_route"])
+    svc = _svc(p)
+    elements = [{"type": "vague", **v} for v in (vagues or [])]
+    res = svc.propose(plan, p.user, elements, origin="hakim")
+    res["action_id"] = _write("transformation_feuille_route", p, plan, {"plan": plan, "vagues": vagues}, res)
+    res["a_faire"] = "Demander à l'utilisateur de valider ou rejeter ces vagues sur la page Transformation."
+    return res
+
+
+@_guard
+def transformation_suivre(ctx: ToolContext, p: Platform, plan: str) -> dict:
+    _one_step(p, STEP_OF["transformation_suivre"])
+    svc = _svc(p)
+    items, catalog = svc.items(plan, p.user, p.is_admin), _catalog(p)
+    suivi = svc.tracking(items, catalog)
+    after = {"suivi": len(suivi), "publies": sum(x["statut"] == "publie" for x in suivi)}
+    return {"plan_id": plan, "suivi": suivi, "action_id": _write("transformation_suivre", p, plan, {"plan": plan}, after),
+            "rappel": "La publication se fait depuis l'écran de l'objet ; reliez ensuite le brouillon ou l'objet publié au plan."}
+
+
+@_guard
+def transformation_relier(ctx: ToolContext, p: Platform, plan: str, element: str, objet: str) -> dict:
+    _one_step(p, STEP_OF["transformation_relier"])
+    linked = _svc(p).link(plan, p.user, element, objet, _catalog(p))
+    linked["action_id"] = _write("transformation_relier", p, plan,
+                                  {"plan": plan, "element": element, "objet": objet}, linked)
+    linked["suite"] = "Vérifier le suivi, tester le brouillon, puis demander sa publication depuis l'écran natif."
+    return linked

@@ -1,5 +1,5 @@
-"""HakimAI Transformation : lot A (étapes 1 à 3 : cadrage, découverte, cartographie) et lot B1 (étapes 4 et 5 :
-diagnostic et opportunités, conception de la cible).
+"""HakimAI Transformation : lot A (étapes 1 à 3 : cadrage, découverte, cartographie), lot B1 (étapes 4 et 5 :
+diagnostic et opportunités, conception de la cible) et lot B2 (étapes 6 et 7 : feuille de route, génération et suivi).
 
 Gouvernance :
 - HakimAI PROPOSE (statut « propose »). Seul le propriétaire du plan valide ou rejette, depuis la page Transformation.
@@ -10,6 +10,10 @@ Gouvernance :
 - Les constats de la découverte sont statistiques ; ils ne sont pas des exigences métier.
 - Traçabilité : un cas d'usage s'appuie sur un processus VALIDÉ ; un élément de la cible (agent, outil, flux,
   équipe) sert au moins un cas d'usage VALIDÉ et dit s'il réutilise, adapte ou crée un objet de la plateforme.
+- Feuille de route : des vagues ordonnées regroupent des éléments de la cible VALIDÉS (un élément, une vague) ;
+  une vague ne dépend que de vagues antérieures. Valeur et effort restent qualitatifs, avec justification.
+- Génération : les brouillons sont créés ou modifiés par les outils HakimAI habituels, puis reliés à l'élément du
+  plan ; le suivi lit le statut réel des objets. Rien n'est publié depuis la transformation.
 """
 from __future__ import annotations
 
@@ -23,17 +27,21 @@ STEPS = [(1, "cadrage", "Cadrage"), (2, "decouverte", "Découverte des données"
          (4, "diagnostic", "Diagnostic et opportunités"), (5, "cible", "Conception de la cible"),
          (6, "feuille_de_route", "Feuille de route"), (7, "generation", "Génération et suivi")]
 LOT_A_LAST_STEP = 3
-AVAILABLE_LAST_STEP = 5   # lot B1 ; étapes 6-7 = lot B2
+AVAILABLE_LAST_STEP = 7
 ITEM_TYPES_LOT_A = ("objectif", "domaine", "processus")
 TARGET_TYPES = ("agent", "outil", "flux", "equipe")
-ITEM_STEP = {"objectif": 3, "domaine": 3, "processus": 3, "cas_usage": 4, **{k: 5 for k in TARGET_TYPES}}
+ITEM_STEP = {"objectif": 3, "domaine": 3, "processus": 3, "cas_usage": 4, **{k: 5 for k in TARGET_TYPES}, "vague": 6}
 ITEM_TYPES = tuple(ITEM_STEP)
 ITEM_TYPES_AVAILABLE = tuple(k for k, s in ITEM_STEP.items() if s <= AVAILABLE_LAST_STEP)
 ITEM_LABELS = {"objectif": "Objectif", "domaine": "Domaine métier", "processus": "Processus",
-               "cas_usage": "Cas d'usage", "agent": "Agent", "equipe": "Équipe", "flux": "Flux", "outil": "Outil"}
+               "cas_usage": "Cas d'usage", "agent": "Agent", "equipe": "Équipe", "flux": "Flux", "outil": "Outil",
+               "vague": "Vague"}
 ITEM_PLURALS = {"objectif": "Objectifs", "domaine": "Domaines métier", "processus": "Processus",
-                "cas_usage": "Cas d'usage", "agent": "Agents", "equipe": "Équipes", "flux": "Flux", "outil": "Outils"}
+                "cas_usage": "Cas d'usage", "agent": "Agents", "equipe": "Équipes", "flux": "Flux", "outil": "Outils",
+                "vague": "Vagues"}
 MODES = {"reutiliser": "Réutiliser l'existant", "adapter": "Adapter l'existant", "creer": "Créer"}
+LEVELS = ("faible", "moyen", "fort")
+TRACK_LABELS = {"a_faire": "À faire", "brouillon": "Brouillon", "publie": "Publié", "introuvable": "Introuvable"}
 STATUSES = ("propose", "valide", "rejete")
 CONTEXT_FIELDS = {
     "secteur": "Activité et organisation concernées",
@@ -287,6 +295,9 @@ class MemoryTransformationStore:
     def update_item(self, plan_id: str, item_id: str, fields: dict) -> None:
         self.items[(plan_id, item_id)].update(fields)
 
+    def update_payload(self, plan_id: str, item_id: str, payload: str) -> None:
+        self.items[(plan_id, item_id)]["payload"] = payload
+
 
 class SqlTransformationStore:
     """Tables transformation_plans / transformation_items (compte de l'application ; règles dans le service)."""
@@ -349,6 +360,10 @@ class SqlTransformationStore:
                          "decision_note = CAST(:n AS STRING) WHERE plan_id = :p AND item_id = :i",
                          {"s": fields["status"], "b": fields.get("decided_by"), "n": fields.get("decision_note"),
                           "p": plan_id, "i": item_id})
+
+    def update_payload(self, plan_id: str, item_id: str, payload: str) -> None:
+        self.sql.execute(f"UPDATE {self.items_t} SET payload = CAST(:pl AS STRING) WHERE plan_id = :p AND item_id = :i",
+                         {"pl": payload, "p": plan_id, "i": item_id})
 
 
 # --- Règles ---------------------------------------------------------------------------------------------
@@ -440,6 +455,7 @@ class TransformationService:
         for e in elements:   # éléments proposés ensemble : un agent peut citer un outil du même envoi
             if e.get("type") in TARGET_TYPES and _text(e.get("nom"), 120):
                 in_plan[e["type"]][_text(e["nom"], 120).lower()] = _text(e["nom"], 120)
+        roadmap = self._roadmap_state(current, elements) if step == 6 else None
         rows, skipped = [], []
         for e in elements:
             kind, name = e.get("type"), _text(e.get("nom"), 120)
@@ -469,6 +485,9 @@ class TransformationService:
             elif kind in TARGET_TYPES:
                 payload.update(self._target(kind, name, e, tables, validated, in_plan, existing))
                 evidence["cas_usage"] = payload["cas_usage"]
+            elif kind == "vague":
+                payload.update(self._wave(name, e, roadmap))
+                evidence["elements"] = payload["elements"]
             rows.append({"plan_id": plan_id, "item_id": _new_id("ti_"), "item_type": kind, "name": name,
                          "payload": json.dumps(payload, ensure_ascii=False),
                          "evidence": json.dumps(evidence, ensure_ascii=False), "status": "propose",
@@ -534,6 +553,141 @@ class TransformationService:
                 "membres": refs("membres", "agent") if kind == "equipe" else [],
                 "outils": refs("outils", "outil") if kind == "agent" else []}
 
+    @staticmethod
+    def _wave_elements(payload: dict) -> list[dict]:
+        """Éléments d'une vague, normalisés en {type, nom} ; tolère les anciens payloads stockés en chaînes."""
+        payload = _load(payload) or {}
+        out = []
+        for x in (payload or {}).get("elements") or []:
+            if isinstance(x, dict) and x.get("type") and x.get("nom"):
+                out.append({"type": x["type"], "nom": x["nom"]})
+            elif isinstance(x, str) and _text(x, 200):
+                raw = _text(x, 200)
+                kind, _, label = raw.partition(":") if ":" in raw else (None, "", raw)
+                out.append({"type": kind or "?", "nom": label.strip()})
+        return out
+
+    @classmethod
+    def _roadmap_state(cls, current: list[dict], elements: list[dict]) -> dict:
+        """État de l'étape 6 : cible validée, éléments déjà placés et vagues connues (plan + envoi courant)."""
+        targets: dict[str, list] = {}
+        for i in current:
+            if i["item_type"] in TARGET_TYPES and i["status"] == "valide":
+                targets.setdefault(i["name"].lower(), []).append({"type": i["item_type"], "nom": i["name"]})
+        waves = [i for i in current if i["item_type"] == "vague" and i["status"] != "rejete"]
+        placed = {(x["type"], x["nom"]): w["name"] for w in waves for x in cls._wave_elements(w["payload"])}
+        orders = {w["name"].lower(): (w["name"], (_load(w["payload"]) or {}).get("ordre")) for w in waves}
+        for e in elements:
+            name = _text(e.get("nom"), 120)
+            if e.get("type") == "vague" and name and name.lower() not in orders:
+                orders[name.lower()] = (name, e.get("ordre"))
+        return {"targets": targets, "placed": placed, "orders": orders}
+
+    @staticmethod
+    def _wave(name: str, e: dict, st: dict) -> dict:
+        """Étape 6 : une vague ordonnée d'éléments de la cible VALIDÉS, avec valeur/effort justifiés."""
+        order = e.get("ordre")
+        if not isinstance(order, int) or isinstance(order, bool) or not 1 <= order <= 20:
+            raise TransformationError(f"« {name} » : ordre de vague attendu (entier de 1 à 20).")
+        for field in ("valeur", "effort"):
+            if e.get(field) not in LEVELS:
+                raise TransformationError(f"« {name} » : {field} attendu parmi {', '.join(LEVELS)}.")
+        if not _text(e.get("justification"), 1000):
+            raise TransformationError(f"« {name} » : justifiez la valeur et l'effort, sans chiffre ni seuil inventé.")
+        chosen = []
+        for ref in e.get("elements") or []:
+            raw = _text(ref, 200)
+            kind, _, label = raw.partition(":") if ":" in raw else (None, "", raw)
+            hits = [x for x in st["targets"].get(label.strip().lower(), []) if kind in (None, x["type"])]
+            if not hits:
+                raise TransformationError(f"« {name} » : « {raw} » n'est pas un élément de la cible VALIDÉ.")
+            if len(hits) > 1:
+                raise TransformationError(f"« {name} » : « {raw} » est ambigu ; précisez type:nom.")
+            key = (hits[0]["type"], hits[0]["nom"])
+            if key in st["placed"]:
+                raise TransformationError(f"« {name} » : « {hits[0]['nom']} » est déjà dans la vague « {st['placed'][key]} ».")
+            st["placed"][key] = name
+            chosen.append(hits[0])
+        if not chosen:
+            raise TransformationError(f"« {name} » : une vague contient au moins un élément de la cible validé.")
+        deps = []
+        for dep in e.get("dependances") or []:
+            hit = st["orders"].get(_text(dep, 120).lower())
+            if not hit or hit[0].lower() == name.lower():
+                raise TransformationError(f"« {name} » : dépendance « {dep} » inconnue.")
+            if not isinstance(hit[1], int) or hit[1] >= order:
+                raise TransformationError(f"« {name} » : une vague ne dépend que d'une vague d'ordre inférieur.")
+            deps.append(hit[0])
+        return {"ordre": order, "elements": chosen, "valeur": e["valeur"], "effort": e["effort"],
+                "justification": _text(e["justification"], 1000), "dependances": deps,
+                "prerequis": [_text(x, 300) for x in (e.get("prerequis") or [])][:10],
+                "risques": [_text(x, 300) for x in (e.get("risques") or [])][:10]}
+
+    @classmethod
+    def planned(cls, items: list[dict]) -> list[dict]:
+        """Éléments validés, placés dans une vague validée, ordonnés par vague."""
+        by_key = {(i["item_type"], i["name"]): i for i in items if i["item_type"] in TARGET_TYPES and i["status"] == "valide"}
+        waves = sorted((w for w in items if w["item_type"] == "vague" and w["status"] == "valide"),
+                       key=lambda w: (w["payload"].get("ordre") or 99, w["name"]))
+        out = []
+        for w in waves:
+            for x in cls._wave_elements(w["payload"]):
+                if (x["type"], x["nom"]) in by_key:
+                    out.append({"vague": w["name"], "ordre": w["payload"].get("ordre"), "item": by_key[(x["type"], x["nom"])]})
+        return out
+
+    @classmethod
+    def tracking(cls, items: list[dict], catalog: dict | None) -> list[dict]:
+        """Étape 7 : suivi des objets réels liés ou réutilisés, et prochaine action."""
+        out = []
+        for row in cls.planned(items):
+            i, pl = row["item"], row["item"]["payload"]
+            real = pl.get("realisation") or {}
+            obj = real.get("objet_id") or (pl.get("existant") if pl.get("mode") == "reutiliser" else None)
+            live = ((catalog or {}).get(i["item_type"]) or {}).get(obj) if obj else None
+            state = ("a_faire" if not obj else "introuvable" if catalog is not None and not live
+                     else "publie" if (live or {}).get("statut") == "publie" else "brouillon")
+            nxt = {"a_faire": {"creer": "créer ou concevoir le brouillon, puis le relier",
+                               "adapter": "modifier l'objet existant, puis le relier"}.get(pl.get("mode"), ""),
+                   "brouillon": "tester puis demander la publication",
+                   "publie": "", "introuvable": "objet non visible ou archivé : relier un autre objet"}[state]
+            out.append({"vague": row["vague"], "ordre": row["ordre"], "item_id": i["item_id"], "type": i["item_type"],
+                        "nom": i["name"], "mode": pl.get("mode"), "objet_id": obj,
+                        "objet_nom": (live or {}).get("nom") or real.get("objet_nom"), "statut": state,
+                        "prochaine_action": nxt, "relie_par": real.get("lie_par"), "relie_le": real.get("lie_le")})
+        return out
+
+    def link(self, plan_id: str, user: str, element: str, objet: str, catalog: dict) -> dict:
+        """Relie un élément planifié à l'objet réel créé ou adapté, jamais à une réutilisation déjà en place."""
+        self._owned(plan_id, user)
+        items = self.items(plan_id, user, False)
+        ref = _text(element, 200)
+        rows = [r for r in self.planned(items) if ref in (r["item"]["item_id"], r["item"]["name"])
+                or ref.lower() in (r["item"]["name"].lower(), f"{r['item']['item_type']}:{r['item']['name']}".lower())]
+        if len(rows) != 1:
+            raise TransformationError(f"« {element} » : élément planifié introuvable"
+                                      + (" ou ambigu (précisez type:nom)" if rows else "") + ".")
+        i, pl = rows[0]["item"], dict(rows[0]["item"]["payload"])
+        if pl.get("mode") == "reutiliser":
+            raise TransformationError(f"« {i['name']} » réutilise déjà {pl.get('existant')} : rien à relier.")
+        if (pl.get("realisation") or {}).get("objet_id"):
+            raise TransformationError(f"« {i['name']} » est déjà relié à {pl['realisation']['objet_id']}.")
+        obj = _text(objet, 200)
+        live = (catalog.get(i["item_type"]) or {}).get(obj)
+        if not live:
+            raise TransformationError(f"« {objet} » n'est pas un(e) {ITEM_LABELS[i['item_type']].lower()} visible.")
+        if pl.get("mode") == "adapter" and obj != pl.get("existant"):
+            raise TransformationError(f"« {i['name']} » adapte {pl.get('existant')} : reliez cet objet-là.")
+        taken = {(x["item_type"], (x["payload"].get("realisation") or {}).get("objet_id")) for x in items
+                 if x["item_id"] != i["item_id"]}
+        if pl.get("mode") == "creer" and (i["item_type"], obj) in taken:
+            raise TransformationError(f"« {obj} » est déjà relié à un autre élément du plan.")
+        pl["realisation"] = {"objet_id": obj, "objet_nom": live["nom"], "lie_par": user, "lie_le": self.now()}
+        self.store.update_payload(plan_id, i["item_id"], json.dumps(pl, ensure_ascii=False))
+        self.store.update_plan(plan_id, {"updated_at": self.now()})
+        return {"element": i["name"], "type": i["item_type"], "objet_id": obj, "objet_nom": live["nom"],
+                "statut_objet": live.get("statut")}
+
     def decide(self, plan_id: str, item_id: str, user: str, status: str, note: str = "") -> None:
         """Décision humaine (page Transformation) : valide, rejete, ou propose pour rouvrir."""
         self._owned(plan_id, user)
@@ -549,17 +703,22 @@ class TransformationService:
 
     # Avancement
     @classmethod
-    def progress(cls, plan: dict, items: list[dict]) -> list[dict]:
+    def progress(cls, plan: dict, items: list[dict], catalog: dict | None = None) -> list[dict]:
+        """catalog : objets réels visibles ; sans lui, l'étape 7 ne peut pas être évaluée à « fait »."""
         ctx, valid = plan.get("context") or {}, {i["item_type"] for i in items if i["status"] == "valide"}
         procs = {i["name"] for i in items if i["item_type"] == "processus" and i["status"] == "valide"}
         cases = {i["name"] for i in items if i["item_type"] == "cas_usage" and i["status"] == "valide"
-                 and i["payload"].get("processus") in procs}   # chaîne de validation complète
+                 and i["payload"].get("processus") in procs}
         served = {c for i in items if i["item_type"] in TARGET_TYPES and i["status"] == "valide"
                   for c in i["payload"].get("cas_usage") or []}
         done = {1: bool(ctx.get("secteur") and ctx.get("objectifs")), 2: bool(plan.get("discovery")),
                 3: {"domaine", "processus"} <= valid, 4: bool(cases),
-                # chaque cas d'usage validé a une cible validée, et aucune incohérence
                 5: bool(cases) and cases <= served and not cls.coherence(items)}
+        targets = {(i["item_type"], i["name"]) for i in items if i["item_type"] in TARGET_TYPES and i["status"] == "valide"}
+        planned = {(r["item"]["item_type"], r["item"]["name"]) for r in cls.planned(items)}
+        done[6] = done[5] and targets <= planned and not cls.coherence(items)
+        track = cls.tracking(items, catalog) if catalog is not None else []
+        done[7] = done[6] and catalog is not None and bool(track) and all(t["statut"] == "publie" for t in track)
         out, current = [], None
         for n, key, label in STEPS:
             if n > AVAILABLE_LAST_STEP:
@@ -583,6 +742,8 @@ class TransformationService:
                 continue
             parents = ([("processus", i["payload"].get("processus"))] if i["item_type"] == "cas_usage" else
                        [("cas_usage", c) for c in i["payload"].get("cas_usage") or []] if i["item_type"] in TARGET_TYPES
+                       else [(x["type"], x["nom"]) for x in TransformationService._wave_elements(i["payload"])]
+                            + [("vague", d) for d in i["payload"].get("dependances") or []] if i["item_type"] == "vague"
                        else [])
             for kind, name in parents:
                 if name and (kind, name) not in ok:
@@ -603,5 +764,24 @@ def proposal_step(elements: list[dict]) -> int:
         steps.add(ITEM_STEP[kind])
     if len(steps) > 1:
         raise TransformationError("Une proposition ne couvre qu'une étape : étape 3 (objectif, domaine, processus), "
-                                  "4 (cas_usage) ou 5 (agent, outil, flux, equipe).")
+                                  "4 (cas_usage), 5 (agent, outil, flux, equipe) ou 6 (vague).")
     return steps.pop()
+
+
+def platform_catalog(agents: list[dict], tools: list, teams: list[dict]) -> dict:
+    """Objets visibles par l'utilisateur, normalisés pour le suivi du plan."""
+    out: dict[str, dict] = {"agent": {}, "outil": {}, "flux": {}, "equipe": {}}
+    for a in agents:
+        if a.get("status") != "archive":
+            out["agent"][a["agent_id"]] = {"nom": a.get("name") or a["agent_id"], "statut": a.get("status")}
+    for s in tools:
+        if s.status != "archive":
+            out["flux" if s.category == "Flux" else "outil"][s.tool_id] = {"nom": s.name, "statut": s.status}
+    for t in teams:
+        if t.get("status") != "archive":
+            out["equipe"][t["team_id"]] = {"nom": t["name"], "statut": t.get("status")}
+    return out
+
+
+def catalog_names(catalog: dict) -> dict:
+    return {kind: {oid: obj["nom"] for oid, obj in objs.items()} for kind, objs in catalog.items()}

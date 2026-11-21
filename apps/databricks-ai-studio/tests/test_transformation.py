@@ -152,7 +152,7 @@ def test_propose_requires_evidence_and_lot_a_types(svc):
         svc.propose(pid, ME, [{"type": "domaine", "nom": "Gares"}])
     with pytest.raises(T.TransformationError, match="absente"):
         svc.propose(pid, ME, [{"type": "domaine", "nom": "Gares", "tables": ["data_inventee"]}])
-    with pytest.raises(T.TransformationError, match="non disponible"):
+    with pytest.raises(T.TransformationError, match="Type"):
         svc.propose(pid, ME, [{"type": "feuille_de_route", "nom": "Vague 1"}])
     with pytest.raises(T.TransformationError, match="15"):
         svc.propose(pid, ME, [{"type": "objectif", "nom": f"o{i}"} for i in range(16)])
@@ -200,12 +200,15 @@ TRANSFO = {t.tool_id: t for t in hakim.TOOLS if t.executor.startswith("tools.hak
 
 def test_tool_catalog_cannot_decide():
     assert set(TRANSFO) == {"transformation_plans", "transformation_etat", "transformation_creer_plan",
-                            "transformation_cadrage", "transformation_decouvrir", "transformation_proposer"}
+                            "transformation_cadrage", "transformation_decouvrir", "transformation_proposer",
+                            "transformation_feuille_route", "transformation_suivre", "transformation_relier",
+                            "hakim_plan_travail"}
     assert not any("statut" in t.input_schema["properties"] or "status" in t.input_schema["properties"]
                    for t in TRANSFO.values())
     kinds = TRANSFO["transformation_proposer"].input_schema["properties"]["elements"]["items"]["properties"]["type"]
     assert kinds["enum"] == list(T.ITEM_TYPES_AVAILABLE)
-    assert {t.tool_id for t in TRANSFO.values() if t.read_only} == {"transformation_plans", "transformation_etat"}
+    assert {t.tool_id for t in TRANSFO.values() if t.read_only} == {"transformation_plans", "transformation_etat",
+                                                                     "transformation_suivre"}
     assert all(t.tool_id in hakim.config("m").tool_ids for t in TRANSFO.values())
 
 

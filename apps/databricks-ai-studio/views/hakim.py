@@ -5,6 +5,7 @@ import uuid
 import streamlit as st
 
 from backend import hakim, hakim_guard
+from backend import hakim_plan as HP
 from backend.agent_runtime import AgentRuntime
 from backend.model_client import ModelClient
 from backend.tool_registry import ToolContext, ToolRegistry
@@ -34,6 +35,7 @@ s.setdefault("drafts", {})
 s.setdefault("visuals", {})
 s.setdefault("reports", {})
 s.setdefault("pending", None)
+s.setdefault("work_plan", {})   # plan de travail en cours (étapes annoncées), propre à la conversation
 
 
 def page_context() -> dict:
@@ -60,7 +62,7 @@ def runtime():
     plat = Platform(state.repository(), trepo, ident.email, trepo.is_admin(ident.email), page_context(),
                     conv=s["conv"], drafts=s["drafts"], designer=state.build_designer,
                     tool_designer=state.build_tool_designer, visuals=s["visuals"], reports=s["reports"],
-                    transformation=state.transformation_service())
+                    transformation=state.transformation_service(), work_plan=s["work_plan"], plan_required=True)
     ctx = ToolContext(sql=sql, workspace=w, max_rows=cfg_s.max_rows, user_email=ident.email, platform=plat)
     guard = lambda tid, args, msgs: hakim_guard.presentation_issue(tid, args, msgs, s["drafts"])  # noqa: E731
     return (AgentRuntime(ModelClient(w), ToolRegistry(hakim.TOOLS), ctx, before_confirm=guard),
@@ -74,9 +76,15 @@ def handle(res, logged_prefix: list[dict], warnings: list[dict] | None = None) -
     events = [{"outil": e.tool_id, "statut": e.status, "arguments": e.arguments, "erreur": e.error}
               for e in res.events]
     text = "\n\n".join(m["content"] for m in res.new_messages if m.get("role") == "assistant" and m.get("content"))
+    # Étapes du plan : affichées si le plan est annoncé dans ce tour ou s'il restait des étapes à faire ;
+    # leur état vient des outils réellement appelés (jamais du modèle).
+    open_before = any(x["etat"] != "fait" for x in HP.lines(s["work_plan"]))
+    HP.record(s["work_plan"], [(e.tool_id, e.status) for e in res.events])
+    announced = any(e.tool_id == HP.PLAN_TOOL and e.status == "succes" for e in res.events)
+    steps = HP.lines(s["work_plan"]) if (announced or (open_before and events)) else []
     if text or events:
         ok = [e.result for e in res.events if e.status == "succes" and isinstance(e.result, dict)]
-        s["display"].append({"role": "assistant", "content": text, "events": events,
+        s["display"].append({"role": "assistant", "content": text, "events": events, "steps": steps,
                              "nav": hakim.navigation_targets(res.events),
                              "warning": hakim_guard.warning_text(warnings) if warnings else None,
                              "visuals": [r["visuel_id"] for r in ok if r.get("visuel_id")],
@@ -173,6 +181,8 @@ if not s["display"]:
 
 for m in s["display"]:
     with st.chat_message(m["role"]):
+        for x in m.get("steps") or []:   # « Étape N — Titre », une ligne chacune, avec son état
+            st.markdown(f"{x['libelle']}  ·  *{HP.STATES.get(x['etat'], x['etat'])}*")
         st.markdown(m["content"])
         if m.get("warning"):
             st.warning(m["warning"])

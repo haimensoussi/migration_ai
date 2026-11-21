@@ -106,6 +106,8 @@ class Platform:
     reports: dict = field(default_factory=dict)       # rapports de la conversation (lot 3b)
     transformation: Any = None                        # TransformationService (créé à la demande, injecté en test)
     transfo_steps: set = field(default_factory=set)   # étapes de transformation faites pendant CE tour (1 au plus)
+    work_plan: dict = field(default_factory=dict)     # plan de travail validé de la conversation (option B)
+    plan_required: bool = False                       # True sur la page HakimAI : écritures de transformation sous plan
 
     def t(self, name: str) -> str:
         return self.repo.s.table(name)
