@@ -114,6 +114,8 @@ class Platform:
     transfo_steps: set = field(default_factory=set)   # étapes de transformation faites pendant CE tour (1 au plus)
     work_plan: dict = field(default_factory=dict)     # plan de travail validé de la conversation (option B)
     plan_required: bool = False                       # True sur la page HakimAI : écritures de transformation sous plan
+    contracts: Any = None                             # fiches contrat (dict ou fonction) ; lues en table si absent
+    team_runner: Any = None                           # Agent Mesh : cfg du chef -> (runtime, cfg d'exécution, avertissements)
 
     def t(self, name: str) -> str:
         return self.repo.s.table(name)

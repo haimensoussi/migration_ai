@@ -55,6 +55,23 @@ def page_context() -> dict:
     return ctx
 
 
+def team_runner(cfg):
+    """Agent Mesh : exécute le chef d'une équipe (et ses agents) ; appels journalisés dans la conversation HakimAI."""
+    from dataclasses import replace
+    from ui.discovery_icons import with_presentation
+    repo, user = state.repository(), state.user_session()[2].email
+
+    def log(aid, ev):
+        try:
+            repo.log_tool_call(s["conv"], aid, user, ev)
+        except Exception:  # noqa: BLE001 - la journalisation ne bloque pas la réponse
+            pass
+
+    shown = replace(cfg, instructions=with_presentation(cfg.instructions))
+    return state.build_runtime_for(shown, on_tool_event=lambda ev: log(cfg.agent_id, ev), conversation_id=s["conv"],
+                                   on_sub_event=log)
+
+
 def runtime():
     w, sql, ident = state.user_session()
     cfg_s = state.settings()
@@ -62,7 +79,8 @@ def runtime():
     plat = Platform(state.repository(), trepo, ident.email, trepo.is_admin(ident.email), page_context(),
                     conv=s["conv"], drafts=s["drafts"], designer=state.build_designer,
                     tool_designer=state.build_tool_designer, visuals=s["visuals"], reports=s["reports"],
-                    transformation=state.transformation_service(), work_plan=s["work_plan"], plan_required=True)
+                    transformation=state.transformation_service(), work_plan=s["work_plan"], plan_required=True,
+                    contracts=state.contracts, team_runner=team_runner)
     ctx = ToolContext(sql=sql, workspace=w, max_rows=cfg_s.max_rows, user_email=ident.email, platform=plat)
     guard = lambda tid, args, msgs: hakim_guard.presentation_issue(tid, args, msgs, s["drafts"])  # noqa: E731
     return (AgentRuntime(ModelClient(w), ToolRegistry(hakim.TOOLS), ctx, before_confirm=guard),
@@ -89,7 +107,8 @@ def handle(res, logged_prefix: list[dict], warnings: list[dict] | None = None) -
                              "warning": hakim_guard.warning_text(warnings) if warnings else None,
                              "visuals": [r["visuel_id"] for r in ok if r.get("visuel_id")],
                              "reports": [r["rapport_id"] for r in ok if r.get("rapport_id")],
-                             "excels": [r["_ui_excel"] for r in ok if r.get("_ui_excel")]})
+                             "excels": [r["_ui_excel"] for r in ok if r.get("_ui_excel")],
+                             "mesh": [r["_ui_mesh"] for r in ok if r.get("_ui_mesh")]})
     if any(e.tool_id in WRITE_TOOLS and e.status == "succes" for e in res.events):
         state.refresh_data()
     try:   # journal : conversation et appels d'outils sous l'agent « hakimai »
@@ -203,6 +222,11 @@ for m in s["display"]:
         for i, x in enumerate(m.get("excels") or []):
             from ui import report_view
             report_view.render_excel(x, key=f"{s['conv']}_{id(m)}_{i}")
+        for x in m.get("mesh") or []:   # Agent Mesh : acheminement puis résultats produits par l'équipe
+            from ui import chat_panel
+            st.caption(f"Acheminement : {x['acheminement']}")
+            for ev in x.get("events") or []:
+                chat_panel._show_event(ev)
         for nav in m.get("nav") or []:
             st.page_link(nav["path"], label=f"Ouvrir {nav['title']}")
         if m.get("events"):

@@ -124,6 +124,22 @@ def _smartart_spec() -> ToolSpec:
 
 TOOLS += [_smartart_spec()]
 
+# Agent Mesh par domaine (AM-02, AM-03) : un domaine a plusieurs équipes, une équipe plusieurs agents
+TOOLS += [
+    _spec("trouver_agents", "Trouver une équipe ou un agent", "Annuaire Agent Mesh : domaines (Supply Chain, PTE, UDR, "
+          "Transverse), leurs équipes publiées et leurs agents. Recherche par capacité (mots de la demande retrouvés "
+          "dans la mission des équipes et les fiches contrat des agents) avec motif ; équipe recommandée ou équipes à "
+          "départager ; agents hors équipe et sans domaine.",
+          {"capacite": _s("Ce que l'utilisateur cherche, en mots simples (facultatif)"),
+           "domaine": _s("Supply Chain, PTE, UDR ou Transverse (facultatif)")}, module="hakim_mesh_tools"),
+    _spec("demander_a_equipe", "Transmettre à une équipe", "Transmet une question au chef d'une équipe publiée, qui "
+          "consulte ses agents (droits de l'utilisateur) et renvoie sa réponse et l'acheminement. Aucune action soumise "
+          "à validation humaine n'est exécutée par ce relais.",
+          {"equipe": _s("Nom exact, identifiant ou appel @ de l'équipe (résultat de trouver_agents)"),
+           "question": _s("Question autonome, avec le contexte nécessaire")}, ["equipe", "question"],
+          module="hakim_mesh_tools"),
+]
+
 TOOLS += [
     _spec("exporter_excel", "Exporter en Excel", "Produit un fichier Excel (.xlsx) téléchargeable : une feuille par "
           "requête SELECT (lecture seule, droits de l'utilisateur, 10 feuilles au plus), en-têtes figés et filtrables, "
@@ -324,6 +340,11 @@ Visuels et rapports :
   adapté (barres pour comparer des catégories, courbe pour une évolution, camembert seulement pour peu de parts,
   carte s'il y a latitude/longitude). Noms de colonnes avec espaces entre accents graves.
 - Commente le visuel avec les chiffres renvoyés (aperçu, statistiques_y) ; signale tronque et les valeurs vides.
+- Agent Mesh : quand l'utilisateur veut consulter une équipe ou un domaine, ou qu'une question métier relève de la
+  mission d'une équipe publiée, appelle trouver_agents puis demander_a_equipe avec l'équipe recommandée. Si
+  a_departager contient plusieurs équipes, demande à l'utilisateur laquelle interroger. Domaine sans équipe
+  joignable : dis-le, sans répondre à sa place. Rapporte la réponse de l'équipe fidèlement (aucun chiffre ajouté),
+  cite l'acheminement ; si statut = validation_requise, renvoie vers l'équipe dans Chat & Test.
 - creer_smartart : quand une structure se comprend mieux en schéma (étapes d'une démarche, cycle, organisation
   d'équipe, relations entre objets, matrice 2×2), ajoute UN schéma sous ta réponse, cohérent avec le texte : mêmes
   éléments, mêmes noms, rien d'inventé. Pas de schéma pour une réponse courte ou une simple liste.
