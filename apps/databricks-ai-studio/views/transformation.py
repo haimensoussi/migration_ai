@@ -10,9 +10,32 @@ ST_LABEL = {"fait": "Fait", "en_cours": "En cours", "a_faire": "À faire", "lot_
 ITEM_STATUS = {"propose": "Proposé", "valide": "Validé", "rejete": "Rejeté"}
 
 st.title("Transformation")
-st.caption("HakimAI vous guide vers une organisation augmentée par l'IA : il propose, vous décidez ici. "
-           "La découverte lit la structure des tables data_ et des statistiques agrégées, avec vos droits, sans lire "
-           "de lignes.")
+st.caption("EIA Transformation Center : du patrimoine de données à l'architecture cible de l'Entreprise Intelligente "
+           "Augmentée. HakimAI propose, vous décidez ici. La découverte lit la structure et des statistiques agrégées "
+           "du périmètre choisi, avec vos droits, sans lire de lignes. Rien n'est créé sans votre validation.")
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _catalogs(_w, user: str) -> dict:
+    """Catalogues visibles par l'utilisateur, avec leur nature (fédéré = connexion externe Unity Catalog)."""
+    out = {}
+    for c in _w.catalogs.list():
+        kind = getattr(getattr(c, "catalog_type", None), "value", "") or ""
+        conn = getattr(c, "connection_name", None)
+        out[c.name] = {"FOREIGN_CATALOG": "fédéré" + (f" : {conn}" if conn else ""),
+                       "DELTASHARING_CATALOG": "Delta Sharing", "SYSTEM_CATALOG": "système"}.get(kind, "")
+    return out
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _schemas(_w, user: str, catalog: str) -> list:
+    return sorted(s.name for s in _w.schemas.list(catalog_name=catalog) if s.name != "information_schema")
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _tables(_w, user: str, catalog: str, schema: str) -> list:
+    return sorted(((t.name, t.comment or "") for t in _w.tables.list(catalog_name=catalog, schema_name=schema)),
+                  key=lambda x: x[0])
 
 try:
     w, sql, ident = state.user_session()
@@ -84,10 +107,10 @@ for warning in svc.coherence(items):
 if st.button("Continuer avec HakimAI", type="primary"):
     st.switch_page("views/hakim.py")
 
-t_comp, t_exist, t_cible, t_dep = st.tabs([f"{n}. {ph['libelle']}" for n, ph in enumerate(phases, 1)])
-t1 = t2 = t_comp
-t3 = t4 = t_exist
-t5 = t_gap = t_cible
+t_disc, t_opp, t_arch, t_dep = st.tabs([f"{n}. {ph['libelle']}" for n, ph in enumerate(phases, 1)])
+t1 = t2 = t3 = t_disc
+t4 = t_opp
+t5 = t_gap = t_arch
 t6 = t7 = t_dep
 
 with t1:
@@ -102,16 +125,87 @@ with t1:
 with t2:
     st.subheader("Découverte des données")
     d = plan["discovery"]
-    if owner and st.button("Relancer la découverte" if d else "Lancer la découverte"):
-        s = state.settings()
-        with st.spinner("Lecture de la structure et calcul des statistiques..."):
-            act("Découverte impossible", lambda: svc.set_discovery(plan_id, me, T.discover(
-                lambda c, sc: list(w.tables.list(catalog_name=c, schema_name=sc)), sql, s.catalog, s.schema)),
-                "Découverte enregistrée.")
+    s = state.settings()
+    per = T.perimeter_args(plan["context"], s.catalog, s.schema)
+    st.markdown("**Périmètre de données**")
+    if not owner:
+        st.caption(f"Périmètre : {per['catalog']}.{per['schema']}"
+                   + (f", {len(per['tables'])} table(s)" if per["tables"] else f", tables {per['prefix']}*"))
+    else:
+        try:
+            cats = _catalogs(w, me)
+        except Exception as e:  # noqa: BLE001
+            error_box("Liste des catalogues impossible", e)
+            cats = {}
+        names_c = sorted(set(cats) | {per["catalog"]})
+        cat = st.selectbox("Source de données (catalogue Unity Catalog, y compris catalogues fédérés)", names_c,
+                           index=names_c.index(per["catalog"]),
+                           format_func=lambda c: f"{c} ({cats[c]})" if cats.get(c) else c, key=f"eia_cat_{plan_id}")
+        try:
+            schemas = _schemas(w, me, cat)
+        except Exception as e:  # noqa: BLE001
+            error_box("Liste des schémas impossible", e)
+            schemas = []
+        sch = None
+        if schemas:
+            sch = st.selectbox("Schéma", schemas, index=schemas.index(per["schema"]) if per["schema"] in schemas else 0,
+                               key=f"eia_sch_{plan_id}_{cat}")
+        else:
+            st.info("Aucun schéma visible dans ce catalogue avec vos droits.")
+        tables_uc = []
+        if sch:
+            try:
+                tables_uc = _tables(w, me, cat, sch)
+            except Exception as e:  # noqa: BLE001
+                error_box("Liste des tables impossible", e)
+        names_t = [n for n, _ in tables_uc]
+        comments = dict(tables_uc)
+        default = []
+        if (cat, sch) == (per["catalog"], per["schema"]):
+            default = per["tables"] or [n for n in names_t if per["prefix"] and n.startswith(per["prefix"])]
+        default = [n for n in default if n in names_t][:T.MAX_TABLES]
+        sel = st.multiselect(f"Tables à analyser ({T.MAX_TABLES} au maximum)", names_t, default=default,
+                             format_func=lambda n: f"{n} — {comments[n][:60]}" if comments.get(n) else n,
+                             key=f"eia_tab_{plan_id}_{cat}_{sch}")
+        st.caption("Structure et statistiques agrégées lues avec vos droits, sans lire de lignes : 1 à 3 requêtes par "
+                   "table sur l'entrepôt SQL, plus la lecture des étiquettes Unity Catalog du schéma.")
+        if st.button("Relancer la découverte" if d else "Lancer la découverte", type="primary",
+                     disabled=not sel or len(sel) > T.MAX_TABLES):
+            def _run():
+                svc.set_perimeter(plan_id, me, cat, sch, sel)
+                svc.set_discovery(plan_id, me, T.discover(
+                    lambda c, sc: list(w.tables.list(catalog_name=c, schema_name=sc)), sql, cat, sch, prefix=None,
+                    tables=sel,
+                    tags=lambda c, sc: (sql.query(T.column_tags_query(c), {"schema": sc}) or {}).get("rows", [])))
+            with st.spinner("Lecture de la structure et calcul des statistiques..."):
+                act("Découverte impossible", _run, "Périmètre et découverte enregistrés.")
     if not d:
         st.info("Pas encore de découverte.")
     else:
         st.caption(f"{d['perimetre']} — {d['date']}. {d['avertissement']}")
+        if d.get("avertissement_etiquettes"):
+            st.caption(d["avertissement_etiquettes"])
+        syn = T.asis_summary(d, items)
+        m = st.columns(5)
+        m[0].metric("Tables analysées", syn["tables"])
+        m[1].metric("Lignes", f"{syn['lignes']:,}".replace(",", " "))
+        m[2].metric("Colonnes sans description", f"{syn['colonnes_sans_description']} / {syn['colonnes']}")
+        m[3].metric("Liens probables", syn["liens"])
+        m[4].metric("Colonnes sensibles (à confirmer)", syn["colonnes_sensibles"])
+        st.markdown("**Synthèse de l'existant (AS-IS)**")
+        asis = [f"{syn['tables']} table(s) analysée(s)" + (f", {syn['tables_en_erreur']} en erreur" if syn["tables_en_erreur"]
+                                                         else "") + f", {syn['colonnes']} colonnes.",
+                f"Documentation : {syn['tables_sans_description']} table(s) et {syn['colonnes_sans_description']} "
+                "colonne(s) sans description.",
+                f"Clés et relations : {syn['tables_avec_cle']} table(s) avec une clé candidate confirmée ; {syn['liens']} "
+                f"lien(s) probable(s), dont {syn['liens_incomplets']} avec des valeurs sans correspondance.",
+                f"Domaines métier : {syn['domaines_valides']} validé(s), {syn['domaines_proposes']} proposé(s) ; objectifs : "
+                f"{syn['objectifs_valides']} validé(s), {syn['objectifs_proposes']} proposé(s)."]
+        st.markdown("\n".join(f"* {x}" for x in asis))
+        st.markdown("**Cartographie du patrimoine**")
+        st.caption("Tables et liens probables. Trait plein : 100 % des valeurs retrouvées ; pointillé : correspondance "
+                   "partielle ou non mesurée ; fond orangé : colonnes potentiellement sensibles.")
+        st.graphviz_chart(T.heritage_dot(d), use_container_width=True)
         ok = [t for t in d["tables"] if "erreur" not in t]
         st.dataframe(pd.DataFrame([{"Table": t["table"], "Lignes": t["lignes"], "Colonnes": len(t["colonnes"]),
                                     "Clés candidates": ", ".join(c["nom"] for c in t["colonnes"] if c["cle_candidate"]),
@@ -133,6 +227,26 @@ with t2:
             st.caption("Aucun lien détecté par les noms de colonnes.")
         st.markdown("**Constats statistiques**")
         st.markdown("\n".join(f"* {c}" for c in d["constats"]) or "Aucun.")
+        st.markdown("**Données potentiellement sensibles** (indices à confirmer par le responsable des données)")
+        sens = d.get("donnees_sensibles") or []
+        if sens:
+            st.dataframe(pd.DataFrame([{"Table": x["table"].split(".")[-1], "Colonne": x["colonne"],
+                                        "Catégorie": x["categorie"], "Source": x["source"], "Statut": x["statut"]}
+                                       for x in sens]), hide_index=True, use_container_width=True)
+        else:
+            st.caption("Aucun indice, ni par le nom des colonnes ni par les étiquettes Unity Catalog.")
+        st.markdown("**Informations métier**")
+        st.caption("Complétez ce que les descriptions techniques ne disent pas : rôle de la table, responsable, usage.")
+        notes = plan["context"].get("_notes_metier") or {}
+        edited = st.data_editor(
+            pd.DataFrame([{"Table": t["table"], "Description Unity Catalog": t["commentaire"],
+                           "Information métier": notes.get(t["table"], "")} for t in ok]),
+            hide_index=True, use_container_width=True, key=f"eia_notes_{plan_id}",
+            disabled=["Table", "Description Unity Catalog"] if owner else True)
+        if owner and st.button("Enregistrer les informations métier"):
+            act("Enregistrement impossible", lambda: svc.set_business_notes(
+                plan_id, me, dict(zip(edited["Table"], edited["Information métier"].fillna("")))),
+                "Informations métier enregistrées.")
 
 def render_items(kinds, empty: str) -> None:
     """Éléments d'une étape, avec leurs preuves, rattachements et décisions."""
@@ -216,14 +330,14 @@ def render_items(kinds, empty: str) -> None:
 
 
 with t3:
-    st.subheader("Existant (AS-IS)")
+    st.subheader("Domaines et objectifs (AS-IS)")
     st.caption("Existant : objectifs et domaines métier, justifiés par les tables découvertes. Les processus métier "
                "sont reportés ; ceux déjà enregistrés restent affichés.")
     kinds = ("objectif", "domaine") + (("processus",) if any(i["item_type"] == "processus" for i in items) else ())
     render_items(kinds, "Aucun élément proposé. Demandez à HakimAI de décrire l'existant après la découverte.")
 with t4:
     st.subheader("Opportunités : cas d'usage")
-    render_items(("cas_usage",), "Aucun cas d'usage. Validez un objectif et un domaine ci-dessus, puis demandez à "
+    render_items(("cas_usage",), "Aucun cas d'usage. Validez un objectif et un domaine dans Enterprise Discovery, puis demandez à "
                                  "HakimAI le diagnostic.")
 with t5:
     st.subheader("Cible (TO-BE)")
@@ -233,7 +347,7 @@ with t5:
         st.caption("Équipes, agents, outils et flux prévus. Trait plein : validé ou existant ; pointillé : proposé, "
                    "en attente de votre décision. Les éléments rejetés ne figurent pas.")
         st.graphviz_chart(T.org_chart_dot(chart), use_container_width=True)
-    render_items(T.TARGET_TYPES, "Aucun élément de la cible. Validez des cas d'usage (Existant et opportunités), puis demandez à "
+    render_items(T.TARGET_TYPES, "Aucun élément de la cible. Validez des cas d'usage (AI Opportunities), puis demandez à "
                                  "HakimAI de concevoir la cible. Rien n'est créé dans la plateforme à cette étape.")
 with t_gap:
     st.subheader("Écarts AS-IS → TO-BE")
@@ -261,7 +375,7 @@ with t_gap:
                        "de concevoir la cible.")
 with t6:
     st.subheader("Feuille de route")
-    render_items(("vague",), "Aucune vague. Validez des éléments de cible (Cible et écarts), puis demandez à HakimAI de "
+    render_items(("vague",), "Aucune vague. Validez des éléments de cible (Target EIA Architecture), puis demandez à HakimAI de "
                               "proposer la feuille de route.")
 with t7:
     st.subheader("Suivi de la réalisation")

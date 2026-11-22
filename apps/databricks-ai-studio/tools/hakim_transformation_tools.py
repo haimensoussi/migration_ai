@@ -157,11 +157,13 @@ def transformation_cadrage(ctx: ToolContext, p: Platform, plan: str, **champs) -
 @_guard
 def transformation_decouvrir(ctx: ToolContext, p: Platform, plan: str) -> dict:
     svc = _svc(p)
-    svc._owned(plan, p.user)   # contrôle avant de lancer les requêtes
+    owned = svc._owned(plan, p.user)   # contrôle avant de lancer les requêtes
     _one_step(p, STEP_OF["transformation_decouvrir"])
     s = p.repo.s
+    per = T.perimeter_args(owned.get("context"), s.catalog, s.schema)   # périmètre choisi sur la page, sinon défaut
     d = T.discover(lambda c, sc: list(ctx.workspace.tables.list(catalog_name=c, schema_name=sc)), ctx.sql,
-                   s.catalog, s.schema)
+                   per["catalog"], per["schema"], prefix=per["prefix"], tables=per["tables"] or None,
+                   tags=lambda c, sc: (ctx.sql.query(T.column_tags_query(c), {"schema": sc}) or {}).get("rows", []))
     svc.set_discovery(plan, p.user, d)
     summary = T.discovery_summary(d)
     summary["action_id"] = _write("transformation_decouvrir", p, plan, {"plan": plan},

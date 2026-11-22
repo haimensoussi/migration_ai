@@ -93,10 +93,11 @@ def test_four_phases_and_next_action(svc, pid):
     plan = svc.get(pid, ME, False)
     steps = svc.progress(plan, svc.items(pid, ME, False))
     ph = T.phases(steps)
-    assert [p["libelle"] for p in ph] == ["Comprendre", "Existant et opportunités", "Cible et écarts", "Déployer"]
+    assert [p["libelle"] for p in ph] == ["Enterprise Discovery", "AI Opportunities", "Target EIA Architecture",
+                                          "Validation & Deployment"]
     assert sorted(n for p in ph for n in p["etapes"]) == [1, 2, 3, 4, 5, 6, 7]       # aucune étape perdue
-    assert [p["statut"] for p in ph] == ["fait", "en_cours", "a_faire", "a_faire"]
-    assert ph[1]["action"] == T.NEXT_ACTION[3] == T.next_action(steps)
+    assert [p["statut"] for p in ph] == ["en_cours", "a_faire", "a_faire", "a_faire"]   # étapes 1-2 faites, 3 en cours
+    assert ph[0]["action"] == T.NEXT_ACTION[3] == T.next_action(steps)
     fresh = svc.get(svc.create("Vide", ME)["plan_id"], ME, False)
     assert T.next_action(svc.progress(fresh, [])) == T.NEXT_ACTION[1]
 

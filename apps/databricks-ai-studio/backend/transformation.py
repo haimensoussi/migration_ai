@@ -37,17 +37,18 @@ ITEM_TYPES_AVAILABLE = tuple(k for k, s in ITEM_STEP.items() if s <= AVAILABLE_L
 # lisibles et décidables, et un cas d'usage peut encore en citer un (facultatif).
 PROPOSABLE_TYPES = tuple(k for k in ITEM_TYPES_AVAILABLE if k != "processus")
 CHANGE_LABELS = {"reutiliser": "Réutilisation", "adapter": "Adaptation", "creer": "Création"}
-# Démarche simplifiée (affichage) : 4 phases regroupant les 7 étapes, et l'action attendue à chaque étape.
-PHASES = [("comprendre", "Comprendre", (1, 2)), ("existant", "Existant et opportunités", (3, 4)),
-          ("cible", "Cible et écarts", (5,)), ("deployer", "Déployer", (6, 7))]
+# EIA Transformation Center (22/11/2026) : 4 onglets regroupant les 7 étapes.
+PHASES = [("discovery", "Enterprise Discovery", (1, 2, 3)), ("opportunities", "AI Opportunities", (4,)),
+          ("architecture", "Target EIA Architecture", (5,)), ("deployment", "Validation & Deployment", (6, 7))]
 NEXT_ACTION = {
-    1: "Décrivez l'activité et les objectifs (Comprendre), seul ou avec HakimAI.",
-    2: "Lancez la découverte des données (Comprendre).",
-    3: "Validez au moins un objectif et un domaine (Existant et opportunités).",
-    4: "Validez au moins un cas d'usage (Existant et opportunités).",
-    5: "Demandez à HakimAI la cible, puis validez-la : chaque cas d'usage validé doit être servi (Cible et écarts).",
-    6: "Demandez à HakimAI la feuille de route, puis validez les vagues (Déployer).",
-    7: "Créez ou reliez les objets prévus, puis publiez-les (Déployer).",
+    1: "Décrivez l'activité et les objectifs (Enterprise Discovery), seul ou avec HakimAI.",
+    2: "Choisissez le périmètre de données et lancez la découverte (Enterprise Discovery).",
+    3: "Validez au moins un objectif et un domaine (Enterprise Discovery).",
+    4: "Validez au moins un cas d'usage (AI Opportunities).",
+    5: "Demandez à HakimAI la cible, puis validez-la : chaque cas d'usage validé doit être servi "
+       "(Target EIA Architecture).",
+    6: "Demandez à HakimAI la feuille de route, puis validez les vagues (Validation & Deployment).",
+    7: "Créez ou reliez les objets prévus, puis soumettez-les à publication (Validation & Deployment).",
 }
 ITEM_LABELS = {"objectif": "Objectif", "domaine": "Domaine métier", "processus": "Processus",
                "cas_usage": "Cas d'usage", "agent": "Agent", "equipe": "Équipe", "flux": "Flux", "outil": "Outil",
@@ -67,6 +68,19 @@ CONTEXT_FIELDS = {
     "perimetre": "Périmètre retenu (directions, métiers, données)",
 }
 DATA_PREFIX = "data_"
+MAX_TABLES = 30           # tables analysées par découverte (coût borné : 1 à 3 requêtes d'agrégats par table)
+_NAME_RE = re.compile(r"^[A-Za-z0-9_\-]{1,255}$")
+# Données potentiellement sensibles détectées par le nom de colonne : indices à confirmer, jamais une qualification.
+SENSITIVE_TOKENS = {
+    "Identité d'une personne": {"prenom", "patronyme", "firstname", "lastname", "surname", "nomfamille"},
+    "Coordonnées": {"email", "mail", "courriel", "telephone", "tel", "phone", "mobile", "adresse", "address"},
+    "Identifiant personnel": {"matricule", "nir", "securitesociale", "secu", "passeport", "login", "username",
+                              "ip", "ipaddress"},
+    "Date de naissance": {"naissance", "birth", "birthdate", "dob"},
+    "Donnée financière personnelle": {"iban", "bic", "rib", "salaire", "salary", "remuneration"},
+    "Santé": {"sante", "maladie", "handicap", "medical"},
+}
+ARCH_TYPES = ("cas_usage", "agent", "outil", "flux", "equipe")   # éléments couverts par la validation d'architecture
 MAX_COLUMNS = 40          # colonnes profilées par table (au-delà : signalées, non profilées)
 MAX_ITEMS_PER_CALL = 15
 KEY_PRECHECK = 0.9        # pré-sélection sur le comptage approximatif (erreur de quelques %), confirmée en exact
@@ -216,11 +230,75 @@ def _table_info(t: Any) -> dict:
             "updated_at": datetime.fromtimestamp(upd / 1000, timezone.utc).isoformat(timespec="seconds") if upd else None}
 
 
+def _tokens(name: str) -> list[str]:
+    t = name.lower()
+    for a, b in (("é", "e"), ("è", "e"), ("ê", "e"), ("à", "a"), ("â", "a"), ("ô", "o"), ("î", "i"), ("û", "u"),
+                 ("ç", "c")):
+        t = t.replace(a, b)
+    return [x for x in re.split(r"[^a-z0-9]+", t) if x]
+
+
+def column_tags_query(catalog: str) -> str:
+    """Étiquettes Unity Catalog des colonnes d'un schéma (paramètre :schema) : métadonnées, aucune valeur."""
+    return (f"SELECT table_name, column_name, tag_name, tag_value FROM {_quote(catalog)}.information_schema.column_tags "
+            "WHERE schema_name = :schema")
+
+
+def sensitive_columns(tables: list[dict], tag_rows: list[dict] | None = None) -> list[dict]:
+    """Colonnes potentiellement sensibles : étiquettes Unity Catalog, puis indices tirés du nom. Toujours à confirmer."""
+    out, seen = [], set()
+    by_short = {t["table"].split(".")[-1]: t["table"] for t in tables}
+    for r in tag_rows or []:
+        full = by_short.get(str(r.get("table_name") or ""))
+        if not full:
+            continue
+        tag = str(r.get("tag_name") or "") + (f" = {r['tag_value']}" if r.get("tag_value") else "")
+        out.append({"table": full, "colonne": r.get("column_name"), "categorie": f"Étiquette {tag}",
+                    "source": "étiquette Unity Catalog", "statut": "à confirmer"})
+        seen.add((full, r.get("column_name")))
+    for t in tables:
+        for c in t.get("colonnes", []):
+            if (t["table"], c["nom"]) in seen:
+                continue
+            toks = _tokens(c["nom"])
+            joined = "".join(toks)
+            for cat, words in SENSITIVE_TOKENS.items():
+                if any(x in words for x in toks) or joined in words:
+                    out.append({"table": t["table"], "colonne": c["nom"], "categorie": cat,
+                                "source": "nom de colonne", "statut": "à confirmer"})
+                    break
+    return out
+
+
+def perimeter_args(context: dict | None, default_catalog: str, default_schema: str) -> dict:
+    """Périmètre enregistré dans le plan ; à défaut, zone de données de la plateforme et tables data_*."""
+    per = (context or {}).get("_perimetre") or {}
+    if per.get("catalogue") and per.get("schema"):
+        tables = list(per.get("tables") or [])
+        return {"catalog": per["catalogue"], "schema": per["schema"], "tables": tables,
+                "prefix": None if tables else per.get("prefixe", DATA_PREFIX)}
+    return {"catalog": default_catalog, "schema": default_schema, "tables": [], "prefix": DATA_PREFIX}
+
+
 def discover(list_tables: Callable[[str, str], list], sql: Any, catalog: str, schema: str,
-             prefix: str = DATA_PREFIX, now: Callable[[], str] = _now) -> dict:
-    """Découverte de la zone de données avec les droits de l'utilisateur (list_tables et sql sont les siens)."""
+             prefix: str | None = DATA_PREFIX, now: Callable[[], str] = _now, tables: list[str] | None = None,
+             tags: Callable[[str, str], list] | None = None, max_tables: int = MAX_TABLES) -> dict:
+    """Découverte du périmètre choisi avec les droits de l'utilisateur (list_tables, sql et tags sont les siens).
+
+    tables : sélection explicite (prioritaire) ; sinon préfixe (None = toutes les tables du schéma).
+    """
     infos = sorted((_table_info(t) for t in list_tables(catalog, schema)), key=lambda i: i["name"])
-    infos = [i for i in infos if i["name"].startswith(prefix)]
+    if tables:
+        wanted = set(tables)
+        infos = [i for i in infos if i["name"] in wanted]
+    elif prefix:
+        infos = [i for i in infos if i["name"].startswith(prefix)]
+    if len(infos) > max_tables:
+        raise TransformationError(f"{len(infos)} tables dans le périmètre : {max_tables} au maximum par découverte. "
+                                  "Réduisez la sélection.")
+    explicit = bool(tables)
+    selection = {"catalogue": catalog, "schema": schema, "tables": [i["name"] for i in infos],
+                 "prefixe": None if explicit else prefix}
     tables = []
     for info in infos:
         try:
@@ -255,9 +333,93 @@ def discover(list_tables: Callable[[str, str], list], sql: Any, catalog: str, sc
     found_issues = findings(tables) + [
         f"Lien {l['de']} -> {l['vers']} : {l['valeurs_sans_correspondance']} valeur(s) sans correspondance "
         f"({l['couverture_pct']} % retrouvées)." for l in links if l.get("couverture_pct") not in (None, 100.0)]
-    return {"perimetre": f"{catalog}.{schema}, tables {prefix}*", "date": now(), "tables": tables,
-            "liens_probables": links, "constats": found_issues,
-            "avertissement": "Constats statistiques, sans lecture de lignes ; ce ne sont pas des exigences métier."}
+    tag_rows, tag_warning = [], None
+    if tags is not None:
+        try:
+            tag_rows = list(tags(catalog, schema) or [])
+        except Exception as e:  # noqa: BLE001  droits ou catalogue sans information_schema : non bloquant
+            tag_warning = f"Étiquettes Unity Catalog illisibles : {_text(e, 200)}"
+    if explicit:
+        scope = f"{len(selection['tables'])} table(s) sélectionnée(s)"
+    elif prefix:
+        scope = f"tables {prefix}*"
+    else:
+        scope = "toutes les tables"
+    out = {"perimetre": f"{catalog}.{schema}, {scope}", "date": now(), "tables": tables,
+           "liens_probables": links, "constats": found_issues, "selection": selection,
+           "donnees_sensibles": sensitive_columns([t for t in tables if "erreur" not in t], tag_rows),
+           "avertissement": "Constats statistiques, sans lecture de lignes ; ce ne sont pas des exigences métier."}
+    if tag_warning:
+        out["avertissement_etiquettes"] = tag_warning
+    return out
+
+
+def asis_summary(d: dict | None, items: list[dict] | None = None) -> dict | None:
+    """Synthèse chiffrée de l'existant (AS-IS) : comptages issus de la découverte et des décisions du plan."""
+    if not d:
+        return None
+    ok = [t for t in d["tables"] if "erreur" not in t]
+    cols = [c for t in ok for c in t["colonnes"]]
+    links = d.get("liens_probables") or []
+    items = items or []
+
+    def count(kind: str, status: str) -> int:
+        return sum(1 for i in items if i["item_type"] == kind and i["status"] == status)
+
+    return {"tables": len(ok), "tables_en_erreur": len(d["tables"]) - len(ok),
+            "lignes": sum(int(t["lignes"] or 0) for t in ok), "colonnes": len(cols),
+            "tables_sans_description": sum(1 for t in ok if not t["commentaire"]),
+            "colonnes_sans_description": sum(1 for c in cols if not c["commentaire"]),
+            "tables_avec_cle": sum(1 for t in ok if any(c["cle_candidate"] for c in t["colonnes"])),
+            "liens": len(links),
+            "liens_incomplets": sum(1 for l in links if l.get("couverture_pct") not in (None, 100.0)),
+            "colonnes_sensibles": len(d.get("donnees_sensibles") or []),
+            "domaines_valides": count("domaine", "valide"), "domaines_proposes": count("domaine", "propose"),
+            "objectifs_valides": count("objectif", "valide"), "objectifs_proposes": count("objectif", "propose")}
+
+
+def heritage_dot(d: dict) -> str:
+    """Cartographie du patrimoine : tables découvertes et liens probables (pourcentage de correspondance)."""
+    def q(s: str) -> str:
+        return '"' + str(s).replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+    sensitive = {s["table"] for s in d.get("donnees_sensibles") or []}
+    lines = ["digraph G {", "rankdir=LR;", 'node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=10];',
+             'edge [fontname="Helvetica", fontsize=9, color="#6B6B6B"];']
+    for t in d["tables"]:
+        short = t["table"].split(".")[-1]
+        if "erreur" in t:
+            lines.append(f'{q(t["table"])} [label={q(short + chr(10) + "profil impossible")}, fillcolor="#F8D7DA"];')
+            continue
+        label = f"{short}\n{t['lignes']:,} lignes".replace(",", " ")
+        color = "#FDECC8" if t["table"] in sensitive else "#F3E8F0"
+        lines.append(f'{q(t["table"])} [label={q(label)}, fillcolor="{color}", color="#4A1942"];')
+    for l in d.get("liens_probables") or []:
+        src, dst = l["de"].rsplit(".", 1)[0], l["vers"].rsplit(".", 1)[0]
+        pct = l.get("couverture_pct")
+        label = l["de"].rsplit(".", 1)[1] + (f" ({pct} %)" if pct is not None else "")
+        style = "solid" if pct == 100.0 else "dashed"
+        lines.append(f"{q(src)} -> {q(dst)} [label={q(label)}, style={style}];")
+    lines.append("}")
+    return "\n".join(lines)
+
+
+def architecture_fingerprint(items: list[dict]) -> str:
+    """Empreinte de l'architecture (cas d'usage et cible non rejetés) ; le lien vers un objet réel n'en fait pas partie."""
+    import hashlib
+    rows = sorted((i["item_type"], i["name"], i["status"],
+                   json.dumps({k: v for k, v in (i.get("payload") or {}).items() if k != "realisation"},
+                              sort_keys=True, ensure_ascii=False, default=str))
+                  for i in items if i["item_type"] in ARCH_TYPES and i["status"] != "rejete")
+    return hashlib.sha256(json.dumps(rows, ensure_ascii=False).encode()).hexdigest()[:16]
+
+
+def validation_state(plan: dict, items: list[dict]) -> dict:
+    """Validation d'architecture : non_validee | validee | obsolete (architecture modifiée depuis la validation)."""
+    v = (plan.get("context") or {}).get("_validation")
+    if not v:
+        return {"statut": "non_validee"}
+    return {**v, "statut": "validee" if v.get("empreinte") == architecture_fingerprint(items) else "obsolete"}
 
 
 def discovery_summary(d: dict | None) -> dict | None:
@@ -276,7 +438,8 @@ def discovery_summary(d: dict | None) -> dict | None:
                        "periodes": {c["nom"]: [c.get("min"), c.get("max")] for c in t["colonnes"]
                                     if c["type"].lower().startswith(("date", "timestamp"))}})
     return {"perimetre": d["perimetre"], "date": d["date"], "tables": tables,
-            "liens_probables": d["liens_probables"], "constats": d["constats"], "avertissement": d["avertissement"]}
+            "liens_probables": d["liens_probables"], "constats": d["constats"],
+            "donnees_sensibles": d.get("donnees_sensibles") or [], "avertissement": d["avertissement"]}
 
 
 # --- Stockage -------------------------------------------------------------------------------------------
@@ -435,6 +598,50 @@ class TransformationService:
         self._owned(plan_id, user)
         self.store.update_plan(plan_id, {"discovery": json.dumps(discovery, ensure_ascii=False, default=str),
                                          "updated_at": self.now()})
+
+    def _set_internal(self, plan_id: str, user: str, key: str, value: Any) -> dict:
+        """Données de session du plan (clés préfixées par _ dans le cadrage JSON), propriétaire seulement."""
+        p = self._owned(plan_id, user)
+        ctx = dict(p["context"])
+        if value is None:
+            ctx.pop(key, None)
+        else:
+            ctx[key] = value
+        self.store.update_plan(plan_id, {"context": json.dumps(ctx, ensure_ascii=False, default=str),
+                                         "updated_at": self.now()})
+        return ctx
+
+    def set_perimeter(self, plan_id: str, user: str, catalog: str, schema: str, tables: list[str] | None = None,
+                      prefix: str | None = None) -> dict:
+        if not _NAME_RE.match(catalog or "") or not _NAME_RE.match(schema or ""):
+            raise TransformationError("Catalogue ou schéma invalide.")
+        tables = [t for t in dict.fromkeys(tables or []) if t]
+        if any(not _NAME_RE.match(t) for t in tables):
+            raise TransformationError("Nom de table invalide dans la sélection.")
+        if len(tables) > MAX_TABLES:
+            raise TransformationError(f"{len(tables)} tables sélectionnées : {MAX_TABLES} au maximum.")
+        if not tables and not prefix:
+            raise TransformationError("Sélectionnez au moins une table.")
+        per = {"catalogue": catalog, "schema": schema, "tables": tables, "prefixe": None if tables else prefix}
+        return self._set_internal(plan_id, user, "_perimetre", per)["_perimetre"]
+
+    def set_business_notes(self, plan_id: str, user: str, notes: dict) -> dict:
+        """Informations métier saisies par l'utilisateur, par table (complètent les descriptions Unity Catalog)."""
+        clean = {str(k): _text(v, 1000) for k, v in (notes or {}).items() if _text(v, 1000)}
+        return self._set_internal(plan_id, user, "_notes_metier", clean or None).get("_notes_metier", {})
+
+    def validate_architecture(self, plan_id: str, user: str) -> dict:
+        """Validation explicite de l'architecture cible ; elle devient obsolète dès que l'architecture change."""
+        self._owned(plan_id, user)
+        items = self.items(plan_id, user, is_admin=True)
+        if not any(i["item_type"] in TARGET_TYPES and i["status"] == "valide" for i in items):
+            raise TransformationError("Aucun élément de cible validé : rien à valider.")
+        problems = self.coherence(items)
+        if problems:
+            raise TransformationError("Architecture incohérente : " + " ".join(problems))
+        v = {"empreinte": architecture_fingerprint(items), "par": user, "le": self.now()}
+        self._set_internal(plan_id, user, "_validation", v)
+        return v
 
     # Éléments
     def items(self, plan_id: str, user: str, is_admin: bool) -> list[dict]:
