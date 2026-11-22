@@ -206,7 +206,7 @@ def test_tool_catalog_cannot_decide():
     assert not any("statut" in t.input_schema["properties"] or "status" in t.input_schema["properties"]
                    for t in TRANSFO.values())
     kinds = TRANSFO["transformation_proposer"].input_schema["properties"]["elements"]["items"]["properties"]["type"]
-    assert kinds["enum"] == list(T.ITEM_TYPES_AVAILABLE)
+    assert kinds["enum"] == list(T.PROPOSABLE_TYPES) and "processus" not in kinds["enum"]   # processus reportés
     assert {t.tool_id for t in TRANSFO.values() if t.read_only} == {"transformation_plans", "transformation_etat",
                                                                      "transformation_suivre"}
     assert all(t.tool_id in hakim.config("m").tool_ids for t in TRANSFO.values())
@@ -237,7 +237,7 @@ def test_hakim_flow_steps_1_to_3(svc):
     audits = [p["t"] for s, p in sql.done if "copilot_actions" in s]
     assert audits == ["transformation_creer_plan", "transformation_cadrage", "transformation_decouvrir",
                       "transformation_proposer"]
-    assert run("transformation_plans")["plans"][0]["etape_en_cours"] == "Cartographie"
+    assert run("transformation_plans")["plans"][0]["etape_en_cours"] == "Existant (AS-IS)"
 
 
 def test_one_step_per_exchange(svc):

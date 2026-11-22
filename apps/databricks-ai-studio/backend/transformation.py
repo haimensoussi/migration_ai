@@ -23,8 +23,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Callable
 
-STEPS = [(1, "cadrage", "Cadrage"), (2, "decouverte", "Découverte des données"), (3, "cartographie", "Cartographie"),
-         (4, "diagnostic", "Diagnostic et opportunités"), (5, "cible", "Conception de la cible"),
+STEPS = [(1, "cadrage", "Cadrage"), (2, "decouverte", "Découverte des données"), (3, "cartographie", "Existant (AS-IS)"),
+         (4, "diagnostic", "Diagnostic et opportunités"), (5, "cible", "Cible (TO-BE)"),
          (6, "feuille_de_route", "Feuille de route"), (7, "generation", "Génération et suivi")]
 LOT_A_LAST_STEP = 3
 AVAILABLE_LAST_STEP = 7
@@ -33,6 +33,10 @@ TARGET_TYPES = ("agent", "outil", "flux", "equipe")
 ITEM_STEP = {"objectif": 3, "domaine": 3, "processus": 3, "cas_usage": 4, **{k: 5 for k in TARGET_TYPES}, "vague": 6}
 ITEM_TYPES = tuple(ITEM_STEP)
 ITEM_TYPES_AVAILABLE = tuple(k for k, s in ITEM_STEP.items() if s <= AVAILABLE_LAST_STEP)
+# EIA (21/11/2026) : processus métier reportés. HakimAI ne les propose plus ; les processus déjà enregistrés restent
+# lisibles et décidables, et un cas d'usage peut encore en citer un (facultatif).
+PROPOSABLE_TYPES = tuple(k for k in ITEM_TYPES_AVAILABLE if k != "processus")
+CHANGE_LABELS = {"reutiliser": "Réutilisation", "adapter": "Adaptation", "creer": "Création"}
 ITEM_LABELS = {"objectif": "Objectif", "domaine": "Domaine métier", "processus": "Processus",
                "cas_usage": "Cas d'usage", "agent": "Agent", "equipe": "Équipe", "flux": "Flux", "outil": "Outil",
                "vague": "Vague"}
@@ -481,7 +485,8 @@ class TransformationService:
             evidence = {"tables": tables}
             if kind == "cas_usage":
                 payload.update(self._use_case(name, e, validated))
-                evidence["processus"] = payload["processus"]
+                if payload["processus"]:
+                    evidence["processus"] = payload["processus"]
             elif kind in TARGET_TYPES:
                 payload.update(self._target(kind, name, e, tables, validated, in_plan, existing))
                 evidence["cas_usage"] = payload["cas_usage"]
@@ -500,11 +505,15 @@ class TransformationService:
 
     @staticmethod
     def _use_case(name: str, e: dict, validated: dict) -> dict:
-        """Étape 4 : un cas d'usage part d'un processus VALIDÉ ; gain décrit sans chiffre inventé, limites listées."""
-        proc = validated["processus"].get(_text(e.get("processus"), 120).lower())
-        if not proc:
-            raise TransformationError(f"« {name} » : citez un processus VALIDÉ du plan (validés : "
-                                      f"{', '.join(validated['processus'].values()) or 'aucun'}).")
+        """Étape 4 : cas d'usage appuyé sur des tables découvertes ; gain décrit sans chiffre inventé, limites listées.
+
+        Processus facultatif (reportés) ; s'il est cité, il doit être VALIDÉ dans le plan."""
+        cited, proc = _text(e.get("processus"), 120), None
+        if cited:
+            proc = validated["processus"].get(cited.lower())
+            if not proc:
+                raise TransformationError(f"« {name} » : citez un processus VALIDÉ du plan ou aucun processus (validés : "
+                                          f"{', '.join(validated['processus'].values()) or 'aucun'}).")
         obj = _text(e.get("objectif"), 120)
         if obj and obj.lower() not in validated["objectif"]:
             raise TransformationError(f"« {name} » : objectif « {obj} » non validé dans le plan.")
@@ -708,11 +717,11 @@ class TransformationService:
         ctx, valid = plan.get("context") or {}, {i["item_type"] for i in items if i["status"] == "valide"}
         procs = {i["name"] for i in items if i["item_type"] == "processus" and i["status"] == "valide"}
         cases = {i["name"] for i in items if i["item_type"] == "cas_usage" and i["status"] == "valide"
-                 and i["payload"].get("processus") in procs}
+                 and (not i["payload"].get("processus") or i["payload"]["processus"] in procs)}
         served = {c for i in items if i["item_type"] in TARGET_TYPES and i["status"] == "valide"
                   for c in i["payload"].get("cas_usage") or []}
         done = {1: bool(ctx.get("secteur") and ctx.get("objectifs")), 2: bool(plan.get("discovery")),
-                3: {"domaine", "processus"} <= valid, 4: bool(cases),
+                3: "domaine" in valid and bool(valid & {"objectif", "processus"}), 4: bool(cases),
                 5: bool(cases) and cases <= served and not cls.coherence(items)}
         targets = {(i["item_type"], i["name"]) for i in items if i["item_type"] in TARGET_TYPES and i["status"] == "valide"}
         planned = {(r["item"]["item_type"], r["item"]["name"]) for r in cls.planned(items)}
@@ -730,6 +739,31 @@ class TransformationService:
             else:
                 status = "a_faire"
             out.append({"etape": n, "cle": key, "libelle": label, "statut": status})
+        return out
+
+    @staticmethod
+    def gaps(items: list[dict], catalog: dict | None = None) -> list[dict]:
+        """Écarts AS-IS → TO-BE : pour chaque cas d'usage non rejeté, les éléments de la cible non rejetés qui le
+        servent, avec le type de changement et l'état de l'objet réel. Un cas sans cible est signalé."""
+        targets = [i for i in items if i["item_type"] in TARGET_TYPES and i["status"] != "rejete"]
+        out = []
+        for c in items:
+            if c["item_type"] != "cas_usage" or c["status"] == "rejete":
+                continue
+            base = {"cas_usage": c["name"], "statut_cas": c["status"], "tables": (c.get("evidence") or {}).get("tables") or [],
+                    "limites": (c.get("payload") or {}).get("limites") or []}
+            served = [t for t in targets if c["name"] in (t["payload"].get("cas_usage") or [])]
+            if not served:
+                out.append({**base, "type": None, "element": None, "changement": "Aucune cible", "statut_element": None,
+                            "objet": None, "statut_objet": None})
+            for t in served:
+                pl = t["payload"]
+                obj = (pl.get("realisation") or {}).get("objet_id") or pl.get("existant")
+                live = ((catalog or {}).get(t["item_type"]) or {}).get(obj) if obj else None
+                out.append({**base, "type": t["item_type"], "element": t["name"],
+                            "changement": CHANGE_LABELS.get(pl.get("mode"), pl.get("mode") or "—"),
+                            "statut_element": t["status"], "objet": (live or {}).get("nom") or pl.get("existant_nom") or obj,
+                            "statut_objet": (live or {}).get("statut")})
         return out
 
     @staticmethod
@@ -763,7 +797,7 @@ def proposal_step(elements: list[dict]) -> int:
             raise TransformationError(f"Type « {kind} » non disponible (types : {', '.join(ITEM_TYPES_AVAILABLE)}).")
         steps.add(ITEM_STEP[kind])
     if len(steps) > 1:
-        raise TransformationError("Une proposition ne couvre qu'une étape : étape 3 (objectif, domaine, processus), "
+        raise TransformationError("Une proposition ne couvre qu'une étape : étape 3 (objectif, domaine), "
                                   "4 (cas_usage), 5 (agent, outil, flux, equipe) ou 6 (vague).")
     return steps.pop()
 

@@ -11,7 +11,7 @@ import os
 from backend.agent_runtime import AgentConfig
 from backend.tool_registry import ToolSpec
 from backend.hakim_plan import NATURES as PLAN_NATURES, PLAN_TOOL, describe as describe_plan
-from backend.transformation import CONTEXT_FIELDS, ITEM_TYPES_AVAILABLE, LEVELS, MODES
+from backend.transformation import CONTEXT_FIELDS, LEVELS, MODES, PROPOSABLE_TYPES
 from tools.hakim_tools import GUIDE, PAGES, TOURS
 
 AGENT_ID = "hakimai"
@@ -225,15 +225,15 @@ TOOLS += [
        "Catalog, droits de l'utilisateur) et calcule des statistiques agrégées (lignes, remplissage, valeurs "
        "distinctes, périodes, clés candidates, liens probables). Aucune ligne n'est lue.", {"plan": _PLAN}, ["plan"]),
     _x("transformation_proposer", "Proposer des éléments", "Ajoute au plan des éléments d'UNE étape au statut "
-       "« propose » (15 au plus) : étape 3 objectif/domaine/processus ; étape 4 cas_usage (processus VALIDÉ + tables) ; "
+       "« propose » (15 au plus) : étape 3 objectif/domaine (existant AS-IS) ; étape 4 cas_usage (tables) ; "
        "étape 5 agent/outil/flux/equipe (cas d'usage VALIDÉS + mode ; réutilisation = identifiant exact existant).",
        {"plan": _PLAN, "elements": {"type": "array", "maxItems": 15, "items": {"type": "object", "properties": {
-           "type": _s("Type d'élément", enum=list(ITEM_TYPES_AVAILABLE)),
+           "type": _s("Type d'élément", enum=list(PROPOSABLE_TYPES)),
            "nom": _s("Nom court"), "description": _s("Ce que couvre l'élément, d'après le cadrage et les données"),
            "tables": {**_LIST, "description": "Tables découvertes qui le justifient (nom complet ou court)"},
            "hypotheses": {**_LIST, "description": "Hypothèses à vérifier par le métier"},
-           "domaine": _s("Processus : domaine de rattachement"),
-           "processus": _s("cas_usage : nom exact d'un processus VALIDÉ du plan"),
+           "domaine": _s("cas_usage : domaine de rattachement"),
+            "processus": _s("cas_usage : processus VALIDÉ du plan, seulement pour un ancien plan qui en a ; sinon vide"),
            "objectif": _s("cas_usage : objectif VALIDÉ servi (facultatif)"),
            "gain_attendu": _s("cas_usage : gain attendu en mots, sans chiffre inventé"),
            "limites": {**_LIST, "description": "cas_usage : limites des données ou du cas (maille, couverture...)"},
@@ -381,17 +381,18 @@ Transformation vers l'entreprise augmentée par l'IA (étapes 1 à 7 disponibles
 - Étape 2 Découverte : transformation_decouvrir. Présente les tables (lignes, périodes), les colonnes
   incomplètes, les clés candidates et les liens probables. Ce sont des constats statistiques, sans lecture de
   lignes, et pas des exigences métier ; un lien probable reste à vérifier.
-- Étape 3 Cartographie : reprends les objectifs du cadrage (type objectif), puis déduis des domaines métier et des
-  processus à partir des tables découvertes et du cadrage. Chaque domaine ou processus cite ses tables (preuves) et
-  ses hypothèses. Dans le même message : présente D'ABORD la proposition en texte (tableau court), ENSUITE
+- Étape 3 Existant (AS-IS) : reprends les objectifs du cadrage (type objectif), puis déduis les domaines métier
+  à partir des tables découvertes et du cadrage. Les processus métier sont reportés : n'en propose pas. Chaque
+  domaine cite ses tables (preuves) et ses hypothèses. Dans le même message : présente D'ABORD la proposition en texte (tableau court), ENSUITE
   appelle transformation_proposer, puis demande de valider ou rejeter sur la page Transformation
   (ouvrir_page transformation).
-- Étape 4 Diagnostic et opportunités (après validation de processus) : transformation_etat, puis pour chaque
-  processus VALIDÉ repère ce que l'IA peut améliorer (tâches manuelles, données dispersées, information tardive)
-  d'après le cadrage et les données découvertes. Type cas_usage : processus (nom exact validé), tables (preuves),
+- Étape 4 Diagnostic et opportunités (après validation d'un domaine et d'un objectif) : transformation_etat, puis
+  pour chaque domaine VALIDÉ repère ce que l'IA peut améliorer (tâches manuelles, données dispersées, information
+  tardive, qualité des données) d'après le cadrage et les données découvertes. Type cas_usage : domaine, objectif
+  validé (facultatif), tables (preuves),
   gain_attendu en mots (aucun chiffre ni seuil inventé), limites (maille, couverture, colonnes incomplètes).
   Un cas d'usage que les données ne permettent pas encore se signale dans ses limites, sans le masquer.
-- Étape 5 Conception de la cible (après validation de cas d'usage) : transformation_etat, puis lister_agents,
+- Étape 5 Cible (TO-BE) (après validation de cas d'usage) : transformation_etat, puis lister_agents,
   lister_outils et lister_equipes pour RÉUTILISER d'abord l'existant. Pour chaque cas d'usage VALIDÉ, propose les
   agents, outils (SQL sur les tables découvertes), flux et équipes nécessaires : cas_usage (noms exacts validés),
   mode reutiliser / adapter (identifiant exact dans existant) ou creer. Une équipe cite ses membres ; un agent ses

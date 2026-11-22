@@ -30,7 +30,7 @@ PAGES = {
     "monitoring": ("views/monitoring.py", "Monitoring", "Appels d'outils, erreurs, latences"),
     "parametres": ("views/parametres.py", "Paramètres", "Configuration de l'application"),
     "transformation": ("views/transformation.py", "Transformation", "Plan de transformation guidé par HakimAI : "
-                       "cadrage, découverte des données, cartographie à valider"),
+                       "cadrage, découverte des données, existant (AS-IS), cible (TO-BE) et écarts à valider"),
 }
 
 ACTIONS = {   # actions réellement disponibles sur chaque page (référence pour HakimAI ; ne rien ajouter d'autre)

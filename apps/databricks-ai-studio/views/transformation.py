@@ -80,9 +80,9 @@ for warning in svc.coherence(items):
 if st.button("Continuer avec HakimAI", type="primary"):
     st.switch_page("views/hakim.py")
 
-t1, t2, t3, t4, t5, t6, t7 = st.tabs(["1. Cadrage", "2. Découverte des données", "3. Cartographie",
-                                      "4. Diagnostic et opportunités", "5. Conception de la cible",
-                                      "6. Feuille de route", "7. Génération et suivi"])
+t1, t2, t3, t4, t5, t_gap, t6, t7 = st.tabs(["1. Cadrage", "2. Découverte des données", "3. Existant (AS-IS)",
+                                             "4. Diagnostic et opportunités", "5. Cible (TO-BE)",
+                                             "Écarts AS-IS → TO-BE", "6. Feuille de route", "7. Génération et suivi"])
 
 with t1:
     ctx = plan["context"]
@@ -203,14 +203,39 @@ def render_items(kinds, empty: str) -> None:
 
 
 with t3:
-    render_items(T.ITEM_TYPES_LOT_A, "Aucun élément proposé. Demandez à HakimAI de proposer la cartographie après la "
-                                     "découverte.")
+    st.caption("Existant : objectifs et domaines métier, justifiés par les tables découvertes. Les processus métier "
+               "sont reportés ; ceux déjà enregistrés restent affichés.")
+    kinds = ("objectif", "domaine") + (("processus",) if any(i["item_type"] == "processus" for i in items) else ())
+    render_items(kinds, "Aucun élément proposé. Demandez à HakimAI de décrire l'existant après la découverte.")
 with t4:
-    render_items(("cas_usage",), "Aucun cas d'usage. Validez des processus (onglet 3), puis demandez à HakimAI le "
-                                 "diagnostic.")
+    render_items(("cas_usage",), "Aucun cas d'usage. Validez un objectif et un domaine (onglet 3), puis demandez à "
+                                 "HakimAI le diagnostic.")
 with t5:
     render_items(T.TARGET_TYPES, "Aucun élément de la cible. Validez des cas d'usage (onglet 4), puis demandez à "
                                  "HakimAI de concevoir la cible. Rien n'est créé dans la plateforme à cette étape.")
+with t_gap:
+    st.caption("Pour chaque cas d'usage (AS-IS), les éléments de la cible qui le servent et le type de changement. "
+               "Les éléments rejetés sont exclus. Rien n'est créé dans la plateforme depuis cet onglet.")
+    gaps = svc.gaps(items, catalog)
+    if not gaps:
+        st.info("Aucun cas d'usage. Les écarts apparaissent après l'étape 4.")
+    else:
+        no_target = sorted({g["cas_usage"] for g in gaps if g["element"] is None})
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Cas d'usage", len({g["cas_usage"] for g in gaps}))
+        m2.metric("Éléments de cible", sum(1 for g in gaps if g["element"]))
+        m3.metric("Cas sans cible", len(no_target))
+        st.dataframe(pd.DataFrame([{
+            "Cas d'usage": g["cas_usage"], "Statut du cas": ITEM_STATUS[g["statut_cas"]],
+            "Données (AS-IS)": ", ".join(t.split(".")[-1] for t in g["tables"]),
+            "Élément cible": g["element"] or "—", "Type": T.ITEM_LABELS.get(g["type"], "—") if g["type"] else "—",
+            "Changement": g["changement"],
+            "Statut de l'élément": ITEM_STATUS.get(g["statut_element"], "—") if g["statut_element"] else "—",
+            "Objet réel": g["objet"] or "—", "Statut de l'objet": g["statut_objet"] or "—"} for g in gaps]),
+            hide_index=True, use_container_width=True)
+        if no_target:
+            st.warning("Sans élément de cible : " + ", ".join(no_target) + ". Validez ces cas, puis demandez à HakimAI "
+                       "de concevoir la cible.")
 with t6:
     render_items(("vague",), "Aucune vague. Validez des éléments de cible (onglet 5), puis demandez à HakimAI de "
                               "proposer la feuille de route.")
