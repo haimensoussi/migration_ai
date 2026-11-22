@@ -73,18 +73,25 @@ if not owner:
 catalog = T.platform_catalog(state.agents(), state.repository().list_tools(), state.teams())
 steps = svc.progress(plan, items, catalog)
 tracking = svc.tracking(items, catalog)
-for col, s in zip(st.columns(len(steps)), steps):
-    col.metric(f"{s['etape']}. {s['libelle']}", ST_LABEL[s["statut"]])
+phases = T.phases(steps)
+for col, (n, ph) in zip(st.columns(len(phases)), enumerate(phases, 1)):
+    col.metric(f"{n}. {ph['libelle']}", ST_LABEL[ph["statut"]])
+pending = sum(1 for i in items if i["status"] == "propose")
+st.info("**Prochaine action** : " + T.next_action(steps)
+        + (f" — {pending} élément(s) en attente de votre décision." if pending else ""))
 for warning in svc.coherence(items):
     st.warning(warning)
 if st.button("Continuer avec HakimAI", type="primary"):
     st.switch_page("views/hakim.py")
 
-t1, t2, t3, t4, t5, t_gap, t6, t7 = st.tabs(["1. Cadrage", "2. Découverte des données", "3. Existant (AS-IS)",
-                                             "4. Diagnostic et opportunités", "5. Cible (TO-BE)",
-                                             "Écarts AS-IS → TO-BE", "6. Feuille de route", "7. Génération et suivi"])
+t_comp, t_exist, t_cible, t_dep = st.tabs([f"{n}. {ph['libelle']}" for n, ph in enumerate(phases, 1)])
+t1 = t2 = t_comp
+t3 = t4 = t_exist
+t5 = t_gap = t_cible
+t6 = t7 = t_dep
 
 with t1:
+    st.subheader("Cadrage")
     ctx = plan["context"]
     with st.form("transfo_ctx"):
         values = {k: st.text_area(label, ctx.get(k, ""), height=80, disabled=not owner)
@@ -93,6 +100,7 @@ with t1:
             act("Enregistrement impossible", lambda: svc.set_context(plan_id, me, values), "Cadrage enregistré.")
 
 with t2:
+    st.subheader("Découverte des données")
     d = plan["discovery"]
     if owner and st.button("Relancer la découverte" if d else "Lancer la découverte"):
         s = state.settings()
@@ -134,7 +142,12 @@ def render_items(kinds, empty: str) -> None:
         group = [i for i in items if i["item_type"] == kind]
         if not group:
             continue
-        st.subheader(T.ITEM_PLURALS[kind] if len(group) > 1 else T.ITEM_LABELS[kind])
+        h, btn = st.columns([4, 1])
+        h.markdown(f"**{T.ITEM_PLURALS[kind] if len(group) > 1 else T.ITEM_LABELS[kind]}** ({len(group)})")
+        todo = [i["item_id"] for i in group if i["status"] == "propose"]
+        if owner and len(todo) > 1 and btn.button(f"Tout valider ({len(todo)})", key=f"all_{kind}"):
+            act("Décision impossible", lambda todo=todo: svc.decide_many(plan_id, me, todo, "valide"),
+                f"{len(todo)} élément(s) validé(s).")
         for i in group:
             with st.container(border=True):
                 a, b = st.columns([4, 1])
@@ -203,17 +216,27 @@ def render_items(kinds, empty: str) -> None:
 
 
 with t3:
+    st.subheader("Existant (AS-IS)")
     st.caption("Existant : objectifs et domaines métier, justifiés par les tables découvertes. Les processus métier "
                "sont reportés ; ceux déjà enregistrés restent affichés.")
     kinds = ("objectif", "domaine") + (("processus",) if any(i["item_type"] == "processus" for i in items) else ())
     render_items(kinds, "Aucun élément proposé. Demandez à HakimAI de décrire l'existant après la découverte.")
 with t4:
-    render_items(("cas_usage",), "Aucun cas d'usage. Validez un objectif et un domaine (onglet 3), puis demandez à "
+    st.subheader("Opportunités : cas d'usage")
+    render_items(("cas_usage",), "Aucun cas d'usage. Validez un objectif et un domaine ci-dessus, puis demandez à "
                                  "HakimAI le diagnostic.")
 with t5:
-    render_items(T.TARGET_TYPES, "Aucun élément de la cible. Validez des cas d'usage (onglet 4), puis demandez à "
+    st.subheader("Cible (TO-BE)")
+    chart = T.org_chart(items, plan["name"], catalog)
+    if len(chart["nodes"]) > 1:
+        st.markdown("**Organigramme de la cible**")
+        st.caption("Équipes, agents, outils et flux prévus. Trait plein : validé ou existant ; pointillé : proposé, "
+                   "en attente de votre décision. Les éléments rejetés ne figurent pas.")
+        st.graphviz_chart(T.org_chart_dot(chart), use_container_width=True)
+    render_items(T.TARGET_TYPES, "Aucun élément de la cible. Validez des cas d'usage (Existant et opportunités), puis demandez à "
                                  "HakimAI de concevoir la cible. Rien n'est créé dans la plateforme à cette étape.")
 with t_gap:
+    st.subheader("Écarts AS-IS → TO-BE")
     st.caption("Pour chaque cas d'usage (AS-IS), les éléments de la cible qui le servent et le type de changement. "
                "Les éléments rejetés sont exclus. Rien n'est créé dans la plateforme depuis cet onglet.")
     gaps = svc.gaps(items, catalog)
@@ -223,7 +246,7 @@ with t_gap:
         no_target = sorted({g["cas_usage"] for g in gaps if g["element"] is None})
         m1, m2, m3 = st.columns(3)
         m1.metric("Cas d'usage", len({g["cas_usage"] for g in gaps}))
-        m2.metric("Éléments de cible", sum(1 for g in gaps if g["element"]))
+        m2.metric("Éléments de cible", len({(g["type"], g["element"]) for g in gaps if g["element"]}))
         m3.metric("Cas sans cible", len(no_target))
         st.dataframe(pd.DataFrame([{
             "Cas d'usage": g["cas_usage"], "Statut du cas": ITEM_STATUS[g["statut_cas"]],
@@ -237,9 +260,11 @@ with t_gap:
             st.warning("Sans élément de cible : " + ", ".join(no_target) + ". Validez ces cas, puis demandez à HakimAI "
                        "de concevoir la cible.")
 with t6:
-    render_items(("vague",), "Aucune vague. Validez des éléments de cible (onglet 5), puis demandez à HakimAI de "
+    st.subheader("Feuille de route")
+    render_items(("vague",), "Aucune vague. Validez des éléments de cible (Cible et écarts), puis demandez à HakimAI de "
                               "proposer la feuille de route.")
 with t7:
+    st.subheader("Suivi de la réalisation")
     st.caption("Suivi des objets réels liés au plan. Aucune publication automatique : créez ou modifiez les brouillons "
                "avec les outils HakimAI habituels, puis reliez-les au plan.")
     if not tracking:

@@ -89,5 +89,63 @@ def test_gaps_lists_targets_and_cases_without_target(svc, pid):
     assert rows[("Doublons fournisseurs", None)]["tables"] == [FRN]
 
 
+def test_four_phases_and_next_action(svc, pid):
+    plan = svc.get(pid, ME, False)
+    steps = svc.progress(plan, svc.items(pid, ME, False))
+    ph = T.phases(steps)
+    assert [p["libelle"] for p in ph] == ["Comprendre", "Existant et opportunités", "Cible et écarts", "Déployer"]
+    assert sorted(n for p in ph for n in p["etapes"]) == [1, 2, 3, 4, 5, 6, 7]       # aucune étape perdue
+    assert [p["statut"] for p in ph] == ["fait", "en_cours", "a_faire", "a_faire"]
+    assert ph[1]["action"] == T.NEXT_ACTION[3] == T.next_action(steps)
+    fresh = svc.get(svc.create("Vide", ME)["plan_id"], ME, False)
+    assert T.next_action(svc.progress(fresh, [])) == T.NEXT_ACTION[1]
+
+
+def test_decide_many_validates_all_or_nothing(svc, pid):
+    ids = [i["item_id"] for i in svc.items(pid, ME, False)]
+    with pytest.raises(T.TransformationError):
+        svc.decide_many(pid, "autre@sncf.fr", ids, "valide")                       # propriétaire seul
+    with pytest.raises(T.TransformationError, match="introuvable"):
+        svc.decide_many(pid, ME, ids + ["ti_x"], "valide")
+    assert {i["status"] for i in svc.items(pid, ME, False)} == {"propose"}          # rien décidé
+    assert svc.decide_many(pid, ME, ids, "valide") == 2
+    plan = svc.get(pid, ME, False)
+    items = svc.items(pid, ME, False)
+    assert {i["decided_by"] for i in items} == {ME} and svc.progress(plan, items)[2]["statut"] == "fait"
+
+
+def test_org_chart_team_agents_tools(svc, pid):
+    _validate(svc, pid, "domaine")
+    _validate(svc, pid, "objectif")
+    svc.propose(pid, ME, [{"type": "cas_usage", "nom": "Complétude", "tables": [CMD]}])
+    _validate(svc, pid, "cas_usage")
+    svc.propose(pid, ME, [
+        {"type": "outil", "nom": "Contrôle complétude", "cas_usage": ["Complétude"], "mode": "creer", "tables": [CMD]},
+        {"type": "agent", "nom": "Nadia", "cas_usage": ["Complétude"], "mode": "creer",
+         "outils": ["Contrôle complétude", "get_table_profile"]},
+        {"type": "agent", "nom": "Clara", "cas_usage": ["Complétude"], "mode": "reutiliser", "existant": "ag_clara"},
+        {"type": "agent", "nom": "Rejetée", "cas_usage": ["Complétude"], "mode": "creer"},
+        {"type": "equipe", "nom": "Équipe DQ", "cas_usage": ["Complétude"], "mode": "creer", "membres": ["Nadia"]}],
+        existing=EXISTING)
+    rej = next(i for i in svc.items(pid, ME, False) if i["name"] == "Rejetée")
+    svc.decide(pid, rej["item_id"], ME, "rejete")
+    nadia = next(i for i in svc.items(pid, ME, False) if i["name"] == "Nadia")
+    svc.decide(pid, nadia["item_id"], ME, "valide")
+    chart = T.org_chart(svc.items(pid, ME, False), "Pilote")
+    edges = {(chart["nodes"][a]["nom"], chart["nodes"][b]["nom"]) for a, b in chart["edges"]}
+    assert edges == {("Pilote", "Équipe DQ"), ("Équipe DQ", "Nadia"), ("Pilote", "Clara"),
+                     ("Nadia", "Contrôle complétude"), ("Nadia", "get_table_profile")}
+    assert "Rejetée" not in {n["nom"] for n in chart["nodes"].values()}
+    assert chart["nodes"]["outil:get_table_profile"]["statut"] == "existant"
+    dot = T.org_chart_dot(chart)
+    assert dot.startswith("digraph G {") and dot.rstrip().endswith("}") and dot.count("->") == 5
+    assert 'Nadia\\nAgent · Créer · Validé' in dot and "dashed" in dot
+
+
+def test_org_chart_empty_without_targets(svc, pid):
+    chart = T.org_chart(svc.items(pid, ME, False))
+    assert list(chart["nodes"]) == ["root"] and chart["edges"] == []
+
+
 def test_gaps_empty_without_use_cases(svc, pid):
     assert svc.gaps(svc.items(pid, ME, False)) == []

@@ -37,6 +37,18 @@ ITEM_TYPES_AVAILABLE = tuple(k for k, s in ITEM_STEP.items() if s <= AVAILABLE_L
 # lisibles et décidables, et un cas d'usage peut encore en citer un (facultatif).
 PROPOSABLE_TYPES = tuple(k for k in ITEM_TYPES_AVAILABLE if k != "processus")
 CHANGE_LABELS = {"reutiliser": "Réutilisation", "adapter": "Adaptation", "creer": "Création"}
+# Démarche simplifiée (affichage) : 4 phases regroupant les 7 étapes, et l'action attendue à chaque étape.
+PHASES = [("comprendre", "Comprendre", (1, 2)), ("existant", "Existant et opportunités", (3, 4)),
+          ("cible", "Cible et écarts", (5,)), ("deployer", "Déployer", (6, 7))]
+NEXT_ACTION = {
+    1: "Décrivez l'activité et les objectifs (Comprendre), seul ou avec HakimAI.",
+    2: "Lancez la découverte des données (Comprendre).",
+    3: "Validez au moins un objectif et un domaine (Existant et opportunités).",
+    4: "Validez au moins un cas d'usage (Existant et opportunités).",
+    5: "Demandez à HakimAI la cible, puis validez-la : chaque cas d'usage validé doit être servi (Cible et écarts).",
+    6: "Demandez à HakimAI la feuille de route, puis validez les vagues (Déployer).",
+    7: "Créez ou reliez les objets prévus, puis publiez-les (Déployer).",
+}
 ITEM_LABELS = {"objectif": "Objectif", "domaine": "Domaine métier", "processus": "Processus",
                "cas_usage": "Cas d'usage", "agent": "Agent", "equipe": "Équipe", "flux": "Flux", "outil": "Outil",
                "vague": "Vague"}
@@ -697,6 +709,17 @@ class TransformationService:
         return {"element": i["name"], "type": i["item_type"], "objet_id": obj, "objet_nom": live["nom"],
                 "statut_objet": live.get("statut")}
 
+    def decide_many(self, plan_id: str, user: str, item_ids: list[str], status: str) -> int:
+        """Décision groupée (bouton « Tout valider ») : mêmes règles que decide, élément par élément."""
+        self._owned(plan_id, user)
+        known = {i["item_id"] for i in self.store.list_items(plan_id)}
+        missing = [i for i in item_ids if i not in known]
+        if missing or not item_ids:
+            raise TransformationError("Élément(s) introuvable(s) dans ce plan." if missing else "Aucun élément.")
+        for item_id in item_ids:
+            self.decide(plan_id, item_id, user, status)
+        return len(item_ids)
+
     def decide(self, plan_id: str, item_id: str, user: str, status: str, note: str = "") -> None:
         """Décision humaine (page Transformation) : valide, rejete, ou propose pour rouvrir."""
         self._owned(plan_id, user)
@@ -784,6 +807,95 @@ class TransformationService:
                     out.append(f"{ITEM_LABELS[i['item_type']]} « {i['name']} » validé alors que son "
                                f"{ITEM_LABELS[kind].lower()} « {name} » ne l'est plus : à revoir.")
         return out
+
+
+def org_chart(items: list[dict], root: str = "Cible", catalog: dict | None = None) -> dict:
+    """Organigramme de la cible (TO-BE) : plan → équipes → agents → outils et flux. Éléments rejetés exclus ;
+    les objets cités mais hors plan (références existantes) apparaissent comme « existant »."""
+    live = [i for i in items if i["item_type"] in TARGET_TYPES and i["status"] != "rejete"]
+    nodes, edges = {"root": {"type": "plan", "nom": root, "statut": None, "mode": None}}, []
+    key = {}
+    for i in live:
+        k = f"{i['item_type']}:{i['name']}"
+        key[(i["item_type"], i["name"].lower())] = k
+        nodes[k] = {"type": i["item_type"], "nom": i["name"], "statut": i["status"], "mode": i["payload"].get("mode"),
+                    "existant": i["payload"].get("existant_nom") or i["payload"].get("existant")}
+
+    def ref(kind: str, name: str) -> str:
+        k = key.get((kind, name.lower()))
+        if not k:
+            k = f"{kind}:{name}"
+            label = (((catalog or {}).get(kind) or {}).get(name) or {}).get("nom") or name   # identifiant → nom lisible
+            nodes.setdefault(k, {"type": kind, "nom": label, "statut": "existant", "mode": None, "existant": name})
+        return k
+
+    in_team, has_parent = set(), set()
+    for i in live:
+        if i["item_type"] == "equipe":
+            edges.append(("root", key[("equipe", i["name"].lower())]))
+            for m in i["payload"].get("membres") or []:
+                a = ref("agent", m)
+                edges.append((key[("equipe", i["name"].lower())], a))
+                in_team.add(a)
+    for i in live:
+        if i["item_type"] == "agent":
+            a = key[("agent", i["name"].lower())]
+            if a not in in_team:
+                edges.append(("root", a))
+            for o in i["payload"].get("outils") or []:
+                t = key.get(("outil", o.lower())) or key.get(("flux", o.lower())) or ref("outil", o)
+                edges.append((a, t))
+                has_parent.add(t)
+    for k, n in nodes.items():   # outils et flux du plan non rattachés à un agent
+        if n["type"] in ("outil", "flux") and k not in has_parent and n["statut"] != "existant":
+            edges.append(("root", k))
+    return {"nodes": nodes, "edges": list(dict.fromkeys(edges))}
+
+
+_ORG_STYLE = {"plan": ("#4A1942", "white", "box"), "equipe": ("#B0124F", "white", "box"),
+              "agent": ("#7A3E9D", "white", "box"), "outil": ("#F3E9F7", "#4A1942", "ellipse"),
+              "flux": ("#FDE9F0", "#B0124F", "hexagon")}
+_ORG_STATUS = {"valide": "Validé", "propose": "Proposé", "existant": "Existant"}
+
+
+def org_chart_dot(chart: dict) -> str:
+    """Graphviz DOT de l'organigramme : trait plein = validé ou existant, pointillé = proposé."""
+    def q(s: str) -> str:
+        return '"' + str(s).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n") + '"'
+    ids = {k: f"n{i}" for i, k in enumerate(chart["nodes"])}
+    out = ["digraph G {", "rankdir=TB; nodesep=0.3; ranksep=0.5;",
+           'node [fontname="Segoe UI", fontsize=11, style="filled,rounded", penwidth=1.5];', 'edge [color="#888888"];']
+    for k, n in chart["nodes"].items():
+        fill, font, shape = _ORG_STYLE.get(n["type"], ("white", "black", "box"))
+        sub = ITEM_LABELS.get(n["type"], "Plan") + (f" · {MODES[n['mode']]}" if n.get("mode") in MODES else "")
+        if n["statut"]:
+            sub += f" · {_ORG_STATUS.get(n['statut'], n['statut'])}"
+        style = "filled,rounded,dashed" if n["statut"] == "propose" else "filled,rounded"
+        out.append(f"{ids[k]} [label={q(n['nom'] + chr(10) + sub)}, shape={shape}, fillcolor={q(fill)}, "
+                   f"fontcolor={q(font)}, style={q(style)}];")
+    for a, b in chart["edges"]:
+        dashed = chart["nodes"][b]["statut"] == "propose"
+        out.append(f"{ids[a]} -> {ids[b]}" + (" [style=dashed]" if dashed else "") + ";")
+    out.append("}")
+    return "\n".join(out)
+
+
+def phases(steps: list[dict]) -> list[dict]:
+    """Regroupe l'avancement des 7 étapes en 4 phases, avec l'action attendue pour l'étape en cours."""
+    by_n = {s["etape"]: s["statut"] for s in steps}
+    out = []
+    for key, label, nums in PHASES:
+        sts = [by_n.get(n, "a_faire") for n in nums]
+        status = "fait" if all(s == "fait" for s in sts) else "en_cours" if "en_cours" in sts or "fait" in sts else "a_faire"
+        current = next((n for n in nums if by_n.get(n) == "en_cours"), None)
+        out.append({"cle": key, "libelle": label, "etapes": list(nums), "statut": status,
+                    "action": NEXT_ACTION[current] if current else None})
+    return out
+
+
+def next_action(steps: list[dict]) -> str:
+    current = next((s["etape"] for s in steps if s["statut"] == "en_cours"), None)
+    return NEXT_ACTION[current] if current else "Démarche terminée : tous les objets prévus sont publiés."
 
 
 def proposal_step(elements: list[dict]) -> int:

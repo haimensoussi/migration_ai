@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="fr"><head><meta charset="utf-8">
+<title>DISCOVERY — Aperçu Transformation simplifiée (non déployée)</title>
+<style>
+:root{--fr:#B0124F;--pr:#4A1942;--vi:#7A3E9D;--bg:#F6F6F8;--ok:#1E7F4F;--wa:#B26B00}
+*{box-sizing:border-box}body{margin:0;font-family:Segoe UI,Arial,sans-serif;background:var(--bg);color:#222;display:flex}
+nav{width:220px;min-height:100vh;background:var(--pr);color:#fff;padding:18px 14px}nav b{font-size:20px;letter-spacing:1px}nav small{display:block;opacity:.7;margin-bottom:18px}
+nav div{padding:7px 10px;border-radius:6px;font-size:14px;opacity:.85}nav div.on{background:var(--fr);opacity:1}
+main{flex:1;padding:22px 30px;max-width:1150px}.ban{background:#fff3cd;border:1px solid #e0c36a;padding:8px 12px;border-radius:6px;font-size:13px;margin-bottom:14px}
+h1{color:var(--pr);margin:0 0 4px}.cap{color:#666;font-size:13px;margin-bottom:14px}
+select{padding:6px;border-radius:6px;border:1px solid #ccc;width:420px}
+.ph{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:16px 0}.ph div{background:#fff;border-radius:8px;padding:10px 12px;border-top:4px solid #ccc}
+.ph .fait{border-color:var(--ok)}.ph .en_cours{border-color:var(--fr)}.ph span{display:block;font-size:12px;color:#666}.ph strong{font-size:18px}
+.next{background:#e8f0fb;border-left:4px solid #2a6fdb;padding:10px 14px;border-radius:6px;margin-bottom:10px}
+.btn{display:inline-block;padding:7px 14px;border-radius:6px;border:1px solid #ccc;background:#fff;font-size:13px;margin:2px 4px 2px 0}.btn.p{background:var(--fr);color:#fff;border-color:var(--fr)}
+.tabs{display:flex;gap:4px;border-bottom:2px solid #ddd;margin-top:14px}.tabs label{padding:9px 16px;cursor:pointer;font-size:14px;border-radius:6px 6px 0 0}
+input[name=t]{display:none}.pane{display:none;padding:14px 0}
+#t1:checked~.tabs label[for=t1],#t2:checked~.tabs label[for=t2],#t3:checked~.tabs label[for=t3],#t4:checked~.tabs label[for=t4]{background:#fff;color:var(--fr);font-weight:600;border-bottom:3px solid var(--fr)}
+#t1:checked~#p1,#t2:checked~#p2,#t3:checked~#p3,#t4:checked~#p4{display:block}
+h3{color:var(--pr);margin:18px 0 8px}.grp{display:flex;justify-content:space-between;align-items:center;margin-top:10px}
+.card{background:#fff;border:1px solid #e3e3e8;border-radius:8px;padding:10px 14px;margin:6px 0;display:flex;justify-content:space-between;gap:14px}
+.card p{margin:4px 0;font-size:13px}.card .pr{font-size:12px;color:#777}.st{font-family:monospace;font-size:12px;padding:2px 8px;border-radius:4px;background:#eee;white-space:nowrap}
+.st.valide{background:#dff3e7;color:var(--ok)}.st.propose{background:#fde9f0;color:var(--fr)}
+table{border-collapse:collapse;width:100%;background:#fff;font-size:13px}th,td{border:1px solid #e3e3e8;padding:6px 8px;text-align:left}th{background:#f0edf3;color:var(--pr)}
+td.none{color:var(--wa);font-weight:600}.kpi{display:flex;gap:12px;margin:8px 0}.kpi div{background:#fff;border-radius:8px;padding:8px 14px}.kpi strong{font-size:20px;display:block}
+.warn{background:#fff4e5;border-left:4px solid var(--wa);padding:8px 12px;border-radius:6px;margin-top:10px;font-size:13px}.info{background:#eef1f6;padding:10px;border-radius:6px;color:#555;font-size:13px}
+</style></head><body>
+<nav><b>DISCOVERY</b><small>SNCF Réseau</small><div>Accueil</div><div>HakimAI</div><div class="on">Transformation</div><div>Mes agents</div><div>Équipes</div><div>Agent Builder</div><div>Chat &amp; Test</div><div>Tool Builder</div><div>Flux Builder</div><div>Marketplace</div></nav>
+<main>
+<div class="ban">Aperçu statique de la page simplifiée, <b>non déployée</b>. Contenu : plan réel « Pilote Supply Chain Data Quality » lu en base le 22/11/2026 et calculé avec le nouveau code (phases, prochaine action, écarts). Les boutons ne sont pas actifs.</div>
+<h1>Transformation</h1>
+<div class="cap">HakimAI vous guide vers une organisation augmentée par l'IA : il propose, vous décidez ici.</div>
+<select><option>Pilote Supply Chain Data Quality</option></select> <span class="btn">Nouveau plan</span>
+<div class="ph">
+<div class="fait"><span>1. Comprendre</span><strong>Fait</strong></div>
+<div class="fait"><span>2. Existant et opportunités</span><strong>Fait</strong></div>
+<div class="en_cours"><span>3. Cible et écarts</span><strong>En cours</strong></div>
+<div><span>4. Déployer</span><strong>À faire</strong></div>
+</div>
+<div class="next"><b>Prochaine action</b> : Demandez à HakimAI la cible, puis validez-la : chaque cas d'usage validé doit être servi (Cible et écarts). — 6 élément(s) en attente de votre décision.</div>
+<span class="btn p">Continuer avec HakimAI</span>
+
+<input type="radio" name="t" id="t1"><input type="radio" name="t" id="t2"><input type="radio" name="t" id="t3" checked><input type="radio" name="t" id="t4">
+<div class="tabs"><label for="t1">1. Comprendre</label><label for="t2">2. Existant et opportunités</label><label for="t3">3. Cible et écarts</label><label for="t4">4. Déployer</label></div>
+
+<div class="pane" id="p1">
+<h3>Cadrage</h3>
+<table><tr><th>Activité et organisation</th><td>Supply Chain SNCF Réseau : commandes d'articles et fournisseurs (données de démonstration de DISCOVERY).</td></tr>
+<tr><th>Objectifs</th><td>Fiabiliser les données Supply Chain avant leur usage par les agents : complétude, cohérence, référentiel fournisseurs.</td></tr>
+<tr><th>Irritants</th><td>Anomalies détectées tard et à la main ; signalements qualité dispersés dans les commandes.</td></tr>
+<tr><th>Contraintes</th><td>Données de démonstration (data_demo_sc_*) ; seuils de qualité à fixer par le métier ; aucune écriture dans les données sources.</td></tr>
+<tr><th>Périmètre</th><td>dataops_dev.ai_studio : data_demo_sc_commandes, data_demo_sc_fournisseurs. Source cible ultérieure : description_du_reseau_bronze (à raccorder).</td></tr></table>
+<h3>Découverte des données</h3>
+<table><tr><th>Table</th><th>Lignes</th><th>Colonnes</th><th>Clés candidates</th></tr>
+<tr><td>data_demo_sc_commandes</td><td>177</td><td>13</td><td>num_commande, code_article</td></tr>
+<tr><td>data_demo_sc_fournisseurs</td><td>24</td><td>6</td><td>code_fournisseur, raison_sociale, date_creation</td></tr></table>
+<p class="cap"><b>Lien probable (à vérifier)</b> : commandes.code_fournisseur → fournisseurs.code_fournisseur, 95,5 % retrouvés, 8 sans correspondance.</p>
+</div>
+
+<div class="pane" id="p2">
+<h3>Existant (AS-IS)</h3>
+<div class="cap">Objectifs et domaines métier, justifiés par les tables découvertes. Les processus métier sont reportés.</div>
+<div class="grp"><b>Objectifs (2)</b></div>
+<div class="card"><div><b>Fiabiliser les données Supply Chain</b><p>Repris du cadrage : complétude, cohérence et référentiel fournisseurs avant usage par les agents.</p></div><span class="st valide">Validé</span></div>
+<div class="card"><div><b>Détecter les anomalies au plus tôt</b><p>Repris du cadrage : anomalies aujourd'hui détectées tard et à la main.</p></div><span class="st valide">Validé</span></div>
+<div class="grp"><b>Domaines métier (2)</b></div>
+<div class="card"><div><b>Commandes d'articles</b><p>Article, fournisseur, ligne, dates, quantités, montants, statut, signalements qualité (177 lignes).</p><p class="pr">Preuves : data_demo_sc_commandes</p></div><span class="st valide">Validé</span></div>
+<div class="card"><div><b>Référentiel fournisseurs</b><p>Fournisseurs référencés (24 lignes), reliés aux commandes par code_fournisseur.</p><p class="pr">Preuves : data_demo_sc_fournisseurs</p></div><span class="st valide">Validé</span></div>
+<h3>Opportunités : cas d'usage</h3>
+<div class="grp"><b>Cas d'usage (5)</b><span class="btn p">Tout valider (3)</span></div>
+<div class="card"><div><b>Documentation des données</b><p>19 colonnes sur 19 sans description dans Unity Catalog.</p></div><span class="st valide">Validé</span></div>
+<div class="card"><div><b>Rapprochement du référentiel fournisseurs</b><p>8 commandes citent un code fournisseur absent du référentiel (95,5 % retrouvés).</p></div><span class="st valide">Validé</span></div>
+<div class="card"><div><b>Synthèse des signalements qualité</b><p>14 commandes portent au moins un signalement qualité.</p><p class="pr">Limites : seuil d'acceptation non défini, à fixer par le métier</p></div><div><span class="st propose">Proposé</span><br><span class="btn p">Valider</span><span class="btn">Rejeter</span></div></div>
+<div class="card"><div><b>Cohérence des montants</b><p>4 commandes ont un montant total différent de quantité × prix unitaire.</p><p class="pr">Limites : seuil d'acceptation non défini, à fixer par le métier</p></div><div><span class="st propose">Proposé</span><br><span class="btn p">Valider</span><span class="btn">Rejeter</span></div></div>
+<div class="card"><div><b>Contrôle de cohérence des dates</b><p>6 commandes ont une date de livraison prévue antérieure à la date de commande.</p><p class="pr">Limites : seuil d'acceptation non défini, à fixer par le métier</p></div><div><span class="st propose">Proposé</span><br><span class="btn p">Valider</span><span class="btn">Rejeter</span></div></div>
+</div>
+
+<div class="pane" id="p3">
+<h3>Cible (TO-BE)</h3>
+<b>Organigramme de la cible</b>
+<div class="cap">Équipes, agents, outils et flux prévus. Trait plein : validé ou existant ; pointillé : proposé, en attente de votre décision. Les éléments rejetés ne figurent pas.</div>
+<svg viewBox="0 0 1000 380" width="100%" style="background:#fff;border-radius:8px;border:1px solid #e3e3e8" font-family="Segoe UI,Arial" font-size="12" text-anchor="middle">
+<defs><marker id="ar" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#888"/></marker></defs>
+<g stroke="#888" stroke-width="1.4" fill="none" marker-end="url(#ar)">
+<path d="M500,62 L500,108" stroke-dasharray="5,4"/>
+<path d="M440,152 L300,198" stroke-dasharray="5,4"/><path d="M560,152 L700,198" stroke-dasharray="5,4"/>
+<path d="M260,242 L110,298"/><path d="M280,242 L270,298"/><path d="M300,242 L430,298"/><path d="M320,242 L590,298"/>
+<path d="M680,242 L290,298"/><path d="M700,242 L610,298"/><path d="M720,242 L880,298"/>
+</g>
+<g><rect x="360" y="18" width="280" height="44" rx="8" fill="#4A1942"/><text x="500" y="37" fill="#fff" font-weight="600">Pilote Supply Chain Data Quality</text><text x="500" y="53" fill="#fff" font-size="11">Plan</text></g>
+<g><rect x="360" y="108" width="280" height="44" rx="8" fill="#B0124F" stroke="#4A1942" stroke-dasharray="5,4" stroke-width="1.5"/><text x="500" y="127" fill="#fff" font-weight="600">Équipe Supply Chain Data Quality</text><text x="500" y="143" fill="#fff" font-size="11">Équipe · Créer · Proposé</text></g>
+<g><rect x="190" y="198" width="200" height="44" rx="8" fill="#7A3E9D" stroke="#4A1942" stroke-dasharray="5,4" stroke-width="1.5"/><text x="290" y="217" fill="#fff" font-weight="600">Nadia</text><text x="290" y="233" fill="#fff" font-size="11">Agent · Créer · Proposé</text></g>
+<g><rect x="610" y="198" width="200" height="44" rx="8" fill="#7A3E9D" stroke="#4A1942" stroke-dasharray="5,4" stroke-width="1.5"/><text x="710" y="217" fill="#fff" font-weight="600">Karim</text><text x="710" y="233" fill="#fff" font-size="11">Agent · Créer · Proposé</text></g>
+<g fill="#F3E9F7" stroke="#7A3E9D"><ellipse cx="110" cy="322" rx="85" ry="24"/><ellipse cx="280" cy="322" rx="85" ry="24"/><ellipse cx="440" cy="322" rx="72" ry="24"/><ellipse cx="600" cy="322" rx="80" ry="24"/><ellipse cx="880" cy="322" rx="80" ry="24"/></g>
+<g fill="#4A1942"><text x="110" y="320">Profiler une table</text><text x="110" y="335" font-size="10">Outil · Existant</text>
+<text x="280" y="320">Exécuter une requête SQL</text><text x="280" y="335" font-size="10">Outil · Existant</text>
+<text x="440" y="320">Afficher un graphique</text><text x="440" y="335" font-size="10">Outil · Existant</text>
+<text x="600" y="320">Afficher des indicateurs</text><text x="600" y="335" font-size="10">Outil · Existant</text>
+<text x="880" y="320">Générer un rapport</text><text x="880" y="335" font-size="10">Outil · Existant</text></g>
+</svg>
+<div class="grp"><b>Agents (2)</b><span class="btn p">Tout valider (2)</span></div>
+<div class="card"><div><b>Nadia</b><p>Agente Supply Chain : exploration et documentation des données commandes et fournisseurs.</p><p class="pr">Cas d'usage servis : Documentation des données, Rapprochement du référentiel fournisseurs | Mode : Créer | Outils : execute_sql, get_table_profile, render_chart, render_kpi</p></div><div><span class="st propose">Proposé</span><br><span class="btn p">Valider</span><span class="btn">Rejeter</span></div></div>
+<div class="card"><div><b>Karim</b><p>Agent Supply Chain : contrôle qualité, détection des fournisseurs inconnus.</p><p class="pr">Cas d'usage servis : Rapprochement du référentiel fournisseurs | Mode : Créer | Outils : execute_sql, render_kpi, generate_report</p></div><div><span class="st propose">Proposé</span><br><span class="btn p">Valider</span><span class="btn">Rejeter</span></div></div>
+<div class="grp"><b>Équipe (1)</b></div>
+<div class="card"><div><b>Équipe Supply Chain Data Quality</b><p>Fiabilisation des données commandes et fournisseurs.</p><p class="pr">Cas d'usage servis : Documentation des données, Rapprochement du référentiel fournisseurs | Mode : Créer | Membres : Nadia, Karim</p></div><div><span class="st propose">Proposé</span><br><span class="btn p">Valider</span><span class="btn">Rejeter</span></div></div>
+<h3>Écarts AS-IS → TO-BE</h3>
+<div class="kpi"><div>Cas d'usage<strong>5</strong></div><div>Éléments de cible<strong>3</strong></div><div>Cas sans cible<strong>3</strong></div></div>
+<table><tr><th>Cas d'usage</th><th>Statut du cas</th><th>Données (AS-IS)</th><th>Élément cible</th><th>Type</th><th>Changement</th><th>Statut de l'élément</th></tr>
+<tr><td>Documentation des données</td><td>Validé</td><td>commandes, fournisseurs</td><td>Nadia</td><td>Agent</td><td>Création</td><td>Proposé</td></tr>
+<tr><td>Documentation des données</td><td>Validé</td><td>commandes, fournisseurs</td><td>Équipe Supply Chain Data Quality</td><td>Équipe</td><td>Création</td><td>Proposé</td></tr>
+<tr><td>Rapprochement du référentiel fournisseurs</td><td>Validé</td><td>commandes, fournisseurs</td><td>Nadia</td><td>Agent</td><td>Création</td><td>Proposé</td></tr>
+<tr><td>Rapprochement du référentiel fournisseurs</td><td>Validé</td><td>commandes, fournisseurs</td><td>Karim</td><td>Agent</td><td>Création</td><td>Proposé</td></tr>
+<tr><td>Rapprochement du référentiel fournisseurs</td><td>Validé</td><td>commandes, fournisseurs</td><td>Équipe Supply Chain Data Quality</td><td>Équipe</td><td>Création</td><td>Proposé</td></tr>
+<tr><td>Synthèse des signalements qualité</td><td>Proposé</td><td>commandes</td><td>—</td><td>—</td><td class="none">Aucune cible</td><td>—</td></tr>
+<tr><td>Cohérence des montants</td><td>Proposé</td><td>commandes</td><td>—</td><td>—</td><td class="none">Aucune cible</td><td>—</td></tr>
+<tr><td>Contrôle de cohérence des dates</td><td>Proposé</td><td>commandes</td><td>—</td><td>—</td><td class="none">Aucune cible</td><td>—</td></tr></table>
+<div class="warn">Sans élément de cible : Cohérence des montants, Contrôle de cohérence des dates, Synthèse des signalements qualité. Validez ces cas, puis demandez à HakimAI de concevoir la cible.</div>
+</div>
+
+<div class="pane" id="p4">
+<h3>Feuille de route</h3>
+<div class="info">Aucune vague. Validez des éléments de cible (Cible et écarts), puis demandez à HakimAI de proposer la feuille de route.</div>
+<h3>Suivi de la réalisation</h3>
+<div class="info">Aucun élément planifié en vague validée.</div>
+</div>
+</main></body></html>
