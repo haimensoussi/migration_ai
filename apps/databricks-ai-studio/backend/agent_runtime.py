@@ -75,6 +75,9 @@ class AgentRuntime:
         self.model, self.registry, self.ctx, self.on_tool_event = model, registry, ctx, on_tool_event
         # Contrôle facultatif avant la fiche de validation : un texte renvoyé = appel non proposé, erreur rendue au modèle.
         self.before_confirm = before_confirm
+        # Affichage au fil de l'eau (facultatif) : on_text(delta) reçoit le texte du modèle pendant sa production,
+        # on_text(None) signale un nouvel appel du modèle (le texte provisoire précédent est remplacé).
+        self.on_text: Callable[[str | None], None] | None = None
 
     # -- API publique -------------------------------------------------------
     def run(self, cfg: AgentConfig, history: list[dict], approvals: dict[str, bool] | None = None) -> TurnResult:
@@ -105,7 +108,12 @@ class AgentRuntime:
                     text = f"Arrêt : nombre maximal d'itérations ({cfg.max_iterations}) atteint."
                     messages.append({"role": "assistant", "content": text})
                     return result(final_text=text)
-                resp = self.model.chat(cfg.model_endpoint, messages, tools=payload, temperature=cfg.temperature)
+                if self.on_text and hasattr(self.model, "chat_stream"):
+                    self.on_text(None)
+                    resp = self.model.chat_stream(cfg.model_endpoint, messages, tools=payload,
+                                                  temperature=cfg.temperature, on_text=self.on_text)
+                else:
+                    resp = self.model.chat(cfg.model_endpoint, messages, tools=payload, temperature=cfg.temperature)
                 model_calls += 1
                 for k, v in (resp.get("usage") or {}).items():
                     if isinstance(v, (int, float)):

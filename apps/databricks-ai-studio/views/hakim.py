@@ -108,6 +108,10 @@ def ask(question: str) -> None:
     user_msg = {"role": "user", "content": question}
     s["display"].append({"role": "user", "content": question})
     s["turns"] += 1
+    with st.chat_message("user"):   # question visible tout de suite, réponse au fil de l'eau
+        st.markdown(question)
+    from ui.live_text import LiveText
+    rt.on_text = LiveText.bubble()
     try:
         with st.spinner("HakimAI réfléchit…"):
             res, warnings = hakim_guard.verify_turn(rt, cfg, rt.run(cfg, s["history"] + [user_msg]))
@@ -130,6 +134,8 @@ def decide(approved: bool) -> None:
         lines = hakim.describe_action(call["tool"], call.get("arguments") or {}, s["drafts"])
         handle(hakim_guard.refusal_result(pend["messages"], call["call"]["id"], lines[0] if lines else None), [])
         return
+    from ui.live_text import LiveText
+    rt.on_text = LiveText.bubble()
     try:
         with st.spinner("Exécution…"):
             res, warnings = hakim_guard.verify_turn(rt, cfg, rt.resume(cfg, pend["messages"], {call["call"]["id"]: True}))

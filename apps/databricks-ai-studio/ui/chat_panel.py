@@ -241,11 +241,14 @@ def render_chat(cfg: AgentConfig, key: str, persist: bool = True, category: str 
     def log_sub(agent_id: str, ev: ToolEvent):
         make_logger(agent_id)(ev)
 
-    def runtime_for(speaker: AgentConfig):
+    def runtime_for(speaker: AgentConfig, cat: str | None = None):
         presented = dataclasses.replace(speaker, instructions=with_presentation(speaker.instructions))
         rt_, exec_cfg, warns = state.build_runtime_for(presented, on_tool_event=make_logger(speaker.agent_id),
                                                        conversation_id=s["conversation_id"], on_sub_event=log_sub)
         s["orch_warnings"] = warns
+        # Réponse affichée au fil de l'eau dans une bulle de l'agent qui parle (le tour fini, la page est redessinée)
+        from ui.live_text import LiveText
+        rt_.on_text = LiveText.bubble(_agent_avatar(speaker.name, None, cat))
         return rt_, exec_cfg
 
     def log_msgs(speaker: AgentConfig, msgs: list[dict], latency, usage=None):
@@ -309,7 +312,7 @@ def render_chat(cfg: AgentConfig, key: str, persist: bool = True, category: str 
             content = (f"Contexte récent de la discussion (pour information) :\n{ctx_txt}\n\n" if ctx_txt else "") + \
                 f"Question qui t'est adressée par l'utilisateur :\n{question}"
             try:
-                rt, exec_cfg = runtime_for(mcfg)
+                rt, exec_cfg = runtime_for(mcfg, a.get("category"))
                 res = rt.run(exec_cfg, [{"role": "user", "content": content}])
                 handle(res, {"role": "user", "content": prompt} if first else None, mcfg, a.get("category"), main=False,
                        team=a["name"] if a.get("kind") == "team" else "")
@@ -323,7 +326,7 @@ def render_chat(cfg: AgentConfig, key: str, persist: bool = True, category: str 
                 fail(a["name"], a.get("category"), e)
         if answered >= 2:
             try:
-                rt, exec_cfg = runtime_for(cfg)
+                rt, exec_cfg = runtime_for(cfg, category)
                 synth = {"role": "user", "content": "Fais une synthèse courte des réponses des agents mentionnés "
                                                     "ci-dessus, en citant chaque agent. N'ajoute aucun résultat."}
                 handle(rt.run(exec_cfg, s["history"] + [synth]), None, cfg, category, main=True)
@@ -346,7 +349,7 @@ def render_chat(cfg: AgentConfig, key: str, persist: bool = True, category: str 
                 with st.spinner("Exécution..."):
                     try:
                         pend = s["pending"]
-                        rt, exec_cfg = runtime_for(speaker)
+                        rt, exec_cfg = runtime_for(speaker, pend.get("category", category))
                         res = rt.resume(exec_cfg, pend["messages"], {p["call"]["id"]: decision})
                         handle(res, None, speaker, pend.get("category", category), main=pend.get("main", True),
                            team=pend.get("team", ""))
@@ -397,13 +400,15 @@ def render_chat(cfg: AgentConfig, key: str, persist: bool = True, category: str 
             if found.truncated:
                 s["display"].append({"kind": "notice", "content": "Au plus 3 agents mentionnés par message : "
                                      "les suivants sont ignorés."})
+        with st.chat_message("user", avatar=AV["user"]):   # question visible tout de suite
+            st.markdown(prompt)
         with st.spinner("L'agent réfléchit..."):
             if found and found.agents:
                 run_mentions(prompt, found)
             else:
                 user_msg = {"role": "user", "content": prompt}
                 try:
-                    rt, exec_cfg = runtime_for(cfg)
+                    rt, exec_cfg = runtime_for(cfg, category)
                     handle(rt.run(exec_cfg, s["history"] + [user_msg]), user_msg, cfg, category, main=True)
                 except Exception as e:  # noqa: BLE001
                     fail(cfg.name, category, e)
