@@ -154,6 +154,11 @@ class Orchestrator:
             if charts:   # graphiques du partenaire : même principe que les cartes
                 out["graphiques"] = [{"titre": c.result.get("titre"), "lignes": c.result.get("lignes")} for c in charts]
                 out["_ui_charts"] = [c.result["_ui_chart"] for c in charts]
+            sas = [e for e in res.events if e.tool_id == "render_smartart" and e.status == "succes"
+                   and isinstance(e.result, dict) and e.result.get("_ui_smartart")]
+            if sas:    # schémas du partenaire : résumé pour le modèle, schéma complet pour l'affichage
+                out["schemas"] = [{"titre": s.result.get("titre"), "type": s.result.get("type")} for s in sas]
+                out["_ui_smartarts"] = [s.result["_ui_smartart"] for s in sas]
             kpis = [e for e in res.events if e.tool_id == "render_kpi" and e.status == "succes"
                     and isinstance(e.result, dict) and e.result.get("_ui_kpi")]
             if kpis:   # indicateurs du partenaire : valeurs calculées pour le modèle, cartes pour l'affichage

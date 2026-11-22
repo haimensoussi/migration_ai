@@ -71,7 +71,12 @@ def build_report(titre: str, sections: list[dict], visuals: dict, user: str, int
             raise ToolError(f"Visuel « {vid} » introuvable : créez-le d'abord avec creer_visuel.")
         if v:
             used.append(vid)
-            if v["type"] == "carte":
+            if v["type"] == "smartart":   # schéma rédigé : liste de ses éléments (pas de requête)
+                lines = [f"{it['texte']}" + (f" — {it['detail']}" if it.get("detail") else "") for it in v["elements"]]
+                parts_h.append(f"<p class='note'>Schéma : {e(v['titre'])}</p><ol>"
+                               + "".join(f"<li>{e(x)}</li>" for x in lines) + "</ol>")
+                parts_m.append(f"_Schéma : {v['titre']}_\n\n" + "\n".join(f"{n}. {x}" for n, x in enumerate(lines, 1)))
+            elif v["type"] == "carte":
                 pts = v["carte"].get("_ui_points") or []
                 cols = [c for c in (pts[0].keys() if pts else []) if not c.startswith("_")]
                 rows = [{**{c: p.get(c) for c in cols}, "latitude": p.get("_lat"), "longitude": p.get("_lon")} for p in pts]
@@ -89,8 +94,10 @@ def build_report(titre: str, sections: list[dict], visuals: dict, user: str, int
         parts_h.append(f"<h2>Conclusion</h2><p>{e(conclusion)}</p>"); parts_m += ["## Conclusion", conclusion]
     annex_h = "".join(f"<h3>{e(vid)} · {e(visuals[vid]['titre'])}</h3><pre>{e(visuals[vid]['requete'])}</pre>"
                       f"<p class='note'>Calculé le {e(visuals[vid]['cree_le'])}"
-                      + (" · résultat tronqué" if visuals[vid].get("tronque") else "") + "</p>" for vid in used)
-    annex_m = "\n\n".join(f"### {vid} · {visuals[vid]['titre']}\n\n```sql\n{visuals[vid]['requete']}\n```" for vid in used)
+                      + (" · résultat tronqué" if visuals[vid].get("tronque") else "") + "</p>" for vid in used
+                      if visuals[vid].get("requete"))
+    annex_m = "\n\n".join(f"### {vid} · {visuals[vid]['titre']}\n\n```sql\n{visuals[vid]['requete']}\n```" for vid in used
+                          if visuals[vid].get("requete"))
     scripts = "".join(f"vegaEmbed('#{cid}', {_json_script(spec)}, {{actions: false}});" for cid, spec in charts)
     page = f"""<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>{e(titre)}</title>
 <script src="https://cdn.jsdelivr.net/npm/vega@5"></script><script src="https://cdn.jsdelivr.net/npm/vega-lite@5"></script>

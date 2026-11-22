@@ -143,6 +143,9 @@ def decide(approved: bool) -> None:
 def show_visual(v, key: str) -> None:
     if not v:
         return
+    if v["type"] == "smartart":
+        from ui import smartart_view
+        return smartart_view.render(v, key=key)
     if v["type"] == "carte":
         from ui import map_view
         st.caption(v["titre"])

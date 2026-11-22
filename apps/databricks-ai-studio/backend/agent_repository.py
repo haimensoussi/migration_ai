@@ -17,12 +17,20 @@ from backend.tool_registry import ToolSpec
 # Outils de restitution ajoutés à tout nouvel agent (Agent Builder, concepteur IA, HakimAI, équipes) :
 # lecture seule, droits de l'utilisateur, chiffres calculés par l'application.
 DEFAULT_TOOLS = ("render_chart", "render_kpi", "generate_report")
+# Outils de présentation ajoutés à l'exécution de TOUS les agents, existants compris, sans nouvelle version :
+# aucune lecture de données ni écriture (schémas dessinés par l'application).
+UNIVERSAL_TOOLS = ("render_smartart",)
 
 
 def with_default_tools(tool_ids: list | None) -> list:
     """Ajoute les outils par défaut absents, sans doublon ni changement de l'ordre existant."""
     ids = list(tool_ids or [])
     return ids + [t for t in DEFAULT_TOOLS if t not in ids]
+
+
+def with_universal_tools(tool_ids: list | None) -> list:
+    ids = list(tool_ids or [])
+    return ids + [t for t in UNIVERSAL_TOOLS if t not in ids]
 
 
 CREATED_EXECUTORS = ("tools.custom_tools:", "tools.flow_tools:call_flow")
@@ -111,7 +119,8 @@ class AgentRepository:
         v = r["rows"][0]
         return AgentConfig(agent_id=agent_id, version=int(v["version"]), name=v["name"],
                            model_endpoint=v["model_endpoint"], instructions=v["instructions"],
-                           tool_ids=_loads(v["tool_ids"], []), knowledge_tables=_loads(v["knowledge_tables"], []),
+                           tool_ids=with_universal_tools(_loads(v["tool_ids"], [])),
+                           knowledge_tables=_loads(v["knowledge_tables"], []),
                            temperature=float(v["temperature"]) if v["temperature"] is not None else None,
                            max_iterations=int(v["max_iterations"] or self.s.max_iterations))
 

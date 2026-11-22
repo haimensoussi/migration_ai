@@ -67,7 +67,12 @@ def cached_tools():
 
 
 def registry() -> ToolRegistry:
-    return ToolRegistry(cached_tools())
+    """Outils de la table, complétés par les outils universels intégrés pas encore enregistrés (ex. render_smartart)."""
+    from backend.agent_repository import UNIVERSAL_TOOLS
+    from tools.catalog import BUILTIN_TOOLS
+    specs = list(cached_tools())
+    known = {s.tool_id for s in specs}
+    return ToolRegistry(specs + [t for t in BUILTIN_TOOLS if t.tool_id in UNIVERSAL_TOOLS and t.tool_id not in known])
 
 
 @st.cache_data(ttl=300, show_spinner=False)

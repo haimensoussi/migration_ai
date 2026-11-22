@@ -113,6 +113,17 @@ TOOLS += [
         "conclusion": _s("Constats principaux")}, ["titre", "sections"]),
 ]
 
+def _smartart_spec() -> ToolSpec:
+    """creer_smartart : mêmes arguments que render_smartart (catalogue), schéma conservé comme visuel V…."""
+    from tools.catalog import BUILTIN_TOOLS
+    base = next(t for t in BUILTIN_TOOLS if t.tool_id == "render_smartart")
+    return _spec("creer_smartart", "Créer un schéma (SmartArt)", base.description + " Le schéma devient un visuel "
+                 "(visuel_id) réutilisable dans generer_rapport.", base.input_schema["properties"],
+                 base.input_schema["required"], module="smartart_tools")
+
+
+TOOLS += [_smartart_spec()]
+
 TOOLS += [
     _spec("exporter_excel", "Exporter en Excel", "Produit un fichier Excel (.xlsx) téléchargeable : une feuille par "
           "requête SELECT (lecture seule, droits de l'utilisateur, 10 feuilles au plus), en-têtes figés et filtrables, "
@@ -313,6 +324,9 @@ Visuels et rapports :
   adapté (barres pour comparer des catégories, courbe pour une évolution, camembert seulement pour peu de parts,
   carte s'il y a latitude/longitude). Noms de colonnes avec espaces entre accents graves.
 - Commente le visuel avec les chiffres renvoyés (aperçu, statistiques_y) ; signale tronque et les valeurs vides.
+- creer_smartart : quand une structure se comprend mieux en schéma (étapes d'une démarche, cycle, organisation
+  d'équipe, relations entre objets, matrice 2×2), ajoute UN schéma sous ta réponse, cohérent avec le texte : mêmes
+  éléments, mêmes noms, rien d'inventé. Pas de schéma pour une réponse courte ou une simple liste.
 - generer_rapport : uniquement avec des visuels déjà créés ; les textes ne contiennent que des constats issus des
   résultats ; aucun seuil ni objectif inventé (« à valider » si tu proposes une règle).
 

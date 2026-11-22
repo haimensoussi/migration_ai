@@ -90,6 +90,30 @@ BUILTIN_TOOLS: list[ToolSpec] = [
             "required": ["query", "valeur"]},
         output_schema={"type": "object"}, executor="tools.report_tools:render_kpi"),
     ToolSpec(
+        tool_id="render_smartart", name="Afficher un schéma (SmartArt)", category="Visualisation",
+        description=("Affiche sous la réponse un schéma qui en illustre la structure : processus (étapes ordonnées), "
+                     "cycle (boucle d'amélioration), hierarchie (organisation, décomposition ; parent = texte exact "
+                     "d'un autre élément), relation (éléments et liens libellés), matrice (4 quadrants, axes "
+                     "facultatifs). Utiliser seulement quand le schéma clarifie la réponse, avec des éléments déjà "
+                     "établis (données lues, documents, réponse) : aucun chiffre ni fait inventé. Textes courts."),
+        input_schema={"type": "object", "properties": {
+            "type": {"type": "string", "enum": ["processus", "cycle", "hierarchie", "relation", "matrice"],
+                     "description": "Forme du schéma"},
+            "titre": {"type": "string", "description": "Titre du schéma"},
+            "elements": {"type": "array", "maxItems": 20, "items": {"type": "object", "properties": {
+                "texte": {"type": "string", "description": "Libellé court (60 caractères au plus)"},
+                "detail": {"type": "string", "description": "Précision facultative (140 caractères au plus)"},
+                "parent": {"type": "string", "description": "hierarchie : texte exact de l'élément parent"}},
+                "required": ["texte"]}, "description": "Éléments dans l'ordre (matrice : 4, haut-gauche, haut-droite, "
+                                                       "bas-gauche, bas-droite)"},
+            "liens": {"type": "array", "maxItems": 20, "items": {"type": "object", "properties": {
+                "de": {"type": "string"}, "vers": {"type": "string"}, "libelle": {"type": "string"}},
+                "required": ["de", "vers"]}, "description": "relation : liens entre textes d'éléments"},
+            "axe_x": {"type": "string", "description": "matrice : libellé de l'axe horizontal"},
+            "axe_y": {"type": "string", "description": "matrice : libellé de l'axe vertical"}},
+            "required": ["type", "titre", "elements"]},
+        output_schema={"type": "object"}, executor="tools.smartart_tools:render_smartart"),
+    ToolSpec(
         tool_id="generate_report", name="Générer un rapport", category="Visualisation",
         description=("Assemble un rapport téléchargeable (HTML et Markdown) : titre, introduction, sections, conclusion. "
                      "Chaque section a un titre, un texte et, au besoin, une requête SQL en lecture seule affichée en "
