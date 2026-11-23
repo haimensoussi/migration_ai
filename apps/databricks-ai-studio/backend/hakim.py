@@ -11,7 +11,7 @@ import os
 from backend.agent_runtime import AgentConfig
 from backend.tool_registry import ToolSpec
 from backend.hakim_plan import NATURES as PLAN_NATURES, PLAN_TOOL, describe as describe_plan
-from backend.transformation import CONTEXT_FIELDS, LEVELS, MODES, PROPOSABLE_TYPES
+from backend.transformation import CONTEXT_FIELDS, LEVELS, MODES, OPPORTUNITY_CATEGORIES, PROPOSABLE_TYPES
 from tools.hakim_tools import GUIDE, PAGES, TOURS
 
 AGENT_ID = "hakimai"
@@ -262,7 +262,12 @@ TOOLS += [
            "domaine": _s("cas_usage : domaine de rattachement"),
             "processus": _s("cas_usage : processus VALIDÉ du plan, seulement pour un ancien plan qui en a ; sinon vide"),
            "objectif": _s("cas_usage : objectif VALIDÉ servi (facultatif)"),
-           "gain_attendu": _s("cas_usage : gain attendu en mots, sans chiffre inventé"),
+           "gain_attendu": _s("cas_usage : valeur métier, bénéfices attendus en mots, sans chiffre inventé"),
+           "categorie": _s("cas_usage : nature de l'opportunité", enum=list(OPPORTUNITY_CATEGORIES)),
+           "solution_ia": _s("cas_usage : solution IA recommandée (agent, assistant, flux, application...)"),
+           "valeur": _s("cas_usage : valeur métier qualitative", enum=list(LEVELS)),
+           "faisabilite": _s("cas_usage : faisabilité d'après les données découvertes", enum=list(LEVELS)),
+           "complexite": _s("cas_usage : complexité de réalisation", enum=list(LEVELS)),
            "limites": {**_LIST, "description": "cas_usage : limites des données ou du cas (maille, couverture...)"},
            "cas_usage": {**_LIST, "description": "Étape 5 : cas d'usage VALIDÉS servis (noms exacts)"},
            "mode": _s("Étape 5 : reutiliser, adapter (objet existant) ou creer", enum=list(MODES)),
@@ -425,7 +430,11 @@ Transformation vers l'entreprise augmentée par l'IA (étapes 1 à 7 disponibles
   pour chaque domaine VALIDÉ repère ce que l'IA peut améliorer (tâches manuelles, données dispersées, information
   tardive, qualité des données) d'après le cadrage et les données découvertes. Type cas_usage : domaine, objectif
   validé (facultatif), tables (preuves),
-  gain_attendu en mots (aucun chiffre ni seuil inventé), limites (maille, couverture, colonnes incomplètes).
+  gain_attendu en mots (aucun chiffre ni seuil inventé), limites (maille, couverture, colonnes incomplètes),
+  categorie (cas d'usage IA, processus automatisable, assistant, collaboration multi-agents, AI Builder, workflow,
+  outil ou connecteur MCP, application intelligente), solution_ia, valeur, faisabilite et complexite (faible, moyen,
+  fort, justifiés par les données). Ne fixe pas la priorité : la page la calcule et l'utilisateur la force.
+  Domaine : nom exact d'un domaine VALIDÉ.
   Un cas d'usage que les données ne permettent pas encore se signale dans ses limites, sans le masquer.
 - Étape 5 Cible (TO-BE) (après validation de cas d'usage) : transformation_etat, puis lister_agents,
   lister_outils et lister_equipes pour RÉUTILISER d'abord l'existant. Pour chaque cas d'usage VALIDÉ, propose les

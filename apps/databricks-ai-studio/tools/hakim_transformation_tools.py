@@ -28,7 +28,7 @@ def _svc(p: Platform) -> T.TransformationService:
 
 _EXTRA = ("domaine", "processus", "objectif", "gain_attendu", "limites", "cas_usage", "mode", "existant",
           "existant_nom", "membres", "outils", "ordre", "valeur", "effort", "justification", "dependances",
-          "prerequis", "risques", "realisation")
+          "prerequis", "risques", "realisation", "categorie", "solution_ia", "faisabilite", "complexite", "priorite")
 
 
 def _items_view(items: list[dict]) -> dict:

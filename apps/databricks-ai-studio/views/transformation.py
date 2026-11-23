@@ -335,10 +335,143 @@ with t3:
                "sont reportés ; ceux déjà enregistrés restent affichés.")
     kinds = ("objectif", "domaine") + (("processus",) if any(i["item_type"] == "processus" for i in items) else ())
     render_items(kinds, "Aucun élément proposé. Demandez à HakimAI de décrire l'existant après la découverte.")
+def _lv(v):
+    return v.capitalize() if v else "—"
+
+
 with t4:
-    st.subheader("Opportunités : cas d'usage")
-    render_items(("cas_usage",), "Aucun cas d'usage. Validez un objectif et un domaine dans Enterprise Discovery, puis demandez à "
-                                 "HakimAI le diagnostic.")
+    st.subheader("AI Opportunities")
+    st.caption("Opportunités d'IA et d'automatisation proposées par HakimAI ou par vous, à partir de la découverte. "
+               "Rien n'est créé dans la plateforme à cette étape. " + T.PRIORITY_RULE)
+    opps = T.opportunities(items)
+    val_domains = [i["name"] for i in items if i["item_type"] == "domaine" and i["status"] == "valide"]
+    disc_tables = [t["table"] for t in (plan["discovery"] or {}).get("tables", []) if "erreur" not in t]
+    cat_keys = [""] + list(T.OPPORTUNITY_CATEGORIES)
+    lv_keys = [""] + list(T.LEVELS)
+
+    def _fmt_cat(k):
+        return T.OPPORTUNITY_CATEGORIES.get(k, "— non précisée")
+
+    if not opps:
+        st.info("Aucune opportunité. Validez un domaine et un objectif dans Enterprise Discovery, puis demandez à HakimAI "
+                "le diagnostic, ou ajoutez une opportunité ci-dessous.")
+    else:
+        live = [o for o in opps if o["statut"] != "rejete"]
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Opportunités (non rejetées)", len(live))
+        m2.metric("Validées", sum(1 for o in live if o["statut"] == "valide"))
+        m3.metric("En attente de décision", sum(1 for o in live if o["statut"] == "propose"))
+        m4.metric("Priorité haute", sum(1 for o in live if o["priorite"] == "haute"))
+        st.markdown("**Matrice de priorisation** (valeur métier × faisabilité, opportunités non rejetées)")
+        grid = {(v, f): [] for v in T.LEVELS for f in T.LEVELS}
+        unrated = []
+        for o in live:
+            if o["valeur"] and o["faisabilite"]:
+                grid[(o["valeur"], o["faisabilite"])].append(o["nom"])
+            else:
+                unrated.append(o["nom"])
+        st.dataframe(pd.DataFrame([{"Valeur \\ Faisabilité": _lv(v), **{_lv(f): ", ".join(grid[(v, f)]) for f in T.LEVELS}}
+                                   for v in reversed(T.LEVELS)]), hide_index=True, use_container_width=True)
+        if unrated:
+            st.caption("Non positionnées (valeur ou faisabilité manquante) : " + ", ".join(unrated))
+
+        f1, f2, f3 = st.columns(3)
+        doms = sorted({o["domaine"] or "Sans domaine" for o in opps})
+        fd = f1.multiselect("Domaine", doms, key=f"opp_dom_{plan_id}")
+        fs = f2.multiselect("Statut", list(ITEM_STATUS.values()), key=f"opp_st_{plan_id}")
+        prio_labels = [p.capitalize() for p in T.PRIORITIES] + ["Non évaluée"]
+        fp = f3.multiselect("Priorité", prio_labels, key=f"opp_pr_{plan_id}")
+        view = [o for o in opps
+                if (not fd or (o["domaine"] or "Sans domaine") in fd) and (not fs or ITEM_STATUS[o["statut"]] in fs)
+                and (not fp or (o["priorite"].capitalize() if o["priorite"] else "Non évaluée") in fp)]
+        table = pd.DataFrame([{
+            "Sélection": False, "Domaine": o["domaine"] or "—", "Opportunité": o["nom"],
+            "Catégorie": T.OPPORTUNITY_CATEGORIES.get(o["categorie"], "—"),
+            "Données sources": ", ".join(t.split(".")[-1] for t in o["tables"]), "Solution IA": o["solution_ia"] or "—",
+            "Valeur métier": o["valeur_metier"] or "—", "Valeur": _lv(o["valeur"]), "Faisabilité": _lv(o["faisabilite"]),
+            "Complexité": _lv(o["complexite"]),
+            "Priorité": (_lv(o["priorite"]) + (f" ({o['priorite_source']})" if o["priorite_source"] else "")),
+            "Statut": ITEM_STATUS[o["statut"]]} for o in view])
+        if view:
+            edited = st.data_editor(table, hide_index=True, use_container_width=True, key=f"opp_tab_{plan_id}",
+                                    disabled=[c for c in table.columns if c != "Sélection"] if owner else True)
+            chosen = [view[n]["item_id"] for n, v in enumerate(edited["Sélection"]) if v]
+            if owner:
+                b1, b2, b3 = st.columns(3)
+                if b1.button(f"Accepter la sélection ({len(chosen)})", type="primary", disabled=not chosen):
+                    act("Décision impossible", lambda: svc.decide_many(plan_id, me, chosen, "valide"),
+                        f"{len(chosen)} opportunité(s) acceptée(s).")
+                if b2.button(f"Rejeter la sélection ({len(chosen)})", disabled=not chosen):
+                    act("Décision impossible", lambda: svc.decide_many(plan_id, me, chosen, "rejete"),
+                        f"{len(chosen)} opportunité(s) rejetée(s).")
+                if b3.button(f"Remettre en proposition ({len(chosen)})", disabled=not chosen):
+                    act("Décision impossible", lambda: svc.decide_many(plan_id, me, chosen, "propose"),
+                        f"{len(chosen)} opportunité(s) remise(s) en proposition.")
+        else:
+            st.caption("Aucune opportunité pour ces filtres.")
+
+        st.markdown("**Détail et modification**")
+        by_id = {o["item_id"]: o for o in opps}
+        oid = st.selectbox("Opportunité", list(by_id), format_func=lambda i: f"{by_id[i]['nom']} — "
+                           f"{ITEM_STATUS[by_id[i]['statut']]}", key=f"opp_sel_{plan_id}")
+        o = by_id[oid]
+        if o["limites"]:
+            st.caption("Limites : " + " ; ".join(o["limites"]))
+        if o["modifie_par"]:
+            st.caption(f"Modifiée par {o['modifie_par']}.")
+        with st.form(f"opp_edit_{oid}"):
+            desc = st.text_area("Opportunité (description du besoin)", o["description"], disabled=not owner)
+            dom_opts = [""] + val_domains
+            dom = st.selectbox("Domaine métier (validé)", dom_opts, disabled=not owner,
+                               index=dom_opts.index(o["domaine"]) if o["domaine"] in dom_opts else 0)
+            cat = st.selectbox("Catégorie", cat_keys, format_func=_fmt_cat, disabled=not owner,
+                               index=cat_keys.index(o["categorie"]) if o["categorie"] in cat_keys else 0)
+            tabs_sel = st.multiselect("Données sources (tables découvertes)", disc_tables, disabled=not owner,
+                                      default=[t for t in o["tables"] if t in disc_tables])
+            sol = st.text_input("Solution IA", o["solution_ia"] or "", disabled=not owner)
+            gain = st.text_area("Valeur métier (bénéfices attendus, sans chiffre inventé)", o["valeur_metier"],
+                                disabled=not owner)
+            c1, c2, c3, c4 = st.columns(4)
+            pl = by_id[oid]
+            val = c1.selectbox("Valeur", lv_keys, format_func=_lv, disabled=not owner,
+                               index=lv_keys.index(pl["valeur"]) if pl["valeur"] in lv_keys else 0)
+            fea = c2.selectbox("Faisabilité", lv_keys, format_func=_lv, disabled=not owner,
+                               index=lv_keys.index(pl["faisabilite"]) if pl["faisabilite"] in lv_keys else 0)
+            cpx = c3.selectbox("Complexité", lv_keys, format_func=_lv, disabled=not owner,
+                               index=lv_keys.index(pl["complexite"]) if pl["complexite"] in lv_keys else 0)
+            pr_keys = [""] + list(T.PRIORITIES)
+            forced = pl["priorite"] if pl["priorite_source"] == "forcée" else ""
+            pri = c4.selectbox("Priorité", pr_keys, disabled=not owner, index=pr_keys.index(forced),
+                               format_func=lambda k: k.capitalize() if k else "Calculée")
+            if st.form_submit_button("Enregistrer les modifications", disabled=not owner):
+                act("Modification impossible", lambda: svc.update_opportunity(plan_id, me, oid, {
+                    "description": desc, "domaine": dom, "categorie": cat, "tables": tabs_sel, "solution_ia": sol,
+                    "gain_attendu": gain, "valeur": val, "faisabilite": fea, "complexite": cpx, "priorite": pri}),
+                    f"« {o['nom']} » modifiée.")
+
+    if owner:
+        with st.expander("Ajouter une opportunité"):
+            if not disc_tables:
+                st.info("Lancez d'abord la découverte : une opportunité cite au moins une table découverte.")
+            else:
+                with st.form(f"opp_new_{plan_id}", clear_on_submit=True):
+                    n_name = st.text_input("Nom de l'opportunité")
+                    n_desc = st.text_area("Description du besoin")
+                    n_dom = st.selectbox("Domaine métier (validé)", [""] + val_domains)
+                    n_cat = st.selectbox("Catégorie", cat_keys, format_func=_fmt_cat)
+                    n_tab = st.multiselect("Données sources", disc_tables)
+                    n_sol = st.text_input("Solution IA")
+                    n_gain = st.text_area("Valeur métier")
+                    d1, d2, d3 = st.columns(3)
+                    n_val = d1.selectbox("Valeur", lv_keys, format_func=_lv)
+                    n_fea = d2.selectbox("Faisabilité", lv_keys, format_func=_lv)
+                    n_cpx = d3.selectbox("Complexité", lv_keys, format_func=_lv)
+                    if st.form_submit_button("Ajouter (statut Proposé)"):
+                        act("Ajout impossible", lambda: svc.propose(plan_id, me, [{
+                            "type": "cas_usage", "nom": n_name, "description": n_desc, "domaine": n_dom,
+                            "categorie": n_cat, "tables": n_tab, "solution_ia": n_sol, "gain_attendu": n_gain,
+                            "valeur": n_val, "faisabilite": n_fea, "complexite": n_cpx}], origin="utilisateur"),
+                            "Opportunité ajoutée, en attente de votre décision.")
 with t5:
     st.subheader("Cible (TO-BE)")
     chart = T.org_chart(items, plan["name"], catalog)

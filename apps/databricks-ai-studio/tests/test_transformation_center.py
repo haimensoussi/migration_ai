@@ -147,6 +147,108 @@ def test_validation_lifecycle(svc, pid):
     assert T.validation_state(svc.get(pid, ME, False), svc.items(pid, ME, False))["statut"] == "obsolete"
 
 
+# --- AI Opportunities (incrément 2) --------------------------------------------------------------------
+@pytest.fixture
+def opid(svc):
+    p = svc.create("Plan opportunités", ME)["plan_id"]
+    svc.set_discovery(p, ME, T.discover(lister, Sql(), CAT, SCH))
+    svc.propose(p, ME, [{"type": "domaine", "nom": "Gares", "tables": ["data_gares"]}])
+    svc.decide(p, svc.items(p, ME, False)[0]["item_id"], ME, "valide")
+    return p
+
+
+def _opp(**kw):
+    return {"type": "cas_usage", "nom": "Prévision fréquentation", "tables": ["data_frequentation"], **kw}
+
+
+@pytest.mark.parametrize("v,f,c,expected", [("fort", "fort", "faible", "haute"), ("fort", "moyen", "moyen", "haute"),
+                                             ("fort", "fort", "fort", "moyenne"), ("moyen", "fort", "faible", "moyenne"),
+                                             ("faible", "fort", "faible", "basse"), ("fort", "faible", "faible", "basse"),
+                                             ("fort", None, "faible", None)])
+def test_priority_rule(v, f, c, expected):
+    assert T.opportunity_priority(v, f, c) == expected
+
+
+def test_opportunity_fields_stored_and_listed(svc, opid):
+    svc.propose(opid, ME, [_opp(domaine="gares", categorie="assistant", solution_ia="Assistant de prévision",
+                                gain_attendu="Anticiper l'affluence", valeur="fort", faisabilite="moyen",
+                                complexite="faible")])
+    [o] = T.opportunities(svc.items(opid, ME, False))
+    assert o["domaine"] == "Gares"                                   # nom du domaine validé
+    assert (o["categorie"], o["solution_ia"], o["valeur_metier"]) == ("assistant", "Assistant de prévision",
+                                                                       "Anticiper l'affluence")
+    assert (o["priorite"], o["priorite_source"], o["statut"]) == ("haute", "calculée", "propose")
+    assert o["tables"] == [FREQ["full_name"]]
+
+
+def test_unrated_opportunity_has_no_guessed_priority(svc, opid):
+    svc.propose(opid, ME, [_opp()])
+    [o] = T.opportunities(svc.items(opid, ME, False))
+    assert o["priorite"] is None and o["priorite_source"] is None and o["categorie"] is None
+
+
+@pytest.mark.parametrize("kw,msg", [({"domaine": "Fret"}, "non validé"), ({"categorie": "robot"}, "categorie"),
+                                    ({"faisabilite": "élevée"}, "faisabilite"), ({"priorite": "urgente"}, "priorite")])
+def test_opportunity_values_controlled(svc, opid, kw, msg):
+    with pytest.raises(T.TransformationError, match=msg):
+        svc.propose(opid, ME, [_opp(**kw)])
+
+
+def test_edit_keeps_status_traces_and_invalidates_architecture(svc, opid):
+    svc.propose(opid, ME, [_opp(valeur="moyen", faisabilite="fort", complexite="faible")])
+    oid = next(i["item_id"] for i in svc.items(opid, ME, False) if i["item_type"] == "cas_usage")
+    svc.decide(opid, oid, ME, "valide")
+    svc.store.insert_items([_item(opid, "ti_ag", "agent", "Agent prévision", "valide",
+                                  {"cas_usage": ["Prévision fréquentation"]}, at="2026-11-22T11:00:00")])
+    svc.validate_architecture(opid, ME)
+    svc.update_opportunity(opid, ME, oid, {"priorite": "basse", "tables": ["data_gares", "data_frequentation"],
+                                           "categorie": "workflow"})
+    items = svc.items(opid, ME, False)
+    o = next(x for x in T.opportunities(items) if x["item_id"] == oid)
+    assert (o["statut"], o["priorite"], o["priorite_source"], o["modifie_par"]) == ("valide", "basse", "forcée", ME)
+    assert o["tables"] == [GARES["full_name"], FREQ["full_name"]] and o["categorie"] == "workflow"
+    assert T.validation_state(svc.get(opid, ME, False), items)["statut"] == "obsolete"
+    svc.update_opportunity(opid, ME, oid, {"priorite": ""})                 # retour à la priorité calculée
+    o = next(x for x in T.opportunities(svc.items(opid, ME, False)) if x["item_id"] == oid)
+    assert (o["priorite"], o["priorite_source"]) == ("moyenne", "calculée")
+
+
+@pytest.mark.parametrize("fields,msg", [({"tables": []}, "au moins une table"), ({"tables": ["inconnue"]}, "absente"),
+                                        ({"nom": "x"}, "non modifiables"), ({"domaine": "Fret"}, "non validé")])
+def test_edit_rules(svc, opid, fields, msg):
+    svc.propose(opid, ME, [_opp()])
+    oid = next(i["item_id"] for i in svc.items(opid, ME, False) if i["item_type"] == "cas_usage")
+    with pytest.raises(T.TransformationError, match=msg):
+        svc.update_opportunity(opid, ME, oid, fields)
+
+
+def test_edit_owner_only_and_only_use_cases(svc, opid):
+    dom_id = svc.items(opid, ME, False)[0]["item_id"]
+    with pytest.raises(T.TransformationError, match="introuvable"):
+        svc.update_opportunity(opid, ME, dom_id, {"description": "x"})
+    svc.propose(opid, ME, [_opp()])
+    oid = next(i["item_id"] for i in svc.items(opid, ME, False) if i["item_type"] == "cas_usage")
+    with pytest.raises(T.TransformationError, match="propriétaire"):
+        svc.update_opportunity(opid, OTHER, oid, {"description": "x"})
+
+
+def test_user_added_opportunity_and_bulk_reject(svc, opid):
+    svc.propose(opid, ME, [_opp(), _opp(nom="Qualité référentiel gares", tables=["data_gares"])], origin="utilisateur")
+    ops = T.opportunities(svc.items(opid, ME, False))
+    assert {o["origine"] for o in ops} == {"utilisateur"} and all(o["statut"] == "propose" for o in ops)
+    assert svc.decide_many(opid, ME, [o["item_id"] for o in ops], "rejete") == 2
+    assert all(o["statut"] == "rejete" for o in T.opportunities(svc.items(opid, ME, False)))
+
+
+def test_hakim_schema_exposes_opportunity_fields():
+    from backend import hakim
+    spec = next(t for t in hakim.TOOLS if t.tool_id == "transformation_proposer")
+    props = spec.input_schema["properties"]["elements"]["items"]["properties"]
+    assert props["categorie"]["enum"] == list(T.OPPORTUNITY_CATEGORIES)
+    assert all(props[k]["enum"] == list(T.LEVELS) for k in ("valeur", "faisabilite", "complexite"))
+    assert "priorite" not in props                                        # calculée par la page, forcée par l'humain
+
+
 def test_incoherent_architecture_not_validated(svc, pid):
     svc.store.insert_items([_item(pid, "ti_1", "cas_usage", "Cas", "rejete"),
                             _item(pid, "ti_2", "agent", "Agent", "valide", {"cas_usage": ["Cas"]})])

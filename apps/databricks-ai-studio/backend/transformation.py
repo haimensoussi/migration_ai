@@ -81,6 +81,18 @@ SENSITIVE_TOKENS = {
     "Santé": {"sante", "maladie", "handicap", "medical"},
 }
 ARCH_TYPES = ("cas_usage", "agent", "outil", "flux", "equipe")   # éléments couverts par la validation d'architecture
+# AI Opportunities (incrément 2) : nature de l'opportunité, priorité et champs modifiables par le propriétaire.
+OPPORTUNITY_CATEGORIES = {
+    "cas_usage_ia": "Cas d'usage IA", "processus_automatisable": "Processus automatisable",
+    "assistant": "Assistant intelligent", "multi_agents": "Collaboration multi-agents",
+    "ai_builder": "Scénario AI Builder", "workflow": "Workflow d'automatisation",
+    "outil_mcp": "Outil ou connecteur MCP", "application": "Application intelligente",
+}
+PRIORITIES = ("haute", "moyenne", "basse")
+OPPORTUNITY_FIELDS = ("description", "domaine", "categorie", "tables", "solution_ia", "gain_attendu", "valeur",
+                      "faisabilite", "complexite", "priorite", "limites")
+PRIORITY_RULE = ("Priorité calculée : basse si la valeur ou la faisabilité est faible ; haute si la valeur est forte et "
+                 "la complexité n'est pas forte ; moyenne sinon. Vous pouvez la forcer.")
 MAX_COLUMNS = 40          # colonnes profilées par table (au-delà : signalées, non profilées)
 MAX_ITEMS_PER_CALL = 15
 KEY_PRECHECK = 0.9        # pré-sélection sur le comptage approximatif (erreur de quelques %), confirmée en exact
@@ -414,6 +426,56 @@ def architecture_fingerprint(items: list[dict]) -> str:
     return hashlib.sha256(json.dumps(rows, ensure_ascii=False).encode()).hexdigest()[:16]
 
 
+def _choice(name: str, field: str, value: Any, allowed) -> str | None:
+    v = _text(value, 60).lower() or None
+    if v is not None and v not in allowed:
+        raise TransformationError(f"« {name} » : {field} attendu parmi {', '.join(allowed)}.")
+    return v
+
+
+def opportunity_fields(name: str, e: dict) -> dict:
+    """Champs AI Opportunities d'un cas d'usage (facultatifs ; valeurs fermées contrôlées)."""
+    out = {"categorie": _choice(name, "categorie", e.get("categorie"), OPPORTUNITY_CATEGORIES),
+           "solution_ia": _text(e.get("solution_ia"), 600) or None,
+           "valeur": _choice(name, "valeur", e.get("valeur"), LEVELS),
+           "faisabilite": _choice(name, "faisabilite", e.get("faisabilite"), LEVELS),
+           "complexite": _choice(name, "complexite", e.get("complexite"), LEVELS),
+           "priorite": _choice(name, "priorite", e.get("priorite"), PRIORITIES)}
+    return out
+
+
+def opportunity_priority(valeur: str | None, faisabilite: str | None, complexite: str | None) -> str | None:
+    """Règle explicite (PRIORITY_RULE) ; None si un des trois critères manque : pas de priorité devinée."""
+    if not (valeur and faisabilite and complexite):
+        return None
+    if valeur == "faible" or faisabilite == "faible":
+        return "basse"
+    if valeur == "fort" and complexite != "fort":
+        return "haute"
+    return "moyenne"
+
+
+def opportunities(items: list[dict]) -> list[dict]:
+    """Vue AI Opportunities : un cas d'usage par ligne, priorité forcée sinon calculée."""
+    out = []
+    for i in items:
+        if i["item_type"] != "cas_usage":
+            continue
+        pl = i.get("payload") or {}
+        computed = opportunity_priority(pl.get("valeur"), pl.get("faisabilite"), pl.get("complexite"))
+        out.append({"item_id": i["item_id"], "nom": i["name"], "statut": i["status"], "origine": i.get("origin"),
+                    "domaine": pl.get("domaine"), "categorie": pl.get("categorie"),
+                    "description": pl.get("description") or "",
+                    "tables": (i.get("evidence") or {}).get("tables", []), "solution_ia": pl.get("solution_ia"),
+                    "valeur_metier": pl.get("gain_attendu") or "", "valeur": pl.get("valeur"),
+                    "faisabilite": pl.get("faisabilite"), "complexite": pl.get("complexite"),
+                    "priorite": pl.get("priorite") or computed,
+                    "priorite_source": "forcée" if pl.get("priorite") else ("calculée" if computed else None),
+                    "limites": pl.get("limites") or [], "modifie_par": pl.get("modifie_par")})
+    order = {p: n for n, p in enumerate(PRIORITIES)}
+    return sorted(out, key=lambda o: (o["domaine"] or "~", order.get(o["priorite"], 9), o["nom"].lower()))
+
+
 def validation_state(plan: dict, items: list[dict]) -> dict:
     """Validation d'architecture : non_validee | validee | obsolete (architecture modifiée depuis la validation)."""
     v = (plan.get("context") or {}).get("_validation")
@@ -476,6 +538,9 @@ class MemoryTransformationStore:
 
     def update_payload(self, plan_id: str, item_id: str, payload: str) -> None:
         self.items[(plan_id, item_id)]["payload"] = payload
+
+    def update_evidence(self, plan_id: str, item_id: str, evidence: str) -> None:
+        self.items[(plan_id, item_id)]["evidence"] = evidence
 
 
 class SqlTransformationStore:
@@ -543,6 +608,10 @@ class SqlTransformationStore:
     def update_payload(self, plan_id: str, item_id: str, payload: str) -> None:
         self.sql.execute(f"UPDATE {self.items_t} SET payload = CAST(:pl AS STRING) WHERE plan_id = :p AND item_id = :i",
                          {"pl": payload, "p": plan_id, "i": item_id})
+
+    def update_evidence(self, plan_id: str, item_id: str, evidence: str) -> None:
+        self.sql.execute(f"UPDATE {self.items_t} SET evidence = CAST(:ev AS STRING) WHERE plan_id = :p AND item_id = :i",
+                         {"ev": evidence, "p": plan_id, "i": item_id})
 
 
 # --- Règles ---------------------------------------------------------------------------------------------
@@ -643,6 +712,54 @@ class TransformationService:
         self._set_internal(plan_id, user, "_validation", v)
         return v
 
+    def update_opportunity(self, plan_id: str, user: str, item_id: str, fields: dict) -> dict:
+        """Modification d'un cas d'usage par le propriétaire (le nom, clé des rattachements, ne change pas).
+
+        Le statut est conservé ; la modification est tracée et rend obsolète une validation d'architecture."""
+        p = self._owned(plan_id, user)
+        unknown = sorted(set(fields) - set(OPPORTUNITY_FIELDS))
+        if unknown:
+            raise TransformationError(f"Champs non modifiables : {', '.join(unknown)}.")
+        current = self.store.list_items(plan_id)
+        it = next((i for i in current if i["item_id"] == item_id), None)
+        if not it or it["item_type"] != "cas_usage":
+            raise TransformationError("Opportunité introuvable dans ce plan.")
+        name, payload, evidence = it["name"], _load(it.get("payload")) or {}, _load(it.get("evidence")) or {}
+        domains = {i["name"].lower(): i["name"] for i in current if i["item_type"] == "domaine" and i["status"] == "valide"}
+        for k, v in fields.items():
+            if k == "tables":
+                known = {t["table"] for t in (p["discovery"] or {}).get("tables", []) if "erreur" not in t}
+                short = {x.split(".")[-1]: x for x in known}
+                tables = []
+                for t in v or []:
+                    full = t if t in known else short.get(str(t))
+                    if not full:
+                        raise TransformationError(f"Table « {t} » absente de la découverte.")
+                    tables.append(full)
+                if not tables:
+                    raise TransformationError(f"« {name} » : au moins une table découverte (preuve).")
+                evidence["tables"] = list(dict.fromkeys(tables))
+            elif k == "domaine":
+                dom = _text(v, 120)
+                if dom and dom.lower() not in domains:
+                    raise TransformationError(f"Domaine « {dom} » non validé (validés : "
+                                              f"{', '.join(domains.values()) or 'aucun'}).")
+                payload["domaine"] = domains.get(dom.lower()) if dom else None
+            elif k == "limites":
+                payload["limites"] = [_text(x, 300) for x in (v or []) if _text(x, 300)][:10]
+            elif k in ("description",):
+                payload[k] = _text(v, 2000)
+            elif k == "gain_attendu":
+                payload[k] = _text(v, 600)
+            else:   # champs fermés et solution IA
+                payload.update({k: opportunity_fields(name, {k: v})[k]})
+        payload["modifie_par"], payload["modifie_le"] = user, self.now()
+        self.store.update_payload(plan_id, item_id, json.dumps(payload, ensure_ascii=False))
+        if "tables" in fields:
+            self.store.update_evidence(plan_id, item_id, json.dumps(evidence, ensure_ascii=False))
+        self.store.update_plan(plan_id, {"updated_at": self.now()})
+        return payload
+
     # Éléments
     def items(self, plan_id: str, user: str, is_admin: bool) -> list[dict]:
         self.get(plan_id, user, is_admin)
@@ -736,9 +853,17 @@ class TransformationService:
         obj = _text(e.get("objectif"), 120)
         if obj and obj.lower() not in validated["objectif"]:
             raise TransformationError(f"« {name} » : objectif « {obj} » non validé dans le plan.")
-        return {"processus": proc, "objectif": validated["objectif"].get(obj.lower()) if obj else None,
-                "gain_attendu": _text(e.get("gain_attendu"), 600),
-                "limites": [_text(x, 300) for x in (e.get("limites") or [])][:10]}
+        out = {"processus": proc, "objectif": validated["objectif"].get(obj.lower()) if obj else None,
+               "gain_attendu": _text(e.get("gain_attendu"), 600),
+               "limites": [_text(x, 300) for x in (e.get("limites") or [])][:10]}
+        dom = _text(e.get("domaine"), 120)
+        if dom:
+            if dom.lower() not in validated["domaine"]:
+                raise TransformationError(f"« {name} » : domaine « {dom} » non validé dans le plan (validés : "
+                                          f"{', '.join(validated['domaine'].values()) or 'aucun'}).")
+            out["domaine"] = validated["domaine"][dom.lower()]
+        out.update(opportunity_fields(name, e))
+        return out
 
     @staticmethod
     def _target(kind: str, name: str, e: dict, tables: list, validated: dict, in_plan: dict,
