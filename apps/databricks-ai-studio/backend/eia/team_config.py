@@ -45,6 +45,7 @@ class TeamConfig:
     validation_policy: dict
     forecast: dict = field(default_factory=dict)
     version: str = ""
+    notifications: dict = field(default_factory=dict)   # canal d'envoi des alertes (facultatif, validé par l'équipe)
 
     def kpi(self, kpi_id: str) -> dict:
         for k in self.kpis:
@@ -154,6 +155,33 @@ def validate(d: dict, data_scope: tuple[str, str, str] | None = None, known_tool
         issues.append("validation_policy.mission_requires_validation doit être true")
     if vp.get("external_actions") not in ("interdit", "sur_validation"):
         issues.append("validation_policy.external_actions : interdit | sur_validation")
+    issues += _validate_notifications(d.get("notifications"))
+    return issues
+
+
+NOTIFY_CHANNELS = ("power_automate",)
+NOTIFY_STATUSES = ("a_valider", "valide", "desactive")
+EMAIL = re.compile(r"^[^@\s;,]+@[^@\s;,]+\.[a-z]{2,}$", re.I)
+
+
+def _validate_notifications(n: Any) -> list[str]:
+    """Bloc facultatif ; l'envoi n'est possible que si status = valide (décision du responsable d'équipe)."""
+    if n is None:
+        return []
+    if not isinstance(n, dict):
+        return ["notifications : objet attendu"]
+    issues = []
+    if n.get("channel") not in NOTIFY_CHANNELS:
+        issues.append(f"notifications.channel : {' | '.join(NOTIFY_CHANNELS)}")
+    if n.get("status") not in NOTIFY_STATUSES:
+        issues.append(f"notifications.status : {' | '.join(NOTIFY_STATUSES)}")
+    if n.get("min_severity", "critique") not in SEVERITIES:
+        issues.append("notifications.min_severity inconnue")
+    rec = n.get("recipients") or []
+    if not isinstance(rec, list) or any(not EMAIL.match(str(r)) for r in rec):
+        issues.append("notifications.recipients : liste d'adresses e-mail attendue")
+    if n.get("status") == "valide" and (not rec or not n.get("operation") or not n.get("technology")):
+        issues.append("notifications validées sans destinataires, technology ou operation")
     return issues
 
 
@@ -161,7 +189,8 @@ def from_dict(d: dict, data_scope: tuple[str, str, str] | None = None, known_too
     issues = validate(d, data_scope, known_tools)
     if issues:
         raise TeamConfigError("Configuration d'équipe invalide : " + " ; ".join(issues))
-    return TeamConfig(**{k: d[k] for k in REQUIRED}, forecast=d.get("forecast") or {}, version=str(d.get("version", "")))
+    return TeamConfig(**{k: d[k] for k in REQUIRED}, forecast=d.get("forecast") or {}, version=str(d.get("version", "")),
+                      notifications=d.get("notifications") or {})
 
 
 def load(team_id: str, base_dir: str | None = None, data_scope: tuple[str, str, str] | None = None,

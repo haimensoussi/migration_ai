@@ -103,7 +103,7 @@ def compare(series: dict[str, float], window: int = 1, unit: str = "") -> dict:
     if all(p in series for p in win + ly):
         agg = (lambda xs: sum(xs) / len(xs)) if rate else sum
         cur, base = agg([series[p] for p in win]), agg([series[p] for p in ly])
-        out.update({"fenetre_mois": window, "fenetre": f"{win[-1]}..{last}", "valeur_fenetre": round(cur, 4),
+        out.update({"fenetre_mois": window, "fenetre": last if window == 1 else f"{win[-1]}..{last}", "valeur_fenetre": round(cur, 4),
                     "valeur_fenetre_n_1": round(base, 4), "agregation_fenetre": "moyenne" if rate else "somme"})
         if rate:
             out["variation_annuelle_points"] = round(cur - base, 2)
