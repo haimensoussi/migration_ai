@@ -11,7 +11,8 @@ import uuid
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-AGENT_ROLES = ("analyst", "prediction", "alerting", "advisor", "planner", "staffing")
+# Rôles techniques (noms historiques) ; catégorie officielle AG01-AG11 dans agent_models.ROLE_CATEGORY.
+AGENT_ROLES = ("perception", "analyst", "prediction", "alerting", "advisor", "planner", "staffing")
 SEVERITIES = ("info", "attention", "critique")
 ALERT_KINDS = ("metier", "technique")          # anomalie métier ou erreur technique (jamais mélangées)
 FINDING_KINDS = ("kpi", "tendance", "anomalie", "constat")

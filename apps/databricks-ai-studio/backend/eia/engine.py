@@ -1,7 +1,9 @@
 """EIA Core - cycle linéaire appelé par HAKIM ; aucun second orchestrateur ni boucle de modèle.
 
 Deux phases de gouvernance :
-1. run_cycle : analyst -> prediction -> alerting -> advisor -> planner -> staffing.
+1. run_cycle : AG01 Data Intelligence (perception -> analyst -> prediction -> alerting)
+   -> AG03 Strategic Intelligence (advisor) -> AG06 Team Manager (planner -> staffing).
+   La perception contrôle les données avant usage : un KPI écarté n'est ni analysé, ni prévu, ni évalué.
    Recommandations proposées ; missions et affectations en aperçu seulement. Jamais de sélection automatique.
 2. prepare_mission : après une décision humaine, sélection de la recommandation, mission en brouillon et
    affectations proposées. La validation de mission et la confirmation des affectations restent séparées.
@@ -16,10 +18,11 @@ import datetime as dt
 import time
 from typing import Any
 
+from backend.eia import agent_models as am
 from backend.eia import agents as a
 from backend.eia import contracts as c
 
-ROLES = ("analyst", "prediction", "alerting", "advisor", "planner", "staffing")
+ROLES = ("perception", "analyst", "prediction", "alerting", "advisor", "planner", "staffing")
 MAX_PREVIEWS = 8
 
 
@@ -39,7 +42,8 @@ def run_cycle(cfg: Any, source: Any, repo: Any, today: dt.date | None = None, ac
     started = time.monotonic()
     cache = a.CachedSource(source)
     run_id = repo.start_run(cfg.team_id, trigger, "Cycle EIA du " + today.isoformat(), actor,
-                            {"steps": list(ROLES), "config_version": cfg.version,
+                            {"steps": list(ROLES), "categories": {r: am.category_of(r) for r in ROLES},
+                             "modeles": _models(cfg), "config_version": cfg.version,
                              "governance": "propositions uniquement", "max_seconds": max_seconds})
     results: dict[str, c.AgentResult] = {}
     errors: list[str] = []
@@ -76,9 +80,13 @@ def run_cycle(cfg: Any, source: Any, repo: Any, today: dt.date | None = None, ac
                        duration_ms=int((time.monotonic() - t0) * 1000))
         return extra
 
-    step("analyst", lambda: a.analyst(cfg, cache, today), [])
-    step("prediction", lambda: a.prediction(cfg, cache, today), ["analyst"])
-    report = step("alerting", lambda: a.alerting(cfg, cache, repo, today, trigger=trigger, run_id=run_id), ["analyst", "prediction"]) or {}
+    # AG01 Data Intelligence : la perception lit chaque KPI une fois et filtre les données non exploitables.
+    blocked = step("perception", lambda: a.perception(cfg, cache, today), []) or {}
+    gated = a.GatedSource(cache, blocked)
+    step("analyst", lambda: a.analyst(cfg, gated, today), ["perception"])
+    step("prediction", lambda: a.prediction(cfg, gated, today), ["perception"])
+    report = step("alerting", lambda: a.alerting(cfg, gated, repo, today, trigger=trigger, run_id=run_id),
+                  ["perception", "analyst", "prediction"]) or {}
     business_alerts = results["alerting"].alerts
 
     def advise() -> c.AgentResult:
@@ -145,12 +153,33 @@ def run_cycle(cfg: Any, source: Any, repo: Any, today: dt.date | None = None, ac
     return {"run_id": run_id, "equipe": cfg.team_id, "statut": status, "synthese": summary,
             "date": today.isoformat(), "config_version": cfg.version,
             "etapes": {role: c.to_dict(r) for role, r in results.items()},
+            "categories": _by_category(results), "modeles": _models(cfg),
+            "kpi_ecartes": blocked,
             "alerting": report, "missions_apercu": previews, "techniques": technical,
             "requetes_kpi": cache.calls, "erreurs": errors,
-            "cycle": {"PERCEIVE": "analyst", "UNDERSTAND": "alerting + advisor", "PREDICT": "prediction",
-                      "PLAN": "planner + staffing", "ACT": "attente_selection_et_validation_humaines",
-                      "LEARN": "observations historisées ; bilan après mission terminée via learn_mission"},
+            "cycle": {"CAPTER": "AG01 perception", "COMPRENDRE": "AG01 analyst + alerting", "PREDIRE": "AG01 prediction",
+                      "ARBITRER": "AG03 advisor", "PLANIFIER": "AG06 planner + staffing",
+                      "DECIDER": "attente_selection_et_validation_humaines",
+                      "APPRENDRE": "observations historisées ; bilan après mission terminée via learn_mission"},
             "envoi": {"envoye": False, "motif": "Notifications externes exclues du cycle EIA"}}
+
+
+def _models(cfg: Any) -> dict:
+    """Modèles du Framework composant l'équipe, avec version et statut (traçabilité du cycle)."""
+    return {code: {"version": am.MODELS[code].version, "statut": am.MODELS[code].status}
+            for code in am.team_models(cfg) if code in am.MODELS}
+
+
+def _by_category(results: dict[str, c.AgentResult]) -> dict:
+    """Vue par catégorie officielle : fonctions exécutées et leur statut."""
+    out: dict[str, dict] = {}
+    for role, r in results.items():
+        code = am.category_of(role)
+        entry = out.setdefault(code, {"nom": am.CATEGORIES[code]["nom"], "fonctions": {}, "statut": "reussi"})
+        entry["fonctions"][role] = r.status
+        if r.status != "reussi":
+            entry["statut"] = "partiel"
+    return out
 
 
 def prepare_mission(cfg: Any, repo: Any, recommendation_id: str, user: str, today: dt.date | None = None,

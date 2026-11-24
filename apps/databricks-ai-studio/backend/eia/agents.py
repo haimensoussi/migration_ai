@@ -1,4 +1,9 @@
-"""EIA Core - agents transverses supervisés par HAKIM (analyst, prediction, alerting, advisor, planner, staffing).
+"""EIA Core - agents transverses supervisés par HAKIM.
+
+Catégories officielles (backend/eia/agent_models.py) :
+- AG01 Data Intelligence : perception -> analyst -> prediction -> alerting (détection des anomalies) ;
+- AG03 Strategic Intelligence : advisor ;
+- AG06 Team Manager : planner (planification) et staffing (délégation proposée).
 
 Chaque agent est une fonction déterministe qui renvoie un AgentResult conforme au contrat (validate_result) :
 - aucun chiffre n'est produit par un modèle de langage ; HAKIM explique les résultats, il ne les calcule pas ;
@@ -43,6 +48,26 @@ class CachedSource:
         return v
 
 
+class PerceptionBlocked(Exception):
+    """KPI écarté par la perception d'AG01 : non exploitable sur ce cycle (erreur technique déjà signalée)."""
+
+
+class GatedSource:
+    """Contrôle de passage d'AG01 : les fonctions aval ne lisent que les KPI validés par la perception."""
+
+    def __init__(self, source: Any, blocked: dict[str, str]):
+        self.source, self.blocked = source, dict(blocked)
+
+    @property
+    def calls(self) -> int:
+        return getattr(self.source, "calls", 0)
+
+    def fetch(self, cfg: TeamConfig, kpi_id: str, today: dt.date) -> al.KpiData:
+        if kpi_id in self.blocked:
+            raise PerceptionBlocked(f"KPI {kpi_id} écarté par la perception : {self.blocked[kpi_id]}")
+        return self.source.fetch(cfg, kpi_id, today)
+
+
 def _finish(agent: str, items: dict, errors: list[str], summary: str, known: set[str] | None = None) -> c.AgentResult:
     r = c.AgentResult(agent=agent, status="echec" if errors else "reussi", summary=summary[:c.MAX_TEXT],
                       errors=errors, **items)
@@ -52,16 +77,82 @@ def _finish(agent: str, items: dict, errors: list[str], summary: str, known: set
     return r
 
 
+# ---------------- AG01 - perception ----------------
+
+MONTH_RE = re.compile(r"^\d{4}-\d{2}(-\d{2})?")
+
+
+def _month_gap(older: str, newer: str) -> int:
+    (y1, m1), (y2, m2) = (map(int, older.split("-")[:2]), map(int, newer.split("-")[:2]))
+    return (y2 * 12 + m2) - (y1 * 12 + m1)
+
+
+def perception(cfg: TeamConfig, source: Any, today: dt.date) -> tuple[c.AgentResult, dict[str, str]]:
+    """AG01 - lecture unique des KPI du cycle et contrôles de passage (disponibilité, fraîcheur, complétude).
+
+    Bloquant : source illisible ou KPI daté plus en retard que perception.max_lag_months (si renseigné) ;
+    KPI mensuel : dernière période ; KPI instantané : mois de sa date de situation. KPI par dimension :
+    aucune date de référence, fraîcheur non contrôlée (signalé).
+    Signalé sans bloquer : mois manquants dans une série, valeurs vides, mois en cours exclu.
+    Un KPI bloqué est une erreur technique, jamais une anomalie métier. Renvoie (résultat, {kpi: motif}).
+    """
+    from backend.eia.agent_models import perceived_kpis
+    max_lag = (getattr(cfg, "perception", None) or {}).get("max_lag_months")
+    reference = k.month_add(f"{today.year:04d}-{today.month:02d}", -1)   # dernier mois complet
+    findings, errors, blocked = [], [], {}
+    for kid in perceived_kpis(cfg):
+        try:
+            data = source.fetch(cfg, kid, today)
+        except Exception as e:
+            blocked[kid] = f"source indisponible ({type(e).__name__})"
+            errors.append(f"KPI {kid} : source indisponible : {type(e).__name__} : {e}"[:1500])
+            continue
+        kdef, notes = data.kdef, data.notes or {}
+        periods = sorted({p["period"] for p in data.points})
+        parts, value, unit = [f"{len(data.points)} valeur(s) sur {len(periods)} période(s)"], float(len(periods)), "périodes"
+        dated = kdef["grain"] in ("mois", "instantane") and bool(MONTH_RE.match(str(periods[-1])))
+        if dated:
+            lag = _month_gap(str(periods[-1])[:7], reference)
+            label = "dernière période" if kdef["grain"] == "mois" else "date de situation"
+            parts.append(f"{label} {periods[-1]}, retard {max(lag, 0)} mois par rapport à {reference}")
+            if kdef["grain"] == "mois":
+                gaps = sorted({m for s in k.by_dimension(data.points).values() for m in k.missing_months(list(s))})
+                if gaps:
+                    parts.append(f"{len(gaps)} mois manquant(s) dans au moins une série (premier : {gaps[0]})")
+            if max_lag is not None and lag > max_lag:
+                blocked[kid] = f"données en retard de {lag} mois (tolérance {max_lag}, à valider)"
+                errors.append(f"KPI {kid} : {blocked[kid]}")
+        elif kdef["grain"] == "instantane":
+            parts.append(f"fraîcheur non contrôlée (date de situation illisible : {periods[-1]})")
+        else:
+            parts.append("fraîcheur non contrôlée (KPI par dimension, sans date de référence)")
+        if notes.get("valeurs_vides"):
+            parts.append(f"{notes['valeurs_vides']} valeur(s) vide(s) ignorée(s)")
+        if notes.get("mois_exclus_incomplets"):
+            parts.append("mois incomplet exclu : " + ", ".join(notes["mois_exclus_incomplets"]))
+        parts.append("écarté" if kid in blocked else "exploitable")
+        findings.append(c.Finding(kind="constat", title=f"Qualité de la donnée - {kdef['label']}", value=value, unit=unit,
+                                  period=periods[-1], detail=" ; ".join(parts), evidence=data.evidence))
+    ok = len(findings) - sum(1 for f in findings if f.detail.endswith("écarté"))
+    summary = (f"{ok} KPI exploitable(s) sur {len(perceived_kpis(cfg))}"
+               + (f" ; {len(blocked)} écarté(s) : {', '.join(sorted(blocked))}" if blocked else "")
+               + ("" if max_lag is not None else " ; tolérance de retard non configurée"))
+    return _finish("perception", {"findings": findings}, errors, summary), blocked
+
+
 # ---------------- analyst ----------------
 
 def analyst(cfg: TeamConfig, source: Any, today: dt.date) -> c.AgentResult:
     """Constats chiffrés : dernière valeur et variations (mensuelle, N-1) des KPI suivis, par dimension."""
     kpis = (cfg.analysis or {}).get("kpis") or sorted({r["kpi"] for r in cfg.rules})
     window = int((cfg.analysis or {}).get("window_months", 1))
-    findings, errors = [], []
+    findings, errors, skipped = [], [], []
     for kid in kpis:
         try:
             data = source.fetch(cfg, kid, today)
+        except PerceptionBlocked:
+            skipped.append(kid)
+            continue
         except Exception as e:
             errors.append(f"KPI {kid} : {type(e).__name__} : {e}")
             continue
@@ -85,7 +176,9 @@ def analyst(cfg: TeamConfig, source: Any, today: dt.date) -> c.AgentResult:
             findings.append(c.Finding(kind="kpi", title=kdef["label"] + (f" - {dim}" if dim else ""),
                                       value=float(value), unit=unit, period=period, detail=detail,
                                       evidence=data.evidence))
-    summary = f"{len(findings)} constat(s) sur {len(kpis) - len(errors)} KPI" + (f" ; {len(errors)} KPI en erreur" if errors else "")
+    summary = (f"{len(findings)} constat(s) sur {len(kpis) - len(errors) - len(skipped)} KPI"
+               + (f" ; {len(errors)} KPI en erreur" if errors else "")
+               + (f" ; {len(skipped)} KPI écarté(s) par la perception" if skipped else ""))
     return _finish("analyst", {"findings": findings}, errors, summary)
 
 
@@ -94,10 +187,17 @@ def analyst(cfg: TeamConfig, source: Any, today: dt.date) -> c.AgentResult:
 def prediction(cfg: TeamConfig, source: Any, today: dt.date) -> c.AgentResult:
     """Prévisions des KPI autorisés par la configuration, avec test de fiabilité sur l'historique."""
     f = cfg.forecast or {}
-    forecasts, errors = [], []
+    forecasts, errors, skipped = [], [], []
     for kid in f.get("kpis") or []:
         try:
             data = source.fetch(cfg, kid, today)
+        except PerceptionBlocked:
+            skipped.append(kid)
+            continue
+        except Exception as e:
+            errors.append(f"Prévision {kid} : {type(e).__name__} : {e}")
+            continue
+        try:
             if data.kdef["grain"] != "mois" or any(p["dimension"] for p in data.points):
                 raise fc_mod.ForecastError("prévision possible uniquement sur un KPI mensuel global")
             pts = sorted(data.points, key=lambda p: p["period"])
@@ -108,7 +208,8 @@ def prediction(cfg: TeamConfig, source: Any, today: dt.date) -> c.AgentResult:
         except Exception as e:
             errors.append(f"Prévision {kid} : {type(e).__name__} : {e}")
     reliable = sum(1 for x in forecasts if x.reliable)
-    summary = f"{len(forecasts)} prévision(s), dont {reliable} fiable(s)" + (f" ; {len(errors)} en erreur" if errors else "")
+    summary = (f"{len(forecasts)} prévision(s), dont {reliable} fiable(s)" + (f" ; {len(errors)} en erreur" if errors else "")
+               + (f" ; {len(skipped)} KPI écarté(s) par la perception" if skipped else ""))
     return _finish("prediction", {"forecasts": forecasts}, errors, summary)
 
 
@@ -136,6 +237,9 @@ def alerting(cfg: TeamConfig, source: Any, repo: Any, today: dt.date, notifier: 
             kid = rule["kpi"]
             try:
                 data = source.fetch(cfg, kid, today)
+            except PerceptionBlocked as e:
+                rules[rule["id"]] = {"statut": "non_evalue", "motif": str(e)}
+                continue
             except Exception as e:
                 if kid not in failures:
                     record(al.technical_alert("TECH_SOURCE", f"Source indisponible : {kid}", str(e)[:1500], kid, today))

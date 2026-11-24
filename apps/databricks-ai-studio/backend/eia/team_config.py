@@ -50,6 +50,8 @@ class TeamConfig:
     staffing: dict = field(default_factory=dict)        # pondérations de l'affectation (compétences / disponibilité)
     analysis: dict = field(default_factory=dict)        # KPI suivis par l'analyste (défaut : KPI des règles)
     playbooks: list = field(default_factory=list)       # plans d'action types (règles déclencheuses -> tâches)
+    perception: dict = field(default_factory=dict)      # AG01 : contrôles de passage des données (seuils à valider)
+    models: list = field(default_factory=list)          # modèles du Framework (AG01...) composant l'équipe
 
     def playbook(self, pb_id: str) -> dict:
         for p in self.playbooks:
@@ -171,6 +173,27 @@ def validate(d: dict, data_scope: tuple[str, str, str] | None = None, known_tool
     issues += _validate_notifications(d.get("notifications"))
     issues += _validate_staffing(d.get("skills"), d.get("staffing"))
     issues += _validate_playbooks(d)
+    issues += _validate_perception(d.get("perception"))
+    if d.get("models") is not None:
+        from backend.eia.agent_models import check_composition
+        if not isinstance(d["models"], list) or not d["models"]:
+            issues.append("models doit être une liste non vide de codes AG")
+        else:
+            issues += [f"models : {x}" for x in check_composition(d["models"])]
+    return issues
+
+
+def _validate_perception(p: Any) -> list[str]:
+    if p is None:
+        return []
+    if not isinstance(p, dict):
+        return ["perception doit être un objet"]
+    issues = []
+    lag = p.get("max_lag_months")
+    if lag is not None and (not isinstance(lag, int) or isinstance(lag, bool) or lag < 0):
+        issues.append("perception.max_lag_months doit être un entier positif ou nul")
+    if p.get("status") not in (None, *RULE_STATUSES):
+        issues.append(f"perception : statut de validation inconnu {p.get('status')}")
     return issues
 
 
@@ -279,7 +302,8 @@ def from_dict(d: dict, data_scope: tuple[str, str, str] | None = None, known_too
     return TeamConfig(**{k: d[k] for k in REQUIRED}, forecast=d.get("forecast") or {}, version=str(d.get("version", "")),
                       notifications=d.get("notifications") or {}, skills=d.get("skills") or [],
                       staffing=d.get("staffing") or {}, analysis=d.get("analysis") or {},
-                      playbooks=d.get("playbooks") or [])
+                      playbooks=d.get("playbooks") or [], perception=d.get("perception") or {},
+                      models=d.get("models") or [])
 
 
 def load(team_id: str, base_dir: str | None = None, data_scope: tuple[str, str, str] | None = None,

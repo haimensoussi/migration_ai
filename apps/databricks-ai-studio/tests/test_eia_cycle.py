@@ -74,7 +74,7 @@ def test_cycle_known_numbers_cache_and_no_automatic_decisions():
     r, out = run(source=source)
     assert out["statut"] == "termine", out["erreurs"]
     assert source.calls == out["requetes_kpi"] == 1
-    assert len(r.s.data["eia_runs"]) == 1 and len(r.steps(out["run_id"])) == 6
+    assert len(r.s.data["eia_runs"]) == 1 and len(r.steps(out["run_id"])) == 7
     assert out["etapes"]["analyst"]["findings"][0]["value"] == 50
     assert [p["value"] for p in out["etapes"]["prediction"]["forecasts"][0]["points"]] == [50, 50, 50]
     alerts = r.alerts("test")

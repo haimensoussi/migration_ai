@@ -127,6 +127,8 @@
                "status": "a_valider"},
   "analysis": {"kpis": ["ca_ht", "marge_brute", "taux_marge", "atteinte_objectif", "ca_ht_region", "pipeline_ouvert",
                         "opportunites_bloquees", "part_clients_inactifs"], "window_months": 1},
+  "perception": {"max_lag_months": 1, "status": "a_valider",
+                 "note": "AG01 : tolérance provisoire de retard des KPI mensuels, à valider par le responsable des données"},
   "playbooks": [
     {"id": "PB01", "title": "Relancer les clients inactifs", "rules": ["SAL_R05"], "owner_role": "Direction commerciale",
      "rationale": "Cibler les clients sans commande récente pour réactiver le chiffre d'affaires récurrent.",
@@ -190,7 +192,8 @@
         "deliverable": "Politique de remise revue", "required_skills": [{"skill": "negociation", "level": 3},
         {"skill": "administration_ventes", "level": 3}], "estimated_hours": 8}]}
   ],
-  "agents": ["analyst", "prediction", "alerting", "advisor", "planner", "staffing"],
+  "agents": ["perception", "analyst", "prediction", "alerting", "advisor", "planner", "staffing"],
+  "models": ["AG01", "AG03", "AG06", "AG04", "AG05", "AG08"],
   "tools": ["execute_sql", "render_kpi", "render_chart", "generate_report", "export_excel", "eia_kpi", "eia_forecast",
             "eia_alert", "eia_recommendation", "eia_mission", "eia_notification", "eia_affectation"],
   "instructions": {

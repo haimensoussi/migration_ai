@@ -2,7 +2,7 @@
 
 ## Périmètre
 
-Le cœur EIA est en Python indépendant de Databricks et de Streamlit. Les six rôles sont des fonctions
+Le cœur EIA est en Python indépendant de Databricks et de Streamlit. Les sept rôles techniques sont des fonctions
 calculatoires déterministes ; HAKIM reste le seul superviseur IA pour expliquer les sorties et interagir
 avec l'utilisateur. Il n'y a ni second orchestrateur de modèles ni agents prenant des décisions métier seuls.
 
@@ -10,6 +10,43 @@ Les règles, KPI, sources, compétences, pondérations et plans d'action sont da
 Sales utilise les données fictives Horizon Équipements. Ce lot ne crée aucune règle officielle SNCF Réseau
 et ne modifie pas les sources Supply Chain/PTE/UDR. Les six plans d'action Sales, leurs charges et délais
 sont des propositions de démonstration, statut `a_valider`, à revoir par les responsables métier.
+
+## Catégories officielles et modèles d'agents
+
+La classification DISCOVERY compte 11 catégories (AG01 à AG11), décrites dans `backend/eia/agent_models.py`.
+AG02 Predictive Intelligence est fusionné dans AG01. Un modèle d'agent associe une partie fixe (code, contrat de
+sortie, garde-fous, tests) à une fiche de paramètres renseignée dans la configuration d'équipe ; adapter un
+modèle à un autre métier ne demande pas de code. `AG01.check(cfg)` vérifie la conformité des paramètres.
+
+Framework (étape 1 de l'EIA Factory) : chaque modèle déclare son statut, ses interfaces d'entrée et de sortie
+(`INTERFACES`), ses points d'entrée réels dans le code, ses garde-fous (communs `GUARDRAILS` + propres) et ce
+qui reste à faire. Une équipe déclare sa composition dans `models` ; `check_team` (contrôle AG08) vérifie
+que les modèles existent et sont opérationnels, que chaque entrée obligatoire est produite par un modèle de
+l'équipe ou vient de l'extérieur (données, documents, décisions humaines), et que les paramètres sont conformes.
+
+| Statut | Modèles |
+| --- | --- |
+| disponible | AG01 Data Intelligence 1.0, AG03 Strategic Intelligence 1.0, AG06 Team Manager 1.0 |
+| partiel | AG04 Execution & Automation 0.5, AG05 Learning & Improvement 0.5, AG08 Monitoring & Governance 0.5 |
+| squelette (contrat et paramètres, sans code) | AG07 Knowledge & Context, AG09 Engineering & Builder, AG10 Enterprise Architect, AG11 Simulation & Scenario |
+
+Compositions de référence : équipe métier AG01, AG03, AG06, AG04, AG05, AG08 (Sales) ; EIA Factory AG01,
+AG10, AG09, AG08 (cohérente, en attente des modèles squelettes).
+
+| Rôle technique | Catégorie | Étape de la boucle |
+| --- | --- | --- |
+| perception, analyst, prediction, alerting | AG01 Data Intelligence (modèle 1.0) | CAPTER, COMPRENDRE, PRÉDIRE |
+| advisor | AG03 Strategic Intelligence | ARBITRER |
+| planner, staffing | AG06 Team Manager | planification et délégation proposées |
+
+Perception d'AG01 (contrôle de passage) : chaque KPI du cycle est lu une fois. Sont bloquants une source
+illisible et un KPI mensuel plus en retard que `perception.max_lag_months` par rapport au dernier mois complet
+(Sales : 1 mois, `a_valider`). Sont signalés sans bloquer les mois manquants, valeurs vides et le mois en cours
+exclu. Un KPI écarté (`kpi_ecartes`) n'est ni analysé, ni prévu, ni évalué par les règles ; il produit une
+seule alerte technique `TECH_EIA_PERCEPTION`, jamais une anomalie métier. Les KPI instantanés sont jugés
+sur le mois de leur date de situation, avec la même tolérance. Limite : la fraîcheur des KPI par dimension
+(sans date de référence) n'est pas contrôlée ; c'est indiqué dans le constat. Sans tolérance configurée, le retard est signalé
+sans bloquer.
 
 ## Cycle et points de décision
 
@@ -44,6 +81,23 @@ Les trois outils persistants sont `read_only=False`, `requires_confirmation=True
 Les droits Unity Catalog de l'utilisateur s'appliquent ; aucun usage implicite du service principal.
 L'identification de l'utilisateur et sa confirmation ne remplacent pas une matrice métier d'habilitation :
 les rôles autorisés et les droits d'écriture doivent être configurés par les responsables du projet.
+
+## Pages Missions et Notifications (en attente de déploiement)
+
+Section « Copilotage EIA » de l'application, sous l'identité de l'utilisateur connecté (jeton transmis par
+Databricks Apps, droits Unity Catalog de l'utilisateur).
+
+* **Missions** : recommandations à traiter (bouton « Préparer la mission »), détail d'une mission (objectif,
+  KPI de réussite, tâches ordonnées par échéance, dépendances, compétences, affectations proposées et leur
+  justification), actions autorisées par le contrat, bilan LEARN après clôture, historique ; onglet Cycles pour
+  lancer un cycle enregistré et consulter les précédents.
+* **Notifications** : anomalies métier et erreurs techniques comptées séparément, filtres, preuve (requête) de
+  chaque alerte, suivi humain (vue, acquittée, résolue), état du canal d'envoi et aperçu du message récapitulatif.
+  Aucun envoi depuis la page : l'envoi externe reste réservé au cycle d'alerting sous un canal validé.
+
+Chaque bouton qui écrit demande un second clic « Confirmer ». Les pages et l'outil `eia_suivi_mission` passent
+par le même service `backend/eia/console.py` : mêmes transitions, contrôle d'équipe et d'appartenance, refus de
+clôturer une mission dont des tâches sont ouvertes, refus des identités `agent:*` ou non identifiées.
 
 ## Traçabilité
 
