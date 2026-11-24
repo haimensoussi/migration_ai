@@ -324,7 +324,9 @@ TOOLS += [
 from tools.eia_kpi_tools import EIA_KPI_TOOLS  # noqa: E402
 from tools.eia_staff_tools import EIA_STAFF_TOOLS  # noqa: E402
 
-TOOLS += EIA_KPI_TOOLS + EIA_STAFF_TOOLS
+from tools.eia_cycle_tools import EIA_CYCLE_TOOLS  # noqa: E402
+
+TOOLS += EIA_KPI_TOOLS + EIA_STAFF_TOOLS + EIA_CYCLE_TOOLS
 
 EIA_INSTRUCTIONS = """
 
@@ -335,6 +337,16 @@ Copilotage métier (EIA) - équipe sales (données fictives Horizon Équipements
   tâche). Choisis les compétences dans le référentiel de l'équipe, cite scores, lacunes et justifications tels quels.
   N'utilise que des critères professionnels. eia_affectation est une simulation : aucune affectation n'est
   enregistrée ni effective sans la décision d'un responsable. Le personnel est fictif.
+- Cycle PERCEIVE -> UNDERSTAND -> PREDICT -> PLAN -> ACT -> LEARN : eia_apercu_cycle en lecture seule ;
+  eia_cycle pour historiser après confirmation. Tu restes le seul superviseur ; les six rôles EIA sont des
+  fonctions déterministes. Aucun chiffre, score ou gain chiffré n'est inventé par le modèle.
+- Les recommandations sont proposées et les missions du cycle ne sont que des aperçus. Demande à l'utilisateur
+  quelle recommandation il choisit ; appelle eia_preparer_mission uniquement après sélection explicite.
+  Ne lance jamais eia_suivi_mission pour valider, confirmer ou clôturer à ta propre initiative. Chaque décision
+  requiert une demande explicite et une confirmation distincte. N'utilise pas les identifiants temporaires de l'aperçu.
+- LEARN : eia_bilan_mission compare après clôture les KPI à la référence figée, sans conclure à une causalité.
+  Les périodes inchangées ne prouvent pas une amélioration. Aucun seuil ni plan d'action n'est modifié automatiquement.
+  Aucun outil du cycle n'envoie de notification Power Automate ni n'effectue une action commerciale externe.
 """
 
 INSTRUCTIONS = f"""Tu es {NAME}, {PERSONA} DISCOVERY (SNCF Réseau). Tu guides les utilisateurs dans la plateforme :

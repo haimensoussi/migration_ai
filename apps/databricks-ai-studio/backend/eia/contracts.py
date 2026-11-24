@@ -42,7 +42,7 @@ TRANSITIONS = {
     "assignment": {"proposee": {"confirmee", "refusee", "annulee"}, "confirmee": {"annulee"}},
 }
 # Transitions qui exigent une décision humaine explicite (utilisateur identifié + date).
-HUMAN_DECISIONS = {("recommendation", "validee"), ("recommendation", "rejetee"), ("mission", "validee"),
+HUMAN_DECISIONS = {("recommendation", "selectionnee"), ("recommendation", "validee"), ("recommendation", "rejetee"), ("mission", "validee"),
                    ("mission", "annulee"), ("assignment", "confirmee"), ("assignment", "refusee")}
 
 MAX_TEXT = 4000
@@ -69,7 +69,7 @@ def check_transition(kind: str, current: str, target: str, decided_by: str | Non
         raise ContractError(f"Statut inconnu pour {kind} : {target}")
     if target not in TRANSITIONS[kind].get(current, set()):
         raise ContractError(f"Transition interdite pour {kind} : {current} -> {target}")
-    if (kind, target) in HUMAN_DECISIONS and not (decided_by and "@" in decided_by):
+    if (kind, target) in HUMAN_DECISIONS and not (decided_by and "@" in decided_by and not decided_by.startswith("agent:")):
         raise ContractError(f"{kind} -> {target} exige la décision explicite d'un utilisateur identifié")
 
 

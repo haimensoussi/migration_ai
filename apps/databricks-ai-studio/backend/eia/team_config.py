@@ -48,6 +48,14 @@ class TeamConfig:
     notifications: dict = field(default_factory=dict)   # canal d'envoi des alertes (facultatif, validé par l'équipe)
     skills: list = field(default_factory=list)          # référentiel de compétences (id, label) pour l'affectation
     staffing: dict = field(default_factory=dict)        # pondérations de l'affectation (compétences / disponibilité)
+    analysis: dict = field(default_factory=dict)        # KPI suivis par l'analyste (défaut : KPI des règles)
+    playbooks: list = field(default_factory=list)       # plans d'action types (règles déclencheuses -> tâches)
+
+    def playbook(self, pb_id: str) -> dict:
+        for p in self.playbooks:
+            if p["id"] == pb_id:
+                return p
+        raise TeamConfigError(f"Plan d'action inconnu pour l'équipe {self.team_id} : {pb_id}")
 
     def skill_ids(self) -> set[str]:
         return {s["id"] for s in self.skills}
@@ -162,6 +170,53 @@ def validate(d: dict, data_scope: tuple[str, str, str] | None = None, known_tool
         issues.append("validation_policy.external_actions : interdit | sur_validation")
     issues += _validate_notifications(d.get("notifications"))
     issues += _validate_staffing(d.get("skills"), d.get("staffing"))
+    issues += _validate_playbooks(d)
+    return issues
+
+
+def _validate_playbooks(d: dict) -> list[str]:
+    issues: list[str] = []
+    kpis = {k.get("id") for k in d.get("kpis") or [] if isinstance(k, dict)}
+    rules = {r.get("id") for r in d.get("rules") or [] if isinstance(r, dict)}
+    skills = {s.get("id") for s in d.get("skills") or [] if isinstance(s, dict)}
+    a = d.get("analysis")
+    if a is not None:
+        bad = [k for k in a.get("kpis") or [] if k not in kpis]
+        if bad:
+            issues.append(f"analysis.kpis inconnus : {bad}")
+        if not isinstance(a.get("window_months", 1), int) or not 1 <= a.get("window_months", 1) <= 12:
+            issues.append("analysis.window_months : entier de 1 à 12")
+    seen: set = set()
+    for p in d.get("playbooks") or []:
+        pid = p.get("id")
+        if not pid or pid in seen:
+            issues.append(f"playbook sans identifiant ou en double : {pid}")
+        seen.add(pid)
+        if not p.get("title") or not p.get("rationale"):
+            issues.append(f"playbook {pid} : titre et justification obligatoires")
+        if not p.get("rules") or any(r not in rules for r in p["rules"]):
+            issues.append(f"playbook {pid} : règles déclencheuses absentes ou inconnues")
+        if not p.get("success_kpis") or any(k not in kpis for k in p["success_kpis"]):
+            issues.append(f"playbook {pid} : KPI de réussite absents ou inconnus")
+        if p.get("status") not in RULE_STATUSES:
+            issues.append(f"playbook {pid} : statut a_valider | valide | desactive")
+        tasks = p.get("tasks") or []
+        if not tasks:
+            issues.append(f"playbook {pid} : aucune tâche")
+        for i, t in enumerate(tasks):
+            if not t.get("title"):
+                issues.append(f"playbook {pid} tâche {i} : titre manquant")
+            if any(not isinstance(x, int) or not 0 <= x < i for x in t.get("depends_on") or []):
+                issues.append(f"playbook {pid} tâche {i} : dépendances sur des tâches précédentes uniquement")
+            for s in t.get("required_skills") or []:
+                lv = s.get("level", 3)
+                if s.get("skill") not in skills or not isinstance(lv, int) or not 1 <= lv <= 5:
+                    issues.append(f"playbook {pid} tâche {i} : compétence inconnue ou niveau invalide {s}")
+            h, dd = t.get("estimated_hours"), t.get("due_in_days")
+            if h is not None and (not isinstance(h, int) or h <= 0):
+                issues.append(f"playbook {pid} tâche {i} : estimated_hours entier positif")
+            if dd is not None and (not isinstance(dd, int) or dd <= 0):
+                issues.append(f"playbook {pid} tâche {i} : due_in_days entier positif")
     return issues
 
 
@@ -223,7 +278,8 @@ def from_dict(d: dict, data_scope: tuple[str, str, str] | None = None, known_too
         raise TeamConfigError("Configuration d'équipe invalide : " + " ; ".join(issues))
     return TeamConfig(**{k: d[k] for k in REQUIRED}, forecast=d.get("forecast") or {}, version=str(d.get("version", "")),
                       notifications=d.get("notifications") or {}, skills=d.get("skills") or [],
-                      staffing=d.get("staffing") or {})
+                      staffing=d.get("staffing") or {}, analysis=d.get("analysis") or {},
+                      playbooks=d.get("playbooks") or [])
 
 
 def load(team_id: str, base_dir: str | None = None, data_scope: tuple[str, str, str] | None = None,

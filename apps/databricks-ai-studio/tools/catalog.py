@@ -258,3 +258,10 @@ BUILTIN_TOOLS: list[ToolSpec] = [
         executor="tools.power_automate:office_send", identity="application",
         requires_confirmation=True, read_only=False),
 ]
+
+# EIA : catalogue public, mêmes contrats et garde-fous que les outils de HAKIM.
+from tools.eia_kpi_tools import EIA_KPI_TOOLS  # noqa: E402
+from tools.eia_staff_tools import EIA_STAFF_TOOLS  # noqa: E402
+from tools.eia_cycle_tools import EIA_CYCLE_TOOLS  # noqa: E402
+
+BUILTIN_TOOLS += EIA_KPI_TOOLS + EIA_STAFF_TOOLS + EIA_CYCLE_TOOLS

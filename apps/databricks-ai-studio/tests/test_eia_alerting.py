@@ -29,6 +29,8 @@ def sales_dict():
 def cfg(rules=("SAL_R01", "SAL_R02", "SAL_R03", "SAL_R06"), notifications=None):
     d = sales_dict()
     d["rules"] = [r for r in d["rules"] if r["id"] in rules]
+    # Tests du sous-système alerting : aucun plan d'action ne doit citer une règle retirée du jeu de test.
+    d["playbooks"] = []
     if notifications is not None:
         d["notifications"] = notifications
     return tc.from_dict(d, SCOPE)
