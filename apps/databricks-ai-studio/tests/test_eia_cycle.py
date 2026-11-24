@@ -292,6 +292,15 @@ def test_assignment_ids_returned_for_human_decisions():
                for t in result["taches"])
 
 
+def test_advisor_scope_not_repeated():
+    def alert(title, scope):
+        return c.Alert(rule_id="R", severity="critique", title=title, message="m", scope=scope, observed=50, threshold=75)
+    already = a.advisor(cfg(), [alert("Sous le seuil - Pays de la Loire", "Pays de la Loire")]).recommendations[0].rationale
+    assert already.count("Pays de la Loire") == 1
+    missing = a.advisor(cfg(), [alert("Sous le seuil", "Bretagne")]).recommendations[0].rationale
+    assert "R Sous le seuil - Bretagne : 50" in missing and missing.count("Bretagne") == 1
+
+
 def test_playbook_validation():
     cf = load("sales")
     data = {name: copy.deepcopy(getattr(cf, name)) for name in cf.__dataclass_fields__}

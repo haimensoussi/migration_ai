@@ -168,6 +168,13 @@ def _fmt(v: Any) -> str:
     return "n.d." if v is None else f"{v:g}"
 
 
+def _label(a: c.Alert) -> str:
+    """Titre de l'alerte avec son périmètre, sans le répéter si le moteur d'alerting l'y a déjà mis."""
+    if not a.scope or a.title.endswith(f" - {a.scope}"):
+        return a.title
+    return f"{a.title} - {a.scope}"
+
+
 def advisor(cfg: TeamConfig, alerts: list[c.Alert]) -> c.AgentResult:
     """Recommandations : plans d'action types de la configuration déclenchés par les alertes métier."""
     business = [a for a in alerts if a.kind == "metier"]
@@ -184,7 +191,7 @@ def advisor(cfg: TeamConfig, alerts: list[c.Alert]) -> c.AgentResult:
     recos = []
     for prio, (_, _, pb, matched) in enumerate(candidates, 1):
         shown = matched[:6]
-        facts = " ; ".join(f"{a.rule_id} {a.title}{' - ' + a.scope if a.scope else ''} : {_fmt(a.observed)} "
+        facts = " ; ".join(f"{a.rule_id} {_label(a)} : {_fmt(a.observed)} "
                            f"(seuil {_fmt(a.threshold)}, {a.severity})" for a in shown)
         more = f" ; et {len(matched) - len(shown)} autre(s)" if len(matched) > len(shown) else ""
         recos.append(c.Recommendation(
