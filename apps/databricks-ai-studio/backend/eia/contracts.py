@@ -11,7 +11,7 @@ import uuid
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-AGENT_ROLES = ("analyst", "prediction", "alerting", "advisor", "planner")
+AGENT_ROLES = ("analyst", "prediction", "alerting", "advisor", "planner", "staffing")
 SEVERITIES = ("info", "attention", "critique")
 ALERT_KINDS = ("metier", "technique")          # anomalie métier ou erreur technique (jamais mélangées)
 FINDING_KINDS = ("kpi", "tendance", "anomalie", "constat")
@@ -24,6 +24,7 @@ STATUSES = {
     "recommendation": ("proposee", "selectionnee", "validee", "rejetee"),
     "mission": ("brouillon", "validee", "en_cours", "terminee", "annulee"),
     "task": ("a_faire", "en_cours", "fait", "bloque", "annule"),
+    "assignment": ("proposee", "confirmee", "refusee", "annulee"),
 }
 
 # Transitions autorisées (de -> vers). Toute autre transition est refusée.
@@ -38,10 +39,11 @@ TRANSITIONS = {
                 "en_cours": {"terminee", "annulee"}},
     "task": {"a_faire": {"en_cours", "bloque", "annule"}, "en_cours": {"fait", "bloque", "annule"},
              "bloque": {"a_faire", "en_cours", "annule"}},
+    "assignment": {"proposee": {"confirmee", "refusee", "annulee"}, "confirmee": {"annulee"}},
 }
 # Transitions qui exigent une décision humaine explicite (utilisateur identifié + date).
 HUMAN_DECISIONS = {("recommendation", "validee"), ("recommendation", "rejetee"), ("mission", "validee"),
-                   ("mission", "annulee")}
+                   ("mission", "annulee"), ("assignment", "confirmee"), ("assignment", "refusee")}
 
 MAX_TEXT = 4000
 
@@ -152,6 +154,8 @@ class MissionTask:
     due_in_days: int | None = None
     deliverable: str = ""
     depends_on: list[str] = field(default_factory=list)
+    required_skills: list[dict] = field(default_factory=list)   # [{skill, level}] issus du référentiel de l'équipe
+    estimated_hours: int | None = None
     id: str = field(default_factory=lambda: new_id("mt"))
 
 

@@ -116,6 +116,8 @@ CREATE TABLE IF NOT EXISTS dataops_dev.ai_studio.eia_mission_tasks (
   status STRING NOT NULL COMMENT 'a_faire | en_cours | fait | bloque | annule',
   updated_by STRING,
   updated_at TIMESTAMP NOT NULL,
+  required_skills STRING COMMENT 'JSON : compétences requises [{skill, level}] (référentiel de l''équipe)',
+  estimated_hours INT COMMENT 'Charge estimée (heures)',
   CONSTRAINT eia_mission_tasks_pk PRIMARY KEY (mission_id, task_id),
   CONSTRAINT eia_mission_tasks_mission_fk FOREIGN KEY (mission_id) REFERENCES dataops_dev.ai_studio.eia_missions
 ) COMMENT 'EIA : tâches des missions';
@@ -131,3 +133,51 @@ CREATE TABLE IF NOT EXISTS dataops_dev.ai_studio.eia_events (
   created_at TIMESTAMP NOT NULL,
   CONSTRAINT eia_events_pk PRIMARY KEY (event_id)
 ) COMMENT 'EIA : journal des décisions et changements de statut (traçabilité)';
+
+-- Personnel des équipes (données fictives pour la démonstration Sales : aucune personne réelle).
+-- Seuls des critères professionnels sont stockés : compétences, capacité, disponibilité.
+CREATE TABLE IF NOT EXISTS dataops_dev.ai_studio.eia_people (
+  person_id STRING NOT NULL COMMENT 'Identifiant (rep_id pour les commerciaux, Sxxx pour les fonctions support)',
+  team_id STRING NOT NULL COMMENT 'Équipe métier (config/teams)',
+  full_name STRING NOT NULL,
+  email STRING,
+  job_title STRING COMMENT 'Fonction',
+  department STRING COMMENT 'Service ou segment',
+  region STRING,
+  capacity_hours_week INT NOT NULL COMMENT 'Heures de travail hebdomadaires',
+  availability_pct INT NOT NULL COMMENT 'Part du temps disponible pour les missions (0 à 100)',
+  status STRING NOT NULL COMMENT 'actif | inactif',
+  source STRING COMMENT 'Origine de la fiche',
+  updated_at TIMESTAMP NOT NULL,
+  CONSTRAINT eia_people_pk PRIMARY KEY (person_id)
+) COMMENT 'EIA : personnel affectable aux missions';
+
+CREATE TABLE IF NOT EXISTS dataops_dev.ai_studio.eia_person_skills (
+  person_id STRING NOT NULL,
+  skill STRING NOT NULL COMMENT 'Identifiant du référentiel skills de l''équipe',
+  level INT NOT NULL COMMENT '1 notions | 2 pratique encadrée | 3 autonome | 4 confirmé | 5 référent',
+  assessed_by STRING COMMENT 'Évaluateur',
+  updated_at TIMESTAMP NOT NULL,
+  CONSTRAINT eia_person_skills_pk PRIMARY KEY (person_id, skill),
+  CONSTRAINT eia_person_skills_person_fk FOREIGN KEY (person_id) REFERENCES dataops_dev.ai_studio.eia_people
+) COMMENT 'EIA : compétences du personnel';
+
+CREATE TABLE IF NOT EXISTS dataops_dev.ai_studio.eia_assignments (
+  assignment_id STRING NOT NULL COMMENT 'Identifiant (as_ + 12 hex)',
+  mission_id STRING NOT NULL,
+  task_id STRING NOT NULL,
+  person_id STRING NOT NULL,
+  rank INT NOT NULL COMMENT 'Rang dans le classement proposé',
+  score DOUBLE NOT NULL COMMENT 'Score global (0 à 1)',
+  skill_score DOUBLE NOT NULL COMMENT 'Adéquation des compétences (0 à 1)',
+  availability_score DOUBLE NOT NULL COMMENT 'Disponibilité compte tenu de la charge (0 à 1)',
+  rationale STRING COMMENT 'Justification calculée',
+  gaps STRING COMMENT 'JSON : lacunes de compétences',
+  status STRING NOT NULL COMMENT 'proposee | confirmee | refusee | annulee',
+  proposed_by STRING NOT NULL COMMENT 'Agent ou utilisateur',
+  proposed_at TIMESTAMP NOT NULL,
+  decided_by STRING COMMENT 'Responsable ayant confirmé ou refusé',
+  decided_at TIMESTAMP,
+  CONSTRAINT eia_assignments_pk PRIMARY KEY (assignment_id),
+  CONSTRAINT eia_assignments_person_fk FOREIGN KEY (person_id) REFERENCES dataops_dev.ai_studio.eia_people
+) COMMENT 'EIA : affectations proposées et décidées (aucune affectation sans décision humaine)';

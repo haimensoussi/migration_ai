@@ -54,6 +54,10 @@
     {"id": "atteinte_objectif_region", "label": "Atteinte de l'objectif par région", "unit": "%", "grain": "mois", "direction": "hausse_favorable",
      "formula": "Atteinte de l'objectif par mois et région du commercial", "exclusions": "Commandes annulées et retournées", "limits": "Objectifs fictifs",
      "sql": "SELECT t.target_month AS period, t.region AS dimension, 100 * COALESCE(SUM(a.ca), 0) / SUM(t.target_revenue_ht) AS value FROM {targets} t LEFT JOIN (SELECT rep_id, order_month, SUM(total_amount_ht) AS ca FROM {orders} WHERE status NOT IN ('annulee','retournee') GROUP BY rep_id, order_month) a ON a.rep_id = t.rep_id AND a.order_month = t.target_month GROUP BY t.target_month, t.region ORDER BY period, dimension"},
+    {"id": "atteinte_objectif_region_3m", "label": "Atteinte de l'objectif par région (3 mois glissants)", "unit": "%", "grain": "mois", "direction": "hausse_favorable",
+     "formula": "100 x CA HT réalisé sur les 3 derniers mois / objectifs des 3 derniers mois, par région (pondéré par les objectifs)",
+     "exclusions": "Commandes annulées et retournées", "limits": "Objectifs fictifs ; les 2 premiers mois de l'historique portent sur moins de 3 mois",
+     "sql": "SELECT m.target_month AS period, m.region AS dimension, 100 * SUM(m.r) OVER (PARTITION BY m.region ORDER BY m.target_month ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) / SUM(m.o) OVER (PARTITION BY m.region ORDER BY m.target_month ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS value FROM (SELECT t.target_month, t.region, COALESCE(SUM(a.ca), 0) AS r, SUM(t.target_revenue_ht) AS o FROM {targets} t LEFT JOIN (SELECT rep_id, order_month, SUM(total_amount_ht) AS ca FROM {orders} WHERE status NOT IN ('annulee','retournee') GROUP BY rep_id, order_month) a ON a.rep_id = t.rep_id AND a.order_month = t.target_month GROUP BY t.target_month, t.region) m ORDER BY period, dimension"},
     {"id": "taux_gain", "label": "Taux de gain des opportunités", "unit": "%", "grain": "mois", "direction": "hausse_favorable",
      "formula": "100 x gagnées / (gagnées + perdues) par mois de clôture", "exclusions": "Opportunités ouvertes", "limits": "",
      "sql": "SELECT date_trunc('MONTH', closed_date) AS period, 100 * AVG(CASE WHEN is_won THEN 1 ELSE 0 END) AS value FROM {opportunities} WHERE is_won IS NOT NULL GROUP BY date_trunc('MONTH', closed_date) ORDER BY period"},
@@ -71,8 +75,8 @@
      "sql": "SELECT CAST(MAX(r.ref) AS DATE) AS period, 100 * AVG(CASE WHEN l.last_order < add_months(r.ref, -6) THEN 1 ELSE 0 END) AS value FROM (SELECT customer_id, MAX(order_date) AS last_order FROM {orders} WHERE status NOT IN ('annulee','retournee') GROUP BY customer_id) l CROSS JOIN (SELECT MAX(order_date) AS ref FROM {orders}) r"},
     {"id": "roi_campagne", "label": "Rendement des campagnes", "unit": "ratio", "grain": "dimension", "direction": "hausse_favorable",
      "formula": "Montant estimé des opportunités gagnées / coût engagé, par campagne", "exclusions": "Campagnes sans coût engagé",
-     "limits": "Attribution au dernier contact ; montants estimés, pas le CA facturé",
-     "sql": "SELECT m.campaign_name AS dimension, CAST(MAX(r.measured_at) AS DATE) AS period, SUM(r.won_amount_eur) / SUM(r.cost_allocated_eur) AS value FROM {campaign_results} r JOIN {campaigns} m ON m.campaign_id = r.campaign_id GROUP BY m.campaign_name HAVING SUM(r.cost_allocated_eur) > 0 ORDER BY value DESC"}
+     "limits": "Attribution au dernier contact ; montants estimés, pas le CA facturé ; campagnes terminées depuis 2 à 9 mois uniquement (résultats consolidés, date de référence = dernière commande)",
+     "sql": "SELECT m.campaign_name AS dimension, CAST(MAX(r.measured_at) AS DATE) AS period, SUM(r.won_amount_eur) / SUM(r.cost_allocated_eur) AS value FROM {campaign_results} r JOIN {campaigns} m ON m.campaign_id = r.campaign_id CROSS JOIN (SELECT MAX(order_date) AS ref FROM {orders}) o WHERE m.end_date BETWEEN add_months(o.ref, -9) AND add_months(o.ref, -2) GROUP BY m.campaign_name HAVING SUM(r.cost_allocated_eur) > 0 ORDER BY value DESC"}
   ],
   "rules": [
     {"id": "SAL_R01", "label": "Baisse du CA sur un an", "kpi": "ca_ht", "type": "variation_annuelle", "window_months": 1,
@@ -84,9 +88,9 @@
     {"id": "SAL_R03", "label": "Objectif de CA non atteint", "kpi": "atteinte_objectif", "type": "seuil_bas", "window_months": 1,
      "thresholds": {"attention": 90, "critique": 75}, "status": "a_valider", "owner_role": "Direction commerciale",
      "description": "Atteinte (%) de l'objectif du dernier mois complet"},
-    {"id": "SAL_R04", "label": "Région sous l'objectif", "kpi": "atteinte_objectif_region", "type": "seuil_bas", "window_months": 3,
+    {"id": "SAL_R04", "label": "Région sous l'objectif", "kpi": "atteinte_objectif_region_3m", "type": "seuil_bas", "window_months": 1,
      "thresholds": {"attention": 85, "critique": 70}, "status": "a_valider", "owner_role": "Responsable régional",
-     "description": "Atteinte (%) de l'objectif cumulée sur 3 mois, par région"},
+     "description": "Atteinte (%) de l'objectif sur 3 mois glissants, pondérée par les objectifs, par région"},
     {"id": "SAL_R05", "label": "Clients inactifs", "kpi": "part_clients_inactifs", "type": "seuil_haut", "window_months": 0,
      "thresholds": {"attention": 10, "critique": 20}, "status": "a_valider", "owner_role": "Direction commerciale",
      "description": "Part (%) des clients sans commande depuis plus de 6 mois"},
@@ -101,20 +105,37 @@
      "description": "Variation (%) du CA prévu sur l'horizon par rapport aux mêmes mois de l'année précédente (prévision fiable uniquement)"},
     {"id": "SAL_R09", "label": "Campagne peu rentable", "kpi": "roi_campagne", "type": "seuil_bas", "window_months": 0,
      "thresholds": {"attention": 2, "critique": 1}, "status": "a_valider", "owner_role": "Direction marketing",
-     "description": "Rendement (montant gagné / coût) par campagne"}
+     "description": "Rendement (montant gagné / coût) des campagnes terminées depuis 2 à 9 mois"}
   ],
   "forecast": {"kpis": ["ca_ht", "marge_brute", "nb_commandes"], "horizon": 3, "season_length": 12, "test_points": 6,
                "max_error_pct": 15, "exclude_last_incomplete_month": true},
-  "agents": ["analyst", "prediction", "alerting", "advisor", "planner"],
+  "skills": [
+    {"id": "prospection", "label": "Prospection et conquête"},
+    {"id": "relance_clients", "label": "Relance et fidélisation des clients"},
+    {"id": "negociation", "label": "Négociation commerciale"},
+    {"id": "grands_comptes", "label": "Gestion des grands comptes"},
+    {"id": "gestion_pipeline", "label": "Gestion du pipeline d'opportunités"},
+    {"id": "pilotage_regional", "label": "Pilotage d'une région et animation d'équipe"},
+    {"id": "marketing_digital", "label": "Marketing digital et campagnes"},
+    {"id": "analyse_donnees", "label": "Analyse de données commerciales"},
+    {"id": "administration_ventes", "label": "Administration des ventes (ADV)"},
+    {"id": "controle_gestion", "label": "Contrôle de gestion et marge"},
+    {"id": "offre_cloud", "label": "Expertise offre Cloud et logiciels"},
+    {"id": "offre_materiel", "label": "Expertise offre matériel"}
+  ],
+  "staffing": {"skill_weight": 0.7, "availability_weight": 0.3, "top_n": 3, "default_horizon_days": 30,
+               "status": "a_valider"},
+  "agents": ["analyst", "prediction", "alerting", "advisor", "planner", "staffing"],
   "tools": ["execute_sql", "render_kpi", "render_chart", "generate_report", "export_excel", "eia_kpi", "eia_forecast",
-            "eia_alert", "eia_recommendation", "eia_mission", "eia_notification"],
+            "eia_alert", "eia_recommendation", "eia_mission", "eia_notification", "eia_affectation"],
   "instructions": {
     "commun": "Équipe Sales. Les données sont fictives (entreprise Horizon Équipements). Montants en euros HT. Ne cite que des chiffres renvoyés par les outils ; signale toute limite des données.",
     "analyst": "Analyse le CA, la marge, l'atteinte des objectifs par région et par catégorie, le pipeline et les clients inactifs. Compare chaque mois au même mois de l'année précédente (forte saisonnalité : creux en août, pic en décembre).",
     "prediction": "Prévois le CA, la marge et le nombre de commandes sur 3 mois. La saisonnalité annuelle est forte ; seuls 24 mois d'historique sont disponibles.",
     "alerting": "Applique les règles SAL_R01 à SAL_R09. Toutes sont à valider par la Direction commerciale : indique-le dans chaque alerte.",
     "advisor": "Propose des actions commerciales internes (relance de clients, priorisation du pipeline, réallocation marketing, plan régional). Aucune action externe sans validation. N'estime un gain que s'il se calcule à partir des données fournies.",
-    "planner": "Responsables proposés par rôle : Direction commerciale, responsable régional, Direction marketing, équipe ADV. Échéances en jours ; KPI de réussite choisis parmi les KPI de l'équipe."
+    "planner": "Responsables proposés par rôle : Direction commerciale, responsable régional, Direction marketing, équipe ADV. Échéances en jours ; KPI de réussite choisis parmi les KPI de l'équipe. Pour chaque tâche, indique les compétences requises (référentiel skills, niveau 1 à 5) et une charge estimée en heures.",
+    "staffing": "Propose des personnes pour chaque tâche à partir du classement calculé par l'outil d'affectation (compétences, charge, disponibilité). Explique le choix et les lacunes de compétences. N'utilise que des critères professionnels. Aucune affectation n'est effective sans confirmation d'un responsable."
   },
   "validation_policy": {"mission_requires_validation": true, "recommendation_selection": "utilisateur",
                         "validators": ["proprietaire_equipe", "AI_STUDIO_TEAM_ADMINS"], "external_actions": "interdit"}

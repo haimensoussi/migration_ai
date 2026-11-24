@@ -46,6 +46,11 @@ class TeamConfig:
     forecast: dict = field(default_factory=dict)
     version: str = ""
     notifications: dict = field(default_factory=dict)   # canal d'envoi des alertes (facultatif, validé par l'équipe)
+    skills: list = field(default_factory=list)          # référentiel de compétences (id, label) pour l'affectation
+    staffing: dict = field(default_factory=dict)        # pondérations de l'affectation (compétences / disponibilité)
+
+    def skill_ids(self) -> set[str]:
+        return {s["id"] for s in self.skills}
 
     def kpi(self, kpi_id: str) -> dict:
         for k in self.kpis:
@@ -156,6 +161,33 @@ def validate(d: dict, data_scope: tuple[str, str, str] | None = None, known_tool
     if vp.get("external_actions") not in ("interdit", "sur_validation"):
         issues.append("validation_policy.external_actions : interdit | sur_validation")
     issues += _validate_notifications(d.get("notifications"))
+    issues += _validate_staffing(d.get("skills"), d.get("staffing"))
+    return issues
+
+
+SKILL_ID = re.compile(r"^[a-z][a-z0-9_]{1,40}$")
+
+
+def _validate_staffing(skills: Any, staffing: Any) -> list[str]:
+    issues: list[str] = []
+    if skills is not None:
+        if not isinstance(skills, list):
+            return ["skills : liste attendue"]
+        ids = [s.get("id") for s in skills if isinstance(s, dict)]
+        if len(ids) != len(skills) or any(not SKILL_ID.match(str(i)) for i in ids):
+            issues.append("skills : identifiants invalides (minuscules, chiffres, _)")
+        if len(set(ids)) != len(ids):
+            issues.append("skills : identifiants en double")
+        if any(not s.get("label") for s in skills if isinstance(s, dict)):
+            issues.append("skills : libellé manquant")
+    if staffing is not None:
+        w1, w2 = staffing.get("skill_weight"), staffing.get("availability_weight")
+        if not all(isinstance(w, (int, float)) and 0 <= w <= 1 for w in (w1, w2)) or abs((w1 or 0) + (w2 or 0) - 1) > 1e-9:
+            issues.append("staffing : skill_weight et availability_weight entre 0 et 1, de somme 1")
+        if staffing.get("status") not in RULE_STATUSES:
+            issues.append("staffing.status : a_valider | valide | desactive")
+        if not skills:
+            issues.append("staffing sans référentiel skills")
     return issues
 
 
@@ -190,7 +222,8 @@ def from_dict(d: dict, data_scope: tuple[str, str, str] | None = None, known_too
     if issues:
         raise TeamConfigError("Configuration d'équipe invalide : " + " ; ".join(issues))
     return TeamConfig(**{k: d[k] for k in REQUIRED}, forecast=d.get("forecast") or {}, version=str(d.get("version", "")),
-                      notifications=d.get("notifications") or {})
+                      notifications=d.get("notifications") or {}, skills=d.get("skills") or [],
+                      staffing=d.get("staffing") or {})
 
 
 def load(team_id: str, base_dir: str | None = None, data_scope: tuple[str, str, str] | None = None,

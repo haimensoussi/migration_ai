@@ -39,8 +39,18 @@ TABLES: dict[str, tuple[tuple[str, ...], tuple[str, ...], dict[str, str]]] = {
                       "updated_at": "ts"}),
     "eia_mission_tasks": (("mission_id", "task_id"), ("mission_id", "task_id", "title", "owner", "due_date",
                                                       "deliverable", "depends_on", "status", "updated_by",
-                                                      "updated_at"),
-                          {"depends_on": "j", "updated_at": "ts"}),
+                                                      "updated_at", "required_skills", "estimated_hours"),
+                          {"depends_on": "j", "updated_at": "ts", "required_skills": "j", "estimated_hours": "i"}),
+    "eia_people": (("person_id",), ("person_id", "team_id", "full_name", "email", "job_title", "department", "region",
+                                    "capacity_hours_week", "availability_pct", "status", "source", "updated_at"),
+                   {"capacity_hours_week": "i", "availability_pct": "i", "updated_at": "ts"}),
+    "eia_person_skills": (("person_id", "skill"), ("person_id", "skill", "level", "assessed_by", "updated_at"),
+                          {"level": "i", "updated_at": "ts"}),
+    "eia_assignments": (("assignment_id",), ("assignment_id", "mission_id", "task_id", "person_id", "rank", "score",
+                                             "skill_score", "availability_score", "rationale", "gaps", "status",
+                                             "proposed_by", "proposed_at", "decided_by", "decided_at"),
+                        {"rank": "i", "score": "d", "skill_score": "d", "availability_score": "d", "gaps": "j",
+                         "proposed_at": "ts", "decided_at": "ts"}),
     "eia_events": (("event_id",), ("event_id", "object_type", "object_id", "event_type", "actor", "payload",
                                    "created_at"), {"payload": "j", "created_at": "ts"}),
 }
@@ -316,7 +326,8 @@ class EiaRepository:
             self.s.insert("eia_mission_tasks", {
                 "mission_id": mid, "task_id": x.get("id") or new_id("mt"), "title": x["title"], "owner": x.get("owner", ""),
                 "due_date": x.get("due_date"), "deliverable": x.get("deliverable", ""),
-                "depends_on": _j(x.get("depends_on") or []), "status": "a_faire", "updated_by": user, "updated_at": t})
+                "depends_on": _j(x.get("depends_on") or []), "status": "a_faire", "updated_by": user, "updated_at": t,
+                "required_skills": _j(x.get("required_skills") or []), "estimated_hours": x.get("estimated_hours")})
         self.log("mission", mid, "brouillon", user, {"reco_id": m["recommendation_id"], "tasks": len(tasks)})
         return mid
 
@@ -342,6 +353,7 @@ class EiaRepository:
         rows = self.s.find("eia_mission_tasks", {"mission_id": mission_id}, "task_id", desc=False, limit=500)
         for r in rows:
             r["depends_on"] = _load(r.get("depends_on"), [])
+            r["required_skills"] = _load(r.get("required_skills"), [])
         return rows
 
     def set_task_status(self, mission_id: str, task_id: str, status: str, user: str) -> None:
@@ -355,3 +367,94 @@ class EiaRepository:
         self.s.update("eia_mission_tasks", {"mission_id": mission_id, "task_id": task_id},
                       {"status": status, "updated_by": user, "updated_at": self.clock()})
         self.log("task", task_id, status, user, {"mission_id": mission_id})
+
+    # ---- personnel et affectations ----
+    def upsert_person(self, p: dict, skills: dict[str, int], actor: str) -> None:
+        """Crée ou met à jour une personne et ses compétences (niveau 1 à 5)."""
+        bad = {s: lv for s, lv in skills.items() if not isinstance(lv, int) or not 1 <= lv <= 5}
+        if bad:
+            raise ContractError(f"Niveaux de compétence invalides (1 à 5) : {bad}")
+        t = self.clock()
+        row = {k: p.get(k) for k in TABLES["eia_people"][1] if k in p}
+        row["updated_at"] = t
+        if self.s.get("eia_people", {"person_id": p["person_id"]}):
+            self.s.update("eia_people", {"person_id": p["person_id"]}, {k: v for k, v in row.items() if k != "person_id"})
+        else:
+            self.s.insert("eia_people", row)
+        for skill, level in skills.items():
+            key = {"person_id": p["person_id"], "skill": skill}
+            if self.s.get("eia_person_skills", key):
+                self.s.update("eia_person_skills", key, {"level": level, "assessed_by": actor, "updated_at": t})
+            else:
+                self.s.insert("eia_person_skills", {**key, "level": level, "assessed_by": actor, "updated_at": t})
+
+    def people(self, team_id: str, active_only: bool = True) -> list[dict]:
+        where: dict[str, Any] = {"team_id": team_id, **({"status": "actif"} if active_only else {})}
+        rows = self.s.find("eia_people", where, "person_id", desc=False, limit=2000)
+        ids = [r["person_id"] for r in rows]
+        skills: dict[str, dict[str, int]] = {}
+        for i in range(0, len(ids), 200):
+            for s in self.s.find("eia_person_skills", {"person_id": ids[i:i + 200]}, limit=20000):
+                skills.setdefault(s["person_id"], {})[s["skill"]] = int(s["level"])
+        for r in rows:
+            r["skills"] = skills.get(r["person_id"], {})
+        return rows
+
+    def workload_hours(self, person_ids: list[str]) -> dict[str, int]:
+        """Heures des tâches ouvertes déjà confirmées pour chaque personne."""
+        load = {p: 0 for p in person_ids}
+        if not person_ids:
+            return load
+        conf = self.s.find("eia_assignments", {"person_id": person_ids, "status": "confirmee"}, limit=20000)
+        for a in conf:
+            t = self.s.get("eia_mission_tasks", {"mission_id": a["mission_id"], "task_id": a["task_id"]})
+            if t and t["status"] in ("a_faire", "en_cours", "bloque"):
+                load[a["person_id"]] += int(t.get("estimated_hours") or 0)
+        return load
+
+    def propose_assignments(self, mission_id: str, task_id: str, candidates: list[dict], proposer: str) -> list[str]:
+        """Enregistre les candidats classés (statut proposée) ; les propositions précédentes non décidées sont annulées."""
+        if not self.s.get("eia_mission_tasks", {"mission_id": mission_id, "task_id": task_id}):
+            raise ContractError(f"Tâche inconnue : {task_id}")
+        if self.s.find("eia_assignments", {"task_id": task_id, "status": "confirmee"}, limit=1):
+            raise ContractError("Une affectation est déjà confirmée pour cette tâche")
+        for old in self.s.find("eia_assignments", {"task_id": task_id, "status": "proposee"}, limit=100):
+            self.s.update("eia_assignments", {"assignment_id": old["assignment_id"]}, {"status": "annulee"})
+        t, ids = self.clock(), []
+        for rank, cnd in enumerate(candidates, 1):
+            aid = new_id("as")
+            self.s.insert("eia_assignments", {
+                "assignment_id": aid, "mission_id": mission_id, "task_id": task_id, "person_id": cnd["person_id"],
+                "rank": rank, "score": cnd["score"], "skill_score": cnd["skill_score"],
+                "availability_score": cnd["availability_score"], "rationale": cnd["rationale"][:2000],
+                "gaps": _j(cnd.get("gaps") or []), "status": "proposee", "proposed_by": proposer, "proposed_at": t})
+            ids.append(aid)
+        self.log("task", task_id, "affectation_proposee", proposer, {"mission_id": mission_id, "candidats": len(ids)})
+        return ids
+
+    def assignments(self, task_id: str) -> list[dict]:
+        rows = self.s.find("eia_assignments", {"task_id": task_id}, "rank", desc=False, limit=100)
+        for r in rows:
+            r["gaps"] = _load(r.get("gaps"), [])
+        return rows
+
+    def decide_assignment(self, assignment_id: str, status: str, user: str) -> None:
+        """Confirmation ou refus par un responsable identifié ; la confirmation nécessite une mission validée."""
+        cur = self.s.get("eia_assignments", {"assignment_id": assignment_id})
+        if not cur:
+            raise ContractError(f"Affectation inconnue : {assignment_id}")
+        check_transition("assignment", cur["status"], status, user)
+        if status == "confirmee":
+            m = self.s.get("eia_missions", {"mission_id": cur["mission_id"]})
+            if not m or m["status"] not in ("validee", "en_cours"):
+                raise ContractError("Une affectation ne peut être confirmée que sur une mission validée")
+        t = self.clock()
+        self.s.update("eia_assignments", {"assignment_id": assignment_id},
+                      {"status": status, "decided_by": user, "decided_at": t})
+        if status == "confirmee":
+            for other in self.s.find("eia_assignments", {"task_id": cur["task_id"], "status": "proposee"}, limit=100):
+                self.s.update("eia_assignments", {"assignment_id": other["assignment_id"]}, {"status": "annulee"})
+            p = self.s.get("eia_people", {"person_id": cur["person_id"]}) or {}
+            self.s.update("eia_mission_tasks", {"mission_id": cur["mission_id"], "task_id": cur["task_id"]},
+                          {"owner": p.get("full_name") or cur["person_id"], "updated_by": user, "updated_at": t})
+        self.log("assignment", assignment_id, status, user, {"task_id": cur["task_id"], "person_id": cur["person_id"]})

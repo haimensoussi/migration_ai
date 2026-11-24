@@ -320,6 +320,23 @@ TOOLS += [
              requires_confirmation=False),
 ]
 
+# EIA (Enterprise Intelligence Agents) : KPI, prévisions et agent RH d'affectation, en lecture seule.
+from tools.eia_kpi_tools import EIA_KPI_TOOLS  # noqa: E402
+from tools.eia_staff_tools import EIA_STAFF_TOOLS  # noqa: E402
+
+TOOLS += EIA_KPI_TOOLS + EIA_STAFF_TOOLS
+
+EIA_INSTRUCTIONS = """
+
+Copilotage métier (EIA) - équipe sales (données fictives Horizon Équipements) :
+- KPI : eia_kpi ; prévisions : eia_forecast. Cite uniquement les valeurs renvoyées, avec leur période ; une
+  prévision non fiable n'est jamais présentée comme une certitude. Les seuils d'alerte sont à valider.
+- Agent RH : eia_personnel (personnel, compétences, charge) et eia_affectation (classement des personnes pour une
+  tâche). Choisis les compétences dans le référentiel de l'équipe, cite scores, lacunes et justifications tels quels.
+  N'utilise que des critères professionnels. eia_affectation est une simulation : aucune affectation n'est
+  enregistrée ni effective sans la décision d'un responsable. Le personnel est fictif.
+"""
+
 INSTRUCTIONS = f"""Tu es {NAME}, {PERSONA} DISCOVERY (SNCF Réseau). Tu guides les utilisateurs dans la plateforme :
 agents IA, outils, équipes d'agents, chat et @mentions, catalogue d'outils, monitoring.
 
@@ -475,7 +492,7 @@ Règles :
 
 def config(model_endpoint: str) -> AgentConfig:
     return AgentConfig(agent_id=AGENT_ID, version=1, name=NAME, model_endpoint=model_endpoint,
-                       instructions=INSTRUCTIONS, tool_ids=[t.tool_id for t in TOOLS], temperature=0.1,
+                       instructions=INSTRUCTIONS + EIA_INSTRUCTIONS, tool_ids=[t.tool_id for t in TOOLS], temperature=0.1,
                        max_iterations=12)   # 12 : explorer, concevoir, vérifier, corriger, revérifier, enregistrer
 
 
