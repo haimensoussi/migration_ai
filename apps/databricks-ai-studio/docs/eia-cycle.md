@@ -27,11 +27,11 @@ l'équipe ou vient de l'extérieur (données, documents, décisions humaines), e
 | Statut | Modèles |
 | --- | --- |
 | disponible | AG01 Data Intelligence 1.0, AG03 Strategic Intelligence 1.0, AG06 Team Manager 1.0 |
-| partiel | AG04 Execution & Automation 0.5, AG05 Learning & Improvement 0.5, AG08 Monitoring & Governance 0.5 |
-| squelette (contrat et paramètres, sans code) | AG07 Knowledge & Context, AG09 Engineering & Builder, AG10 Enterprise Architect, AG11 Simulation & Scenario |
+| partiel | AG04 Execution & Automation 0.5, AG05 Learning & Improvement 0.5, AG08 Monitoring & Governance 0.5, AG09 Engineering & Builder 0.5, AG10 Enterprise Architect 0.5 |
+| squelette (contrat et paramètres, sans code) | AG07 Knowledge & Context, AG11 Simulation & Scenario |
 
-Compositions de référence : équipe métier AG01, AG03, AG06, AG04, AG05, AG08 (Sales) ; EIA Factory AG01,
-AG10, AG09, AG08 (cohérente, en attente des modèles squelettes).
+Compositions de référence : équipe métier AG01, AG03, AG06, AG04, AG05, AG08 (Sales) ; équipe de surveillance
+AG01, AG08 ; EIA Factory AG01, AG10, AG09, AG08 (opérationnelle).
 
 | Rôle technique | Catégorie | Étape de la boucle |
 | --- | --- | --- |
@@ -166,8 +166,7 @@ restent à vérifier. Une disponibilité partielle peut apparaître dans les can
   nécessitent un contrôle/reprise technique. Ce lot ne garantit pas l'exactly-once concurrent.
 * Aucun nouvel appel Power Automate : les notifications externes restent dans le moteur d'alerting existant,
   sous sa configuration validée. Aucun destinataire ni déclencheur externe n'est inventé.
-* Les nouvelles pages Streamlit Missions/Notifications ne sont pas ajoutées ici : les actions sont exposées
-  dans HAKIM et le catalogue, côté source. Pas de commit, push ou déploiement dans ce lot.
+* Pages Streamlit : Copilotage EIA (Missions, Notifications) et EIA Factory (Catalogue d'agents, Team Builder).
 
 ## Recette
 
