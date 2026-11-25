@@ -21,8 +21,8 @@ def test_ten_models_cover_eleven_categories_with_ag02_merged():
             assert meta["statut"] == am.MODELS[code].status, code
     status = {c: m.status for c, m in am.MODELS.items()}
     assert [c for c, s in status.items() if s == "disponible"] == ["AG01", "AG03", "AG06"]
-    assert [c for c, s in status.items() if s == "partiel"] == ["AG04", "AG05", "AG08"]
-    assert [c for c, s in status.items() if s == "squelette"] == ["AG07", "AG09", "AG10", "AG11"]
+    assert [c for c, s in status.items() if s == "partiel"] == ["AG04", "AG05", "AG08", "AG09", "AG10"]
+    assert [c for c, s in status.items() if s == "squelette"] == ["AG07", "AG11"]
 
 
 @pytest.mark.parametrize("code", sorted(am.MODELS))
@@ -48,8 +48,8 @@ def test_every_model_follows_common_contract(code):
 
 def test_reference_compositions_are_coherent():
     assert am.check_composition(list(am.BUSINESS_TEAM)) == []
-    assert am.check_composition(list(am.FACTORY_TEAM), allow_skeleton=True) == []
-    assert any("squelette" in x for x in am.check_composition(list(am.FACTORY_TEAM)))
+    assert am.check_composition(list(am.FACTORY_TEAM)) == []          # EIA Factory opérationnelle (AG09, AG10)
+    assert any("squelette" in x for x in am.check_composition(["AG01", "AG03", "AG11"]))
 
 
 def test_composition_errors_detected():
@@ -69,9 +69,9 @@ def test_sales_is_built_from_framework_without_issue():
 def test_team_config_rejects_incoherent_models():
     cf = load("sales")
     data = {name: copy.deepcopy(getattr(cf, name)) for name in cf.__dataclass_fields__}
-    data["models"] = ["AG03", "AG10"]
+    data["models"] = ["AG03", "AG07"]
     issues = validate(data)
-    assert any("entrée alertes" in x for x in issues) and any("AG10 n'est pas encore opérationnel" in x for x in issues)
+    assert any("entrée alertes" in x for x in issues) and any("AG07 n'est pas encore opérationnel" in x for x in issues)
     data["models"] = []
     assert any("liste non vide" in x for x in validate(data))
 

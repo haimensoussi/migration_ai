@@ -104,8 +104,12 @@ st.info("**Prochaine action** : " + T.next_action(steps)
         + (f" — {pending} élément(s) en attente de votre décision." if pending else ""))
 for warning in svc.coherence(items):
     st.warning(warning)
-if st.button("Continuer avec HakimAI", type="primary"):
+b1, b2 = st.columns(2)
+if b1.button("Continuer avec HakimAI", type="primary", use_container_width=True):
     st.switch_page("views/hakim.py")
+if b2.button("Générer une équipe EIA (Team Builder)", use_container_width=True, disabled=not plan.get("discovery"),
+             help="Réutilise la découverte de ce plan : architecture d'équipe, contrôles AG08 et recette"):
+    st.switch_page("views/team_builder.py")
 
 t_disc, t_opp, t_arch, t_dep = st.tabs([f"{n}. {ph['libelle']}" for n, ph in enumerate(phases, 1)])
 t1 = t2 = t3 = t_disc

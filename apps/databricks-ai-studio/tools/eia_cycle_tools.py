@@ -6,16 +6,20 @@ jamais un utilisateur fourni par le modèle. Les autorisations de stockage reste
 from __future__ import annotations
 
 from backend import config as app_config
+from backend.eia import console
 from backend.eia import engine
+from backend.eia.contracts import ContractError
 from backend.eia import store as st
 from backend.eia import team_config as tc
 from backend.eia.adapters import SqlKpiSource
 from backend.tool_registry import ToolContext, ToolError, ToolSpec
 
 
-def _team(team_id: str) -> tc.TeamConfig:
+def _team(team_id: str, ctx: ToolContext | None = None) -> tc.TeamConfig:
+    """Équipe versionnée (config/teams) ou équipe mise en service par le Team Builder."""
+    from backend.eia import team_builder as tb
     try:
-        return tc.load(team_id, data_scope=app_config.data_scope())
+        return tb.resolve(team_id, _repo(ctx) if ctx is not None else None, app_config.data_scope())
     except tc.TeamConfigError as e:
         raise ToolError(str(e)) from e
 
@@ -26,7 +30,7 @@ def _repo(ctx: ToolContext) -> st.EiaRepository:
 
 
 def eia_apercu_cycle(ctx: ToolContext, team_id: str) -> dict:
-    cfg = _team(team_id)
+    cfg = _team(team_id, ctx)
     real = _repo(ctx)
     memory = st.EiaRepository(st.MemoryEiaStore())
     # Lectures RH différées à l'étape staffing : un refus de lecture devient une erreur d'étape,
@@ -40,45 +44,28 @@ def eia_apercu_cycle(ctx: ToolContext, team_id: str) -> dict:
 
 def eia_cycle(ctx: ToolContext, team_id: str) -> dict:
     engine._human(ctx.user_email)
-    out = engine.run_cycle(_team(team_id), SqlKpiSource(ctx.sql), _repo(ctx), actor=ctx.user_email)
+    out = engine.run_cycle(_team(team_id, ctx), SqlKpiSource(ctx.sql), _repo(ctx), actor=ctx.user_email)
     out["persistant"] = True
     return out
 
 
 def eia_preparer_mission(ctx: ToolContext, team_id: str, recommendation_id: str) -> dict:
-    return engine.prepare_mission(_team(team_id), _repo(ctx), recommendation_id, ctx.user_email,
+    return engine.prepare_mission(_team(team_id, ctx), _repo(ctx), recommendation_id, ctx.user_email,
                                   source=SqlKpiSource(ctx.sql))
 
 
 def eia_bilan_mission(ctx: ToolContext, team_id: str, mission_id: str) -> dict:
-    return engine.learn_mission(_team(team_id), _repo(ctx), SqlKpiSource(ctx.sql), mission_id)
+    return engine.learn_mission(_team(team_id, ctx), _repo(ctx), SqlKpiSource(ctx.sql), mission_id)
 
 
 def eia_suivi_mission(ctx: ToolContext, team_id: str, mission_id: str, objet: str, statut: str,
                      task_id: str = "", assignment_id: str = "") -> dict:
-    """Décision confirmée par le runtime. Vérifie équipe, appartenance et transitions avant toute écriture."""
-    cfg, repo = _team(team_id), _repo(ctx)
-    engine._human(ctx.user_email)
-    mission = repo.s.get("eia_missions", {"mission_id": mission_id, "team_id": cfg.team_id})
-    if not mission:
-        raise ToolError("Mission inconnue ou appartenant à une autre équipe")
-    if objet == "mission":
-        if statut == "terminee" and any(t["status"] not in ("fait", "annule") for t in repo.tasks(mission_id)):
-            raise ToolError("Impossible de clôturer : des tâches sont encore ouvertes")
-        repo.set_mission_status(mission_id, statut, ctx.user_email)
-    elif objet == "tache":
-        if not task_id:
-            raise ToolError("task_id obligatoire pour une tâche")
-        repo.set_task_status(mission_id, task_id, statut, ctx.user_email)
-    elif objet == "affectation":
-        row = repo.s.get("eia_assignments", {"assignment_id": assignment_id, "mission_id": mission_id})
-        if not row:
-            raise ToolError("Affectation inconnue ou appartenant à une autre mission")
-        repo.decide_assignment(assignment_id, statut, ctx.user_email)
-    else:
-        raise ToolError("objet : mission | tache | affectation")
-    return {"mission_id": mission_id, "objet": objet, "statut": statut, "decide_par": ctx.user_email,
-            "task_id": task_id, "assignment_id": assignment_id}
+    """Décision confirmée par le runtime ; même chemin que la page Missions (backend.eia.console.decide)."""
+    cfg = _team(team_id, ctx)
+    try:
+        return console.decide(_repo(ctx), cfg.team_id, ctx.user_email, mission_id, objet, statut, task_id, assignment_id)
+    except ContractError as e:
+        raise ToolError(str(e)) from e
 
 
 _TEAM = {"type": "string", "description": "Équipe métier configurée (ex. sales)"}

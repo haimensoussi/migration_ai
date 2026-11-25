@@ -82,7 +82,28 @@ Les droits Unity Catalog de l'utilisateur s'appliquent ; aucun usage implicite d
 L'identification de l'utilisateur et sa confirmation ne remplacent pas une matrice métier d'habilitation :
 les rôles autorisés et les droits d'écriture doivent être configurés par les responsables du projet.
 
-## Pages Missions et Notifications (en attente de déploiement)
+## EIA Factory : Catalogue d'Agents et Team Builder
+
+Catalogue (`backend/eia/agent_catalog.py`, page Catalogue d'agents, outil `eia_catalogue_agents`) : fiches des
+11 catégories et modèles d'équipe (équipe métier, équipe de surveillance, EIA Factory), dérivés du Framework.
+
+Team Builder (`backend/eia/team_builder.py`, page Team Builder, outils `eia_team_builder*`), trois phases fermées
+par un contrôle AG08 : découverte de la source (profil agrégé du Transformation Center, KPI candidats
+« à valider », colonnes clés, identifiants, sensibles et dates futures exclus) ; proposition d'architecture (AG10 :
+équipe de surveillance AG01 + AG08 sans règles métier, équipe métier si règles et plans d'action sont fournis ;
+aucun seuil inventé) ; déploiement (AG09 : recette en mémoire, ajustement des prévisions si une table a des mois
+manquants, brouillon versionné dans `eia_team_configs`). Mise en service et retrait : décision humaine, contrôles
+réussis obligatoires, une seule version en service par équipe. Une équipe en service est utilisable par les outils
+du cycle et les pages Missions et Notifications. Depuis Transformation, le bouton « Générer une équipe EIA »
+réutilise la découverte du plan.
+
+Recette réelle (pilote Marketing, 3 tables, 25/11/2026) : 10 KPI exploitables, 3 prévisions fiables après retrait
+de `data_campaign_results` (mois manquant entre 2024-11 et 2025-01), aucun KPI écarté, trois contrôles réussis.
+
+Limites : KPI candidats limités aux comptages et sommes mensuels ; sens et unités à valider (une somme peut ne pas
+avoir de sens métier, ex. score de satisfaction) ; pas de proposition de règles d'alerte ; AG07 et AG11 squelettes.
+
+## Pages Missions et Notifications
 
 Section « Copilotage EIA » de l'application, sous l'identité de l'utilisateur connecté (jeton transmis par
 Databricks Apps, droits Unity Catalog de l'utilisateur).

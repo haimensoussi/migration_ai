@@ -27,6 +27,14 @@ pages = {
         st.Page("views/assessment.py", title="Assessment Center", icon=":material/fact_check:"),
         st.Page("views/monitoring.py", title="Monitoring", icon=":material/monitoring:"),
     ],
+    "EIA Factory": [
+        st.Page("views/agent_catalog.py", title="Catalogue d'agents", icon=":material/category:"),
+        st.Page("views/team_builder.py", title="Team Builder", icon=":material/group_add:"),
+    ],
+    "Copilotage EIA": [
+        st.Page("views/missions.py", title="Missions", icon=":material/task_alt:"),
+        st.Page("views/notifications.py", title="Notifications", icon=":material/notifications:"),
+    ],
     "Administration": [
         st.Page("views/parametres.py", title="Paramètres", icon=":material/settings:"),
     ],

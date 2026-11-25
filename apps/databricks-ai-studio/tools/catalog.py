@@ -263,5 +263,6 @@ BUILTIN_TOOLS: list[ToolSpec] = [
 from tools.eia_kpi_tools import EIA_KPI_TOOLS  # noqa: E402
 from tools.eia_staff_tools import EIA_STAFF_TOOLS  # noqa: E402
 from tools.eia_cycle_tools import EIA_CYCLE_TOOLS  # noqa: E402
+from tools.eia_factory_tools import EIA_FACTORY_TOOLS  # noqa: E402
 
-BUILTIN_TOOLS += EIA_KPI_TOOLS + EIA_STAFF_TOOLS + EIA_CYCLE_TOOLS
+BUILTIN_TOOLS += EIA_KPI_TOOLS + EIA_STAFF_TOOLS + EIA_CYCLE_TOOLS + EIA_FACTORY_TOOLS

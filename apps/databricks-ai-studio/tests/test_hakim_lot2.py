@@ -11,7 +11,8 @@ ME, OTHER = "a@sncf.fr", "b@sncf.fr"
 REG = ToolRegistry(hakim.TOOLS)
 WRITES = {"creer_agent", "modifier_agent", "creer_outil", "tester_appel_http", "creer_equipe", "modifier_equipe",
           "soumettre_publication",
-          "archiver", "eia_cycle", "eia_preparer_mission", "eia_suivi_mission"}
+          "archiver", "eia_cycle", "eia_preparer_mission", "eia_suivi_mission",
+          "eia_team_builder_enregistrer", "eia_team_builder_decision"}
 
 
 class Sql:

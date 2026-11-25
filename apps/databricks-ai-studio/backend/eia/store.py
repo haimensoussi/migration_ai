@@ -53,6 +53,11 @@ TABLES: dict[str, tuple[tuple[str, ...], tuple[str, ...], dict[str, str]]] = {
                          "proposed_at": "ts", "decided_at": "ts"}),
     "eia_events": (("event_id",), ("event_id", "object_type", "object_id", "event_type", "actor", "payload",
                                    "created_at"), {"payload": "j", "created_at": "ts"}),
+    "eia_team_configs": (("config_id",), ("config_id", "team_id", "version", "status", "name", "models", "config",
+                                         "controls", "recette", "created_by", "created_at", "decided_by",
+                                         "decided_at"),
+                         {"models": "j", "config": "j", "controls": "j", "recette": "j", "created_at": "ts",
+                          "decided_at": "ts"}),
 }
 
 
@@ -458,3 +463,57 @@ class EiaRepository:
             self.s.update("eia_mission_tasks", {"mission_id": cur["mission_id"], "task_id": cur["task_id"]},
                           {"owner": p.get("full_name") or cur["person_id"], "updated_by": user, "updated_at": t})
         self.log("assignment", assignment_id, status, user, {"task_id": cur["task_id"], "person_id": cur["person_id"]})
+
+    # ---- équipes conçues par le Team Builder (EIA Factory) ----
+    TEAM_CONFIG_TRANSITIONS = {"brouillon": ("en_service", "retiree"), "en_service": ("retiree",), "retiree": ()}
+
+    def save_team_config(self, row: dict) -> str:
+        """Brouillon versionné (AG09). Toujours en brouillon : la mise en service est une décision distincte."""
+        user = row.get("created_by") or ""
+        if not user or user.startswith("agent:"):
+            raise ContractError("Enregistrement réservé à un utilisateur identifié")
+        cid = row.get("config_id") or new_id("tc")
+        self.s.insert("eia_team_configs", {
+            "config_id": cid, "team_id": row["team_id"], "version": row.get("version") or "0.1", "status": "brouillon",
+            "name": row.get("name") or row["team_id"], "models": _j(row.get("models") or []),
+            "config": _j(row["config"]), "controls": _j(row.get("controls") or {}), "recette": _j(row.get("recette") or {}),
+            "created_by": user, "created_at": self.clock()})
+        self.log("team_config", cid, "brouillon", user, {"team_id": row["team_id"]})
+        return cid
+
+    def _team_row(self, r: dict) -> dict:
+        for k, default in (("models", []), ("config", {}), ("controls", {}), ("recette", {})):
+            r[k] = _load(r.get(k), default)
+        return r
+
+    def team_configs(self, team_id: str | None = None, statuses: list[str] | None = None, limit: int = 100) -> list[dict]:
+        where = {**({"team_id": team_id} if team_id else {}), **({"status": statuses} if statuses else {})}
+        return [self._team_row(r) for r in self.s.find("eia_team_configs", where, "created_at", limit=limit)]
+
+    def team_config(self, config_id: str) -> dict | None:
+        r = self.s.get("eia_team_configs", {"config_id": config_id})
+        return self._team_row(r) if r else None
+
+    def team_config_in_service(self, team_id: str) -> dict | None:
+        rows = self.team_configs(team_id, ["en_service"], limit=1)
+        return rows[0] if rows else None
+
+    def set_team_config_status(self, config_id: str, status: str, user: str, blockers: list[str] | None = None) -> None:
+        """Mise en service ou retrait par un humain identifié ; une seule version en service par équipe."""
+        if not user or user.startswith("agent:"):
+            raise ContractError("Décision réservée à un utilisateur identifié")
+        cur = self.team_config(config_id)
+        if not cur:
+            raise ContractError(f"Configuration d'équipe inconnue : {config_id}")
+        if status not in self.TEAM_CONFIG_TRANSITIONS.get(cur["status"], ()):
+            raise ContractError(f"Transition interdite : {cur['status']} -> {status}")
+        if status == "en_service" and blockers:
+            raise ContractError("Mise en service impossible : " + " ; ".join(blockers))
+        t = self.clock()
+        if status == "en_service":
+            for other in self.team_configs(cur["team_id"], ["en_service"]):
+                self.s.update("eia_team_configs", {"config_id": other["config_id"]},
+                              {"status": "retiree", "decided_by": user, "decided_at": t})
+                self.log("team_config", other["config_id"], "retiree", user, {"remplacee_par": config_id})
+        self.s.update("eia_team_configs", {"config_id": config_id}, {"status": status, "decided_by": user, "decided_at": t})
+        self.log("team_config", config_id, status, user, {"team_id": cur["team_id"]})

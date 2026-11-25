@@ -218,7 +218,7 @@ def test_preview_via_registry_does_not_write_real_repo(monkeypatch):
     from tools import eia_cycle_tools as tools
     r = repo()
     before = copy.deepcopy(r.s.data)
-    monkeypatch.setattr(tools, "_team", lambda team_id: cfg())
+    monkeypatch.setattr(tools, "_team", lambda team_id, ctx=None: cfg())
     monkeypatch.setattr(tools, "_repo", lambda ctx: r)
     monkeypatch.setattr(tools, "SqlKpiSource", lambda sql: Source())
     reg = ToolRegistry(tools.EIA_CYCLE_TOOLS)
@@ -232,7 +232,7 @@ def test_tracking_tool_rejects_closure_with_open_tasks(monkeypatch):
     from tools import eia_cycle_tools as tools
     r, out = run()
     mid = draft(r, out)["mission_id"]
-    monkeypatch.setattr(tools, "_team", lambda team_id: cfg())
+    monkeypatch.setattr(tools, "_team", lambda team_id, ctx=None: cfg())
     monkeypatch.setattr(tools, "_repo", lambda ctx: r)
     ctx = ToolContext(sql=None, workspace=None, user_email=USER)
     with pytest.raises(ToolError):

@@ -326,7 +326,8 @@ from tools.eia_staff_tools import EIA_STAFF_TOOLS  # noqa: E402
 
 from tools.eia_cycle_tools import EIA_CYCLE_TOOLS  # noqa: E402
 
-TOOLS += EIA_KPI_TOOLS + EIA_STAFF_TOOLS + EIA_CYCLE_TOOLS
+from tools.eia_factory_tools import EIA_FACTORY_TOOLS  # noqa: E402
+TOOLS += EIA_KPI_TOOLS + EIA_STAFF_TOOLS + EIA_CYCLE_TOOLS + EIA_FACTORY_TOOLS
 
 EIA_INSTRUCTIONS = """
 
@@ -349,6 +350,13 @@ Copilotage métier (EIA) - équipe sales (données fictives Horizon Équipements
   quelle recommandation il choisit ; appelle eia_preparer_mission uniquement après sélection explicite.
   Ne lance jamais eia_suivi_mission pour valider, confirmer ou clôturer à ta propre initiative. Chaque décision
   requiert une demande explicite et une confirmation distincte. N'utilise pas les identifiants temporaires de l'aperçu.
+- EIA Factory (tu es la méta-équipe qui projette des équipes d'agents) : eia_catalogue_agents décrit les
+  catégories AG01-AG11 et les modèles d'équipe. eia_team_builder (lecture seule) suit les trois phases
+  découverte de la source -> proposition d'architecture -> déploiement en recette ; présente chaque contrôle
+  AG08, ses bloquants et la liste « à valider ». Les KPI candidats sont des constats statistiques, pas des
+  exigences métier. Sans règles ni plans d'action métier, l'équipe proposée est une équipe de surveillance :
+  ne propose jamais de seuil. eia_team_builder_enregistrer crée un brouillon après confirmation ;
+  eia_team_builder_decision (mise en service, retrait) seulement sur décision explicite de l'utilisateur.
 - LEARN : eia_bilan_mission compare après clôture les KPI à la référence figée, sans conclure à une causalité.
   Les périodes inchangées ne prouvent pas une amélioration. Aucun seuil ni plan d'action n'est modifié automatiquement.
   Aucun outil du cycle n'envoie de notification Power Automate ni n'effectue une action commerciale externe.

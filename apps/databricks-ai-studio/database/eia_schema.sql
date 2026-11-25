@@ -181,3 +181,21 @@ CREATE TABLE IF NOT EXISTS dataops_dev.ai_studio.eia_assignments (
   CONSTRAINT eia_assignments_pk PRIMARY KEY (assignment_id),
   CONSTRAINT eia_assignments_person_fk FOREIGN KEY (person_id) REFERENCES dataops_dev.ai_studio.eia_people
 ) COMMENT 'EIA : affectations proposées et décidées (aucune affectation sans décision humaine)';
+
+-- Grain : 1 ligne par version de configuration d'équipe conçue par le Team Builder (EIA Factory). Clé : config_id.
+CREATE TABLE IF NOT EXISTS dataops_dev.ai_studio.eia_team_configs (
+  config_id STRING NOT NULL COMMENT 'Identifiant (tc_ + 12 hex)',
+  team_id STRING NOT NULL COMMENT 'Équipe générée (hors config/teams versionnées)',
+  version STRING NOT NULL,
+  status STRING NOT NULL COMMENT 'brouillon | en_service | retiree (une seule version en service par équipe)',
+  name STRING NOT NULL,
+  models STRING COMMENT 'JSON : codes AG de la composition',
+  config STRING NOT NULL COMMENT 'JSON : configuration d''équipe conforme à team_config',
+  controls STRING COMMENT 'JSON : contrôles de passage AG08, justification, éléments à valider',
+  recette STRING COMMENT 'JSON : résultat de la recette en aperçu',
+  created_by STRING NOT NULL COMMENT 'Utilisateur ayant enregistré le brouillon',
+  created_at TIMESTAMP NOT NULL,
+  decided_by STRING COMMENT 'Utilisateur ayant mis en service ou retiré',
+  decided_at TIMESTAMP,
+  CONSTRAINT eia_team_configs_pk PRIMARY KEY (config_id)
+) COMMENT 'EIA Factory : équipes conçues par le Team Builder (mise en service par décision humaine)';

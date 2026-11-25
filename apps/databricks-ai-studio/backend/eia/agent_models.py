@@ -39,9 +39,9 @@ CATEGORIES: dict[str, dict] = {
              "fonctions": "Recherche documentaire, RAG, contextualisation et gestion des connaissances"},
     "AG08": {"nom": "Monitoring & Governance Agent", "statut": "partiel",
              "fonctions": "Surveillance, alerting, qualité, conformité, contrôle et traçabilité"},
-    "AG09": {"nom": "Engineering & Builder Agent", "statut": "squelette",
+    "AG09": {"nom": "Engineering & Builder Agent", "statut": "partiel",
              "fonctions": "Conception, développement et tests des agents, outils et workflows"},
-    "AG10": {"nom": "Enterprise Architect Agent", "statut": "squelette",
+    "AG10": {"nom": "Enterprise Architect Agent", "statut": "partiel",
              "fonctions": "Découverte de l'entreprise, identification des opportunités IA, conception de l'architecture EIA"},
     "AG11": {"nom": "Simulation & Scenario Agent", "statut": "squelette",
              "fonctions": "Simulations What-If, scénarios, analyse de sensibilité et évaluation des impacts"},
@@ -310,22 +310,28 @@ AG07 = AgentModel(
 )
 
 AG09 = AgentModel(
-    code="AG09", version="0.1", functions=("construire_equipe", "tester_equipe"), status="squelette",
-    usage="Team Builder, phase 3 : après validation humaine de l'architecture.",
-    params=(ParamSpec("build.target_status", "texte", "metier", "Statut cible des brouillons (brouillon par défaut)",
-                      default="brouillon"),),
+    code="AG09", version="0.5", functions=("tester_equipe", "ajuster_equipe", "construire_equipe"), status="partiel",
+    usage="Team Builder, phase 3 : recette en aperçu de l'architecture proposée, puis brouillon versionné.",
+    params=(ParamSpec("team_builder.max_forecasts", "entier", "donnees",
+                      "Prévisions retenues au plus après ajustement de recette", default=3),),
     inputs=("architecture_equipe",), outputs=("configuration_equipe",),
-    guardrails=("Produit des brouillons ; ne publie ni ne donne de droits",),
-    missing="Génération de la configuration d'équipe, tests et demande de mise en service",
+    entrypoints=("backend.eia.team_builder:recette", "backend.eia.team_builder:adjust",
+                 "backend.eia.team_builder:build"),
+    guardrails=("Produit des brouillons ; la mise en service est une décision humaine après contrôles AG08 réussis",
+                "Ne publie ni ne donne de droits ; recette sans écriture"),
+    missing="Génération d'outils, de flux et de tableaux de bord ; tests de non-régression automatisés par équipe",
 )
 
 AG10 = AgentModel(
-    code="AG10", version="0.1", functions=("cadrage", "opportunites", "architecture"), status="squelette",
-    usage="Team Builder, phases 1 et 2 : après découverte des sources par AG01.",
-    params=(ParamSpec("discovery.objectives", "liste", "metier", "Objectifs de l'entreprise issus du cadrage"),),
+    code="AG10", version="0.5", functions=("kpi_candidats", "architecture"), status="partiel",
+    usage="Team Builder, phases 1 et 2 : après découverte des sources (profil du Transformation Center).",
+    params=(ParamSpec("team_builder.max_kpis", "entier", "donnees", "KPI retenus au plus par équipe proposée",
+                      default=12),),
     inputs=("observations",), optional_inputs=("contexte",), outputs=("architecture_equipe",),
-    guardrails=("Propose une architecture ; tout élément métier reste « à valider »",),
-    missing="Reprise des étapes cadrage, cartographie, diagnostic et cible du Transformation Center",
+    entrypoints=("backend.eia.team_builder:kpi_candidates", "backend.eia.team_builder:design"),
+    guardrails=("Propose une architecture ; tout élément métier reste « à valider »",
+                "Sans règles ni plans d'action fournis par le métier : équipe de surveillance, aucun seuil inventé"),
+    missing="Opportunités IA et cible du Transformation Center ; règles d'alerte proposées à partir de l'historique",
 )
 
 AG11 = AgentModel(

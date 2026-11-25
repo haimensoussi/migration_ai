@@ -7,7 +7,7 @@ from tools.common import split_name
 
 def test_catalog_contracts():
     ids = [t.tool_id for t in BUILTIN_TOOLS]
-    assert len(ids) == len(set(ids)) == 28   # 19 outils existants + 4 outils KPI/RH + 5 outils du cycle EIA
+    assert len(ids) == len(set(ids)) == 32   # 19 existants + 4 KPI/RH + 5 cycle EIA + 4 EIA Factory
     assert {"eia_apercu_cycle", "eia_cycle", "eia_preparer_mission", "eia_suivi_mission", "eia_bilan_mission"} <= set(ids)
     for t in BUILTIN_TOOLS:
         assert t.input_schema["type"] == "object"
