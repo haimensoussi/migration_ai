@@ -12,17 +12,15 @@ from tests.test_eia_cycle import Source, cfg, repo, TODAY, USER
 from backend.eia import engine as e
 
 
-def test_ten_models_cover_eleven_categories_with_ag02_merged():
-    assert sorted(am.MODELS) == [f"AG{i:02d}" for i in range(1, 12) if i != 2]
+def test_ten_models_cover_ten_official_categories():
+    assert sorted(am.MODELS) == sorted(am.CATEGORIES) == [f"AG{i:02d}" for i in range(1, 11)]
     for code, meta in am.CATEGORIES.items():
-        if code == "AG02":
-            assert code not in am.MODELS and meta["fusionne_dans"] == "AG01"
-        else:
-            assert meta["statut"] == am.MODELS[code].status, code
+        assert meta["statut"] == am.MODELS[code].status, code
     status = {c: m.status for c, m in am.MODELS.items()}
-    assert [c for c, s in status.items() if s == "disponible"] == ["AG01", "AG03", "AG06"]
+    assert [c for c, s in status.items() if s == "disponible"] == ["AG01", "AG02", "AG03", "AG06"]
     assert [c for c, s in status.items() if s == "partiel"] == ["AG04", "AG05", "AG08", "AG09", "AG10"]
-    assert [c for c, s in status.items() if s == "squelette"] == ["AG07", "AG11"]
+    assert [c for c, s in status.items() if s == "squelette"] == ["AG07"]
+    assert "AG11" not in am.CATEGORIES
 
 
 @pytest.mark.parametrize("code", sorted(am.MODELS))
@@ -49,15 +47,16 @@ def test_every_model_follows_common_contract(code):
 def test_reference_compositions_are_coherent():
     assert am.check_composition(list(am.BUSINESS_TEAM)) == []
     assert am.check_composition(list(am.FACTORY_TEAM)) == []          # EIA Factory opérationnelle (AG09, AG10)
-    assert any("squelette" in x for x in am.check_composition(["AG01", "AG03", "AG11"]))
+    assert any("squelette" in x for x in am.check_composition(["AG01", "AG03", "AG07"]))
 
 
 def test_composition_errors_detected():
     issues = am.check_composition(["AG03", "AG06"])            # recommandations sans détection d'alertes
     assert issues == ["AG03 : entrée alertes produite par aucun modèle de l'équipe"]
-    assert any("fusionné dans AG01" in x for x in am.check_composition(["AG01", "AG02"]))
+    assert am.check_composition(["AG01", "AG02"]) == []                # prévision alimentée par les observations AG01
+    assert am.check_composition(["AG02"]) == ["AG02 : entrée observations produite par aucun modèle de l'équipe"]
     assert any("inconnue" in x for x in am.check_composition(["AG99"]))
-    assert any("AG11 : entrée recommandations" in x for x in am.check_composition(["AG01", "AG11"], True))
+    assert any("inconnue" in x for x in am.check_composition(["AG01", "AG11"]))   # Simulation & Scenario retiré
 
 
 def test_sales_is_built_from_framework_without_issue():
@@ -89,7 +88,7 @@ def test_model_parameter_checks_detect_gaps():
 
 
 def test_derived_composition_when_models_not_declared():
-    assert am.team_models(replace(cfg(), models=[])) == ["AG01", "AG03", "AG06"]
+    assert am.team_models(replace(cfg(), models=[])) == ["AG01", "AG02", "AG03", "AG06"]
 
 
 def test_cycle_traces_models_and_versions():

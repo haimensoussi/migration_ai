@@ -193,7 +193,7 @@
         {"skill": "administration_ventes", "level": 3}], "estimated_hours": 8}]}
   ],
   "agents": ["perception", "analyst", "prediction", "alerting", "advisor", "planner", "staffing"],
-  "models": ["AG01", "AG03", "AG06", "AG04", "AG05", "AG08"],
+  "models": ["AG01", "AG02", "AG03", "AG06", "AG04", "AG05", "AG08"],
   "tools": ["execute_sql", "render_kpi", "render_chart", "generate_report", "export_excel", "eia_kpi", "eia_forecast",
             "eia_alert", "eia_recommendation", "eia_mission", "eia_notification", "eia_affectation"],
   "instructions": {

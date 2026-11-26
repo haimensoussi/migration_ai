@@ -9,6 +9,8 @@ import streamlit as st
 
 from backend import config as app_config
 from backend import transformation as T
+from backend import teams as TM
+from backend.eia import org_designer as od
 from backend.eia import store as es
 from backend.eia import team_builder as tb
 from backend.eia.adapters import SqlKpiSource
@@ -52,8 +54,8 @@ def _run(upto: str, **kw) -> None:
             st.error(str(e))
 
 
-t1, t2, t3, t4 = st.tabs(["1. Découverte de la source", "2. Proposition d'architecture", "3. Déploiement",
-                          "Équipes conçues"])
+t1, t2, t3, t5, t4 = st.tabs(["1. Découverte de la source", "2. Proposition d'architecture", "3. Déploiement",
+                              "4. Organigramme d'agents IA", "Équipes conçues"])
 
 with t1:
     origin = st.radio("Source", ["Plan du Transformation Center", "Nouveau périmètre"], horizontal=True)
@@ -158,6 +160,81 @@ with t3:
             row = tb.build(out["architecture"], out["controles"], r, me)
             ui.confirm_button("Enregistrer l'équipe en brouillon", "tb_save",
                               lambda: f"Brouillon enregistré : {repo.save_team_config(row)}", primary=True)
+
+with t5:
+    disc = st.session_state.get(K_DISC)
+    out = st.session_state.get(K_OUT) or {}
+    if not disc or not out.get("controles") or not out["controles"][0]["reussi"]:
+        st.info("Terminez d'abord la découverte (contrôle AG08 réussi).")
+    else:
+        st.caption("Organigramme d'agents d'entreprise proposé à partir des données découvertes : HAKIM supervise, un chef "
+                   "Team Manager (AG06) par équipe, des agents IA par catégorie EIA. Aperçu sans écriture ; le déploiement "
+                   "crée les agents et les équipes en brouillon à votre nom (publication par un administrateur).")
+        try:
+            eia_ids = [""] + tb.teams(repo)
+        except Exception:  # noqa: BLE001
+            eia_ids = [""]
+        with st.form("tb_org_form"):
+            c1, c2 = st.columns(2)
+            domain = c1.text_input("Domaine de données", placeholder="Marketing")
+            filiere = c2.selectbox("Filière", TM.FILIERES)
+            eia_team = st.selectbox("Équipe EIA de référence pour les outils eia_* (facultatif)", eia_ids,
+                                    format_func=lambda x: x or "aucune")
+            submitted = st.form_submit_button("Proposer l'organigramme", type="primary")
+        if submitted:
+            try:
+                taken = [a.get("handle") for a in state.agents()] + [t.get("handle") for t in state.teams()]
+                st.session_state["tb_org"] = od.propose(disc, tb.kpi_candidates(disc), domain=domain, filiere=filiere,
+                                                        owner=me, eia_team_id=eia_team, taken=taken)
+                st.session_state.pop("tb_org_result", None)
+            except od.OrgError as e:
+                st.error(str(e))
+        org = st.session_state.get("tb_org")
+        if org:
+            ag = org["agents"]
+            dep = [k for k, a in ag.items() if a["deployable"]]
+            sel = st.multiselect("Agents à déployer", dep, default=dep,
+                                 format_func=lambda k: f"{ag[k]['nom']} · {ag[k]['categorie_nom']} · @{ag[k]['handle']}")
+            st.graphviz_chart(od.dot(org, sel), use_container_width=True)
+            for e in org["equipes"]:
+                st.markdown(f"**{e['nom']}** (@{e['handle']}) · chef @{e['chef_handle']} (Team Manager, AG06) · "
+                            f"{len([k for k in e['membres'] if k in sel])} membre(s) retenu(s) · {e['mission']}")
+            st.dataframe(pd.DataFrame([{
+                "Agent": a["nom"], "Catégorie": f"{a['categorie']} {a['categorie_nom']}", "Appel": "@" + a["handle"],
+                "Modèle": a["statut_modele"], "Mission": a["mission"],
+                "Tables": ", ".join(t.split(".")[-1] for t in a["tables"]), "KPI": len(a["kpis"]),
+                "Outils": ", ".join(a["outils"])} for a in ag.values()]), hide_index=True, use_container_width=True)
+            for a in org["a_venir"]:
+                st.caption(f"À venir : {a['nom']} ({a['categorie_nom']}) — {a['raison']}")
+            for u in org["usine"]:
+                st.caption(f"EIA Factory : {u['categorie_nom']} ({u['categorie']}, {u['statut_modele']}) — {u['role']}")
+            for x in org["avertissements"]:
+                st.write(f"* {x}")
+            with st.expander("Instructions générées pour chaque agent"):
+                for k in sel:
+                    st.markdown(f"**{ag[k]['nom']}** (@{ag[k]['handle']})")
+                    st.code(od.instructions(ag[k], org), language="markdown")
+
+            def _deploy(org=org, sel=list(sel)) -> str:
+                res = od.deploy(org, sel, state.repository(), state.team_repository(), me)
+                st.session_state["tb_org_result"] = res
+                state.refresh_data()
+                if res["statut"] != "brouillon":
+                    raise RuntimeError(f"Déploiement partiel : {res['erreur']}")
+                return (f"{len(res['agents'])} agent(s) et {len(res['equipes'])} équipe(s) créés en brouillon. "
+                        + res["suite"])
+
+            ui.confirm_button(f"Créer {len(sel)} agent(s) et leurs équipes en brouillon", "tb_org_deploy", _deploy,
+                              disabled=not sel, primary=True)
+            res = st.session_state.get("tb_org_result")
+            if res:
+                (st.success if res["statut"] == "brouillon" else st.error)(
+                    f"Déploiement : {res['statut']}" + (f" — {res['erreur']}" if res.get("erreur") else ""))
+                if res["agents"]:
+                    st.dataframe(pd.DataFrame(res["agents"]), hide_index=True, use_container_width=True)
+                if res["equipes"]:
+                    st.dataframe(pd.DataFrame(res["equipes"]), hide_index=True, use_container_width=True)
+                st.caption(res["suite"])
 
 with t4:
     try:

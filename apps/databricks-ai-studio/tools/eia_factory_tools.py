@@ -108,7 +108,7 @@ def _spec(tool_id: str, name: str, desc: str, props: dict, required: list[str], 
 
 
 EIA_FACTORY_TOOLS = [
-    _spec("eia_catalogue_agents", "Catalogue d'agents EIA", "Catalogue officiel AG01-AG11 : synthèse, fiches, fiche "
+    _spec("eia_catalogue_agents", "Catalogue d'agents EIA", "Catalogue officiel AG01-AG10 : synthèse, fiches, fiche "
           "détaillée d'un code (capacités, paramètres, interfaces, garde-fous, reste à faire) ou modèles d'équipe avec "
           "leur état. Lecture seule.",
           {"vue": {"type": "string", "enum": ["synthese", "fiches", "fiche", "modeles_equipe"]}, "code": _STR}, []),

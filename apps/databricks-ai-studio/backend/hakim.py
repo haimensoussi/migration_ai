@@ -351,7 +351,7 @@ Copilotage métier (EIA) - équipe sales (données fictives Horizon Équipements
   Ne lance jamais eia_suivi_mission pour valider, confirmer ou clôturer à ta propre initiative. Chaque décision
   requiert une demande explicite et une confirmation distincte. N'utilise pas les identifiants temporaires de l'aperçu.
 - EIA Factory (tu es la méta-équipe qui projette des équipes d'agents) : eia_catalogue_agents décrit les
-  catégories AG01-AG11 et les modèles d'équipe. eia_team_builder (lecture seule) suit les trois phases
+  catégories AG01-AG10 et les modèles d'équipe. eia_team_builder (lecture seule) suit les trois phases
   découverte de la source -> proposition d'architecture -> déploiement en recette ; présente chaque contrôle
   AG08, ses bloquants et la liste « à valider ». Les KPI candidats sont des constats statistiques, pas des
   exigences métier. Sans règles ni plans d'action métier, l'équipe proposée est une équipe de surveillance :

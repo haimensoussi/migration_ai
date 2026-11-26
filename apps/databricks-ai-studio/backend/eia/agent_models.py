@@ -8,11 +8,12 @@ Origine d'un paramètre :
 - "donnees" : déduit des données découvertes (tables, SQL, granularité, profondeur d'historique) ;
 - "metier"  : relevé du contexte de l'entreprise (objectifs, seuils, responsables) ; à valider par le métier.
 
-Classification officielle DISCOVERY (AG01 à AG11) ; AG02 est fusionné dans AG01 (décision du 24/11/2026).
+Classification officielle DISCOVERY : 10 catégories AG01 à AG10 (décision du 25/11/2026 : Predictive Intelligence
+AG02 séparé de Data Intelligence AG01 ; Simulation & Scenario retiré).
 
 Framework des agents (étape 1 de l'EIA Factory) :
 - contrat commun : statut, entrées/sorties standard (INTERFACES), points d'entrée dans le code, garde-fous ;
-- 10 modèles (AG02 fusionné) : disponible | partiel | squelette (contrat et paramètres déclarés, pas de code) ;
+- 10 modèles : disponible | partiel | squelette (contrat et paramètres déclarés, pas de code) ;
 - check_team : cohérence d'une composition (modèles connus, interfaces alimentées, paramètres conformes),
   brique réutilisée par le Team Builder.
 """
@@ -23,10 +24,10 @@ from typing import Any, Callable
 
 CATEGORIES: dict[str, dict] = {
     "AG01": {"nom": "Data Intelligence Agent", "statut": "disponible",
-             "fonctions": "Perception, exploration des données, calcul des KPI, analyse, diagnostic, détection des "
-                          "anomalies, prévisions, tendances, anticipation des risques et projections"},
-    "AG02": {"nom": "Predictive Intelligence Agent", "statut": "fusionne", "fusionne_dans": "AG01",
-             "fonctions": "Prévisions, tendances, anticipation des risques et projections (portées par AG01)"},
+             "fonctions": "Perception, exploration des données, calcul des KPI, analyse, diagnostic et détection "
+                          "des anomalies"},
+    "AG02": {"nom": "Predictive Intelligence Agent", "statut": "disponible",
+             "fonctions": "Prévisions, tendances, anticipation des risques et projections, avec fiabilité mesurée"},
     "AG03": {"nom": "Strategic Intelligence Agent", "statut": "disponible",
              "fonctions": "Recommandations, arbitrage, optimisation et priorisation des actions"},
     "AG04": {"nom": "Execution & Automation Agent", "statut": "partiel",
@@ -43,12 +44,10 @@ CATEGORIES: dict[str, dict] = {
              "fonctions": "Conception, développement et tests des agents, outils et workflows"},
     "AG10": {"nom": "Enterprise Architect Agent", "statut": "partiel",
              "fonctions": "Découverte de l'entreprise, identification des opportunités IA, conception de l'architecture EIA"},
-    "AG11": {"nom": "Simulation & Scenario Agent", "statut": "squelette",
-             "fonctions": "Simulations What-If, scénarios, analyse de sensibilité et évaluation des impacts"},
 }
 
 # Rôles techniques du cycle (noms historiques conservés) -> catégorie officielle.
-ROLE_CATEGORY = {"perception": "AG01", "analyst": "AG01", "prediction": "AG01", "alerting": "AG01",
+ROLE_CATEGORY = {"perception": "AG01", "analyst": "AG01", "prediction": "AG02", "alerting": "AG01",
                  "advisor": "AG03", "planner": "AG06", "staffing": "AG06"}
 ORIGINS = ("donnees", "metier")
 MODEL_STATUSES = ("disponible", "partiel", "squelette")
@@ -79,7 +78,6 @@ INTERFACES = {
     "bilans": "Évaluations après clôture, sans conclusion causale",
     "ajustements_proposes": "Améliorations de règles, KPI ou plans d'action, à valider",
     "contexte": "Extraits documentaires cités",
-    "scenarios": "Simulations What-If et sensibilités",
     "architecture_equipe": "Conception d'une équipe EIA (modèles et paramètres proposés)",
     "configuration_equipe": "Configuration d'équipe en brouillon, conforme au Framework",
     "controles": "Résultats de contrôle, conformité et traçabilité",
@@ -169,21 +167,26 @@ def perceived_kpis(cfg: Any) -> list[str]:
 def _ag01_refs(cfg: Any) -> list[str]:
     ids = {k.get("id"): k for k in _get(cfg, "kpis") or [] if isinstance(k, dict)}
     issues = [f"KPI suivi inconnu : {x}" for x in _get(cfg, "analysis.kpis") or [] if x not in ids]
-    for x in _get(cfg, "forecast.kpis") or []:
-        if x not in ids:
-            issues.append(f"KPI à prévoir inconnu : {x}")
-        elif ids[x].get("grain") != "mois":
-            issues.append(f"KPI à prévoir non mensuel : {x} (prévision impossible)")
     lag = _get(cfg, "perception.max_lag_months")
     if lag is not None and (not _kind_ok(lag, "entier") or lag < 0):
         issues.append("perception.max_lag_months doit être un entier positif ou nul")
     return issues
 
 
+def _ag02_refs(cfg: Any) -> list[str]:
+    ids = {k.get("id"): k for k in _get(cfg, "kpis") or [] if isinstance(k, dict)}
+    issues = []
+    for x in _get(cfg, "forecast.kpis") or []:
+        if x not in ids:
+            issues.append(f"KPI à prévoir inconnu : {x}")
+        elif ids[x].get("grain") != "mois":
+            issues.append(f"KPI à prévoir non mensuel : {x} (prévision impossible)")
+    return issues
+
+
 AG01 = AgentModel(
-    code="AG01", version="1.0", functions=("perception", "analyst", "prediction", "alerting"),
-    usage="Toute équipe disposant d'au moins un KPI lisible ; la prévision exige un KPI mensuel global avec un "
-          "historique suffisant pour le test de fiabilité (sinon elle est signalée non fiable, sans bloquer l'analyse).",
+    code="AG01", version="1.0", functions=("perception", "analyst", "alerting"),
+    usage="Toute équipe disposant d'au moins un KPI lisible.",
     params=(
         ParamSpec("sources", "objet", "donnees", "Alias -> tables Unity Catalog lues par les KPI", required=True),
         ParamSpec("kpis", "liste", "donnees", "Définitions des KPI : SQL en lecture seule, granularité, unité, sens",
@@ -195,18 +198,30 @@ AG01 = AgentModel(
                   "période ; KPI instantané : date de situation) ; au-delà le KPI est écarté (erreur technique, "
                   "jamais anomalie métier). À valider.", default=None),
         ParamSpec("rules", "liste", "metier", "Règles de détection des anomalies et seuils (« à valider »)", required=True),
-        ParamSpec("forecast.kpis", "liste", "donnees", "KPI mensuels globaux à prévoir"),
+    ),
+    checks=(_ag01_refs,),
+    inputs=("donnees_sources",), outputs=("observations", "constats", "alertes"),
+    entrypoints=("backend.eia.agents:perception", "backend.eia.agents:analyst", "backend.eia.agents:alerting"),
+    guardrails=("Un KPI non exploitable est écarté avant analyse",),
+)
+
+AG02 = AgentModel(
+    code="AG02", version="1.0", functions=("prediction",), status="disponible",
+    usage="KPI mensuel global avec un historique suffisant pour le test de fiabilité (sinon la prévision est "
+          "signalée non fiable, sans bloquer l'analyse d'AG01).",
+    params=(
+        ParamSpec("forecast.kpis", "liste", "donnees", "KPI mensuels globaux à prévoir", required=True),
         ParamSpec("forecast.horizon", "entier", "metier", "Horizon de prévision en mois", default=3),
         ParamSpec("forecast.season_length", "entier", "donnees", "Longueur de saison en mois", default=12),
         ParamSpec("forecast.test_points", "entier", "donnees", "Mois réservés au test de fiabilité", default=6),
         ParamSpec("forecast.max_error_pct", "nombre", "metier", "Erreur maximale tolérée pour une prévision fiable",
                   default=15),
     ),
-    checks=(_ag01_refs,),
-    inputs=("donnees_sources",), outputs=("observations", "constats", "previsions", "alertes"),
-    entrypoints=("backend.eia.agents:perception", "backend.eia.agents:analyst", "backend.eia.agents:prediction",
-                 "backend.eia.agents:alerting"),
-    guardrails=("Un KPI non exploitable est écarté avant analyse ; une prévision non fiable n'est jamais certaine",),
+    checks=(_ag02_refs,),
+    inputs=("observations",), outputs=("previsions",),
+    entrypoints=("backend.eia.agents:prediction", "backend.eia.forecast:forecast"),
+    guardrails=("Une prévision non fiable n'est jamais présentée comme certaine ; méthode et test de fiabilité "
+                "joints à chaque prévision",),
 )
 
 
@@ -245,7 +260,7 @@ AG03 = AgentModel(
     usage="Équipe disposant d'alertes métier et d'au moins un plan d'action type actif.",
     params=(ParamSpec("playbooks", "liste", "metier", "Plans d'action types : règles déclencheuses, justification, "
                       "KPI de réussite, tâches (« à valider »)", required=True),),
-    checks=(_ag03_refs,), inputs=("alertes",), optional_inputs=("previsions", "contexte", "scenarios"),
+    checks=(_ag03_refs,), inputs=("alertes",), optional_inputs=("previsions", "contexte"),
     outputs=("recommandations",), entrypoints=("backend.eia.agents:advisor",),
     guardrails=("Recommandations proposées uniquement ; aucun gain chiffré sans modèle validé",),
     missing="Options comparées (2 ou 3 par situation) et nouvelles options après un refus motivé",
@@ -334,28 +349,24 @@ AG10 = AgentModel(
     missing="Opportunités IA et cible du Transformation Center ; règles d'alerte proposées à partir de l'historique",
 )
 
-AG11 = AgentModel(
-    code="AG11", version="0.1", functions=("simulation",), status="squelette",
-    usage="Comparer des options d'AG03 lorsque les prévisions d'AG01 sont fiables.",
-    params=(ParamSpec("simulation.horizon_months", "entier", "metier", "Horizon des scénarios"),),
-    inputs=("recommandations", "previsions"), outputs=("scenarios",),
-    guardrails=("Hypothèses explicites ; aucun impact chiffré sans modèle validé",),
-    missing="Moteur de scénarios (charge, échéances, sensibilité aux seuils)",
-)
-
-MODELS: dict[str, AgentModel] = {m.code: m for m in (AG01, AG03, AG04, AG05, AG06, AG07, AG08, AG09, AG10, AG11)}
+MODELS: dict[str, AgentModel] = {m.code: m for m in (AG01, AG02, AG03, AG04, AG05, AG06, AG07, AG08, AG09, AG10)}
 
 # Compositions de référence.
-BUSINESS_TEAM = ("AG01", "AG03", "AG06", "AG04", "AG05", "AG08")     # équipe métier (ex. Sales)
+BUSINESS_TEAM = ("AG01", "AG02", "AG03", "AG06", "AG04", "AG05", "AG08")     # équipe métier (ex. Sales)
 FACTORY_TEAM = ("AG01", "AG10", "AG09", "AG08")                      # EIA Factory / Team Builder
 
 
 def team_models(cfg: Any) -> list[str]:
-    """Modèles d'une équipe : déclarés dans la configuration, sinon déduits de ses rôles techniques."""
-    declared = _get(cfg, "models")
-    if declared:
-        return list(declared)
-    return sorted({ROLE_CATEGORY[r] for r in _get(cfg, "agents") or [] if r in ROLE_CATEGORY})
+    """Modèles d'une équipe : déclarés dans la configuration, complétés par la catégorie de chaque rôle actif.
+
+    Compatibilité : une configuration antérieure à la séparation d'AG02 (rôle prediction déclaré sous AG01)
+    reçoit AG02 sans modification des données enregistrées.
+    """
+    declared = list(_get(cfg, "models") or [])
+    implied = sorted({ROLE_CATEGORY[r] for r in _get(cfg, "agents") or [] if r in ROLE_CATEGORY})
+    if not declared:
+        return implied
+    return declared + [c for c in implied if c not in declared]
 
 
 def check_composition(codes: list[str], allow_skeleton: bool = False) -> list[str]:
@@ -387,7 +398,7 @@ def check_team(cfg: Any, allow_skeleton: bool = False) -> list[str]:
 
 
 def catalog() -> list[dict]:
-    """Les 11 catégories officielles avec, quand il existe, le modèle d'agent réutilisable."""
+    """Les 10 catégories officielles avec leur modèle d'agent réutilisable."""
     return [{"code": code, **meta, "modele": MODELS[code].describe() if code in MODELS else None}
             for code, meta in CATEGORIES.items()]
 

@@ -16,9 +16,10 @@ TEMPLATES: dict[str, dict] = {
         "prerequis": ["KPI lisibles dans la zone de données", "Règles d'alerte et seuils (à valider)",
                       "Plans d'action types détaillés en tâches (à valider)", "Référentiel de compétences"]},
     "equipe_surveillance": {
-        "nom": "Équipe de surveillance des données et KPI", "modeles": ["AG01", "AG08"],
-        "description": "CAPTER, COMPRENDRE et PRÉDIRE avec contrôle et traçabilité ; sans recommandation tant que les "
-                       "règles et plans d'action ne sont pas définis par le métier. Première étape de toute nouvelle équipe.",
+        "nom": "Équipe de surveillance des données et KPI", "modeles": ["AG01", "AG02", "AG08"],
+        "description": "CAPTER, COMPRENDRE (AG01) et PRÉDIRE (AG02, si des KPI sont prévisibles) avec contrôle et "
+                       "traçabilité (AG08) ; sans recommandation tant que les règles et plans d'action ne sont pas "
+                       "définis par le métier. Première étape de toute nouvelle équipe.",
         "prerequis": ["KPI lisibles dans la zone de données"]},
     "eia_factory": {
         "nom": "EIA Factory (Team Builder)", "modeles": list(am.FACTORY_TEAM),

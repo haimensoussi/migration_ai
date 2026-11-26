@@ -33,7 +33,7 @@ DEFAULT_FORECAST = {"horizon": 3, "season_length": 12, "test_points": 6, "max_er
 MIN_HISTORY = DEFAULT_FORECAST["season_length"] + DEFAULT_FORECAST["test_points"]   # mois pour une prévision testée
 CONFIG_STATUSES = ("brouillon", "en_service", "retiree")
 CONFIG_TRANSITIONS = {"brouillon": ("en_service", "retiree"), "en_service": ("retiree",), "retiree": ()}
-ROLES_BY_MODEL = {"AG01": ("perception", "analyst", "prediction", "alerting"), "AG03": ("advisor",),
+ROLES_BY_MODEL = {"AG01": ("perception", "analyst", "alerting"), "AG02": ("prediction",), "AG03": ("advisor",),
                   "AG06": ("planner", "staffing")}
 _ID = re.compile(r"[^a-z0-9]+")
 
@@ -199,9 +199,10 @@ def design(team_id: str, name: str, description: str, objectives: list[str], can
     rules, playbooks = list(rules or []), list(playbooks or [])
     full = bool(rules and playbooks)
     template_id = "equipe_metier" if full else "equipe_surveillance"
-    models = list(ac.TEMPLATES[template_id]["modeles"])
     forecast_kpis = [k["id"] for k in chosen if k["previsible"]][:MAX_FORECASTS]
-    roles = [r for m in models for r in ROLES_BY_MODEL.get(m, ()) if not (r == "prediction" and not forecast_kpis)]
+    # AG02 (Predictive Intelligence) n'est retenu que si au moins un KPI est prévisible.
+    models = [m for m in ac.TEMPLATES[template_id]["modeles"] if m != "AG02" or forecast_kpis]
+    roles = [r for m in models for r in ROLES_BY_MODEL.get(m, ())]
     fields = ("id", "label", "unit", "grain", "direction", "formula", "exclusions", "limits", "sql")
     cfg = {
         "team_id": team_id, "version": "0.1", "name": name or team_id, "description": description or "",
@@ -292,7 +293,8 @@ def adjust(design_out: dict, candidates: list[dict], recette_out: dict) -> dict 
     else:
         cfg.pop("forecast", None)
         cfg["agents"] = [r for r in cfg["agents"] if r != "prediction"]
-        out["roles"] = cfg["agents"]
+        cfg["models"] = [m for m in cfg["models"] if m != "AG02"]
+        out["roles"], out["modeles"] = cfg["agents"], cfg["models"]
     out["justification"].append("Ajustement AG09 après recette : prévision retirée pour "
                                 + ", ".join(f"{k} ({v})" for k, v in failed.items()))
     out["a_valider"].append("Complétude des séries retirées de la prévision (mois manquants à corriger à la source)")

@@ -26,16 +26,22 @@ l'équipe ou vient de l'extérieur (données, documents, décisions humaines), e
 
 | Statut | Modèles |
 | --- | --- |
-| disponible | AG01 Data Intelligence 1.0, AG03 Strategic Intelligence 1.0, AG06 Team Manager 1.0 |
+| disponible | AG01 Data Intelligence 1.0, AG02 Predictive Intelligence 1.0, AG03 Strategic Intelligence 1.0, AG06 Team Manager 1.0 |
 | partiel | AG04 Execution & Automation 0.5, AG05 Learning & Improvement 0.5, AG08 Monitoring & Governance 0.5, AG09 Engineering & Builder 0.5, AG10 Enterprise Architect 0.5 |
-| squelette (contrat et paramètres, sans code) | AG07 Knowledge & Context, AG11 Simulation & Scenario |
+| squelette (contrat et paramètres, sans code) | AG07 Knowledge & Context |
 
-Compositions de référence : équipe métier AG01, AG03, AG06, AG04, AG05, AG08 (Sales) ; équipe de surveillance
-AG01, AG08 ; EIA Factory AG01, AG10, AG09, AG08 (opérationnelle).
+Classification de référence (10 catégories, 26/11/2026) : AG01 Data Intelligence, AG02 Predictive Intelligence
+(séparé d'AG01, rôle prediction), AG03 Strategic Intelligence, AG04 Execution & Automation, AG05 Learning &
+Improvement, AG06 Team Manager, AG07 Knowledge & Context, AG08 Monitoring & Governance, AG09 Engineering & Builder,
+AG10 Enterprise Architect. Simulation & Scenario (ancien AG11) est retiré.
+
+Compositions de référence : équipe métier AG01, AG02, AG03, AG06, AG04, AG05, AG08 (Sales) ; équipe de
+surveillance AG01, AG08 (+ AG02 si des KPI sont prévisibles) ; EIA Factory AG01, AG10, AG09, AG08 (opérationnelle).
 
 | Rôle technique | Catégorie | Étape de la boucle |
 | --- | --- | --- |
-| perception, analyst, prediction, alerting | AG01 Data Intelligence (modèle 1.0) | CAPTER, COMPRENDRE, PRÉDIRE |
+| perception, analyst, alerting | AG01 Data Intelligence (modèle 1.0) | CAPTER, COMPRENDRE |
+| prediction | AG02 Predictive Intelligence (modèle 1.0) | PRÉDIRE |
 | advisor | AG03 Strategic Intelligence | ARBITRER |
 | planner, staffing | AG06 Team Manager | planification et délégation proposées |
 
@@ -101,7 +107,22 @@ Recette réelle (pilote Marketing, 3 tables, 25/11/2026) : 10 KPI exploitables, 
 de `data_campaign_results` (mois manquant entre 2024-11 et 2025-01), aucun KPI écarté, trois contrôles réussis.
 
 Limites : KPI candidats limités aux comptages et sommes mensuels ; sens et unités à valider (une somme peut ne pas
-avoir de sens métier, ex. score de satisfaction) ; pas de proposition de règles d'alerte ; AG07 et AG11 squelettes.
+avoir de sens métier, ex. score de satisfaction) ; pas de proposition de règles d'alerte ; AG07 squelette.
+
+## Organigramme d'agents d'entreprise (Team Builder, onglet 4)
+
+`backend/eia/org_designer.py` : après la découverte, `propose` construit un organigramme par domaine de données :
+HAKIM superviseur, un chef Team Manager (AG06) par équipe, un agent Data Intelligence (AG01) par objet de données, et
+des agents transverses Predictive (AG02, si des KPI sont prévisibles), Strategic (AG03), Execution & Automation (AG04),
+Learning & Improvement (AG05), Monitoring & Governance (AG08). Knowledge & Context (AG07) est affiché « à venir » ;
+AG09 et AG10 restent dans l'EIA Factory. Contraintes de la plateforme : un seul niveau de délégation, 8 membres au
+plus ; au-delà, équipes sœurs avec agents transverses partagés. Noms d'appel valides et libres (20 caractères).
+
+Affichage (schéma, fiches, instructions générées) sans écriture. `deploy`, sur décision de l'utilisateur
+(confirmation en deux temps), crée les agents choisis, leurs chefs et leurs équipes en brouillon, à son nom ;
+publication par un administrateur (page Équipes). Écritures non transactionnelles : un échec partiel liste ce qui
+a été créé. Limite : l'agent Prévision vise les KPI prévisibles par l'historique ; une série discontinue n'est
+détectée qu'à la recette (onglet 3) ou à l'appel de l'outil de prévision.
 
 ## Pages Missions et Notifications
 

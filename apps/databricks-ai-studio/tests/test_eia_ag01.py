@@ -26,13 +26,14 @@ def cycle(source, conf=None):
     return r, e.run_cycle(conf or cfg(), source, r, today=TODAY, actor=USER)
 
 
-def test_catalog_eleven_categories_and_ag02_merged():
+def test_catalog_ten_categories_with_predictive_separated():
     cat = {x["code"]: x for x in am.catalog()}
-    assert list(cat) == [f"AG{i:02d}" for i in range(1, 12)]
-    assert cat["AG02"]["statut"] == "fusionne" and cat["AG02"]["fusionne_dans"] == "AG01"
-    assert "prévisions" in cat["AG01"]["fonctions"] and cat["AG01"]["modele"]["version"] == "1.0"
+    assert list(cat) == [f"AG{i:02d}" for i in range(1, 11)]          # Simulation & Scenario retiré
+    assert cat["AG02"]["nom"] == "Predictive Intelligence Agent" and cat["AG02"]["modele"]["version"] == "1.0"
+    assert "prévisions" not in cat["AG01"]["fonctions"].lower() and "Prévisions" in cat["AG02"]["fonctions"]
     assert all(am.category_of(r) for r in e.ROLES) and set(c.AGENT_ROLES) == set(e.ROLES)
-    assert am.AG01.functions == e.ROLES[:4]
+    assert am.AG01.functions == ("perception", "analyst", "alerting") and am.MODELS["AG02"].functions == ("prediction",)
+    assert am.category_of("prediction") == "AG02"
     origins = {p["origine"] for p in cat["AG01"]["modele"]["parametres"]}
     assert origins == set(am.ORIGINS)
 
@@ -42,10 +43,13 @@ def test_param_sheet_accepts_sales_and_rejects_bad_parameters():
     bad = replace(cfg(), forecast={"kpis": ["inconnu"]}, analysis={"kpis": ["absent"]},
                   perception={"max_lag_months": -1})
     issues = am.AG01.check(bad)
-    assert any("prévoir inconnu" in x for x in issues) and any("suivi inconnu" in x for x in issues)
+    assert any("suivi inconnu" in x for x in issues) and not any("prévoir" in x for x in issues)
     assert any("max_lag_months" in x for x in issues) and all(x.startswith("AG01 : ") for x in issues)
+    assert am.MODELS["AG02"].check(bad) == ["AG02 : KPI à prévoir inconnu : inconnu"]   # paramètres de prévision : AG02
+    assert am.MODELS["AG02"].check(load("sales")) == []
     snap = dict(kpis=[{**cfg().kpis[0], "grain": "instantane"}])
-    assert any("non mensuel" in x for x in am.AG01.check(replace(cfg(), **snap)))
+    assert any("non mensuel" in x for x in am.MODELS["AG02"].check(replace(cfg(), **snap)))   # contrôle de prévision
+    assert am.AG01.check(replace(cfg(), **snap)) == []
     assert any("obligatoire absent : rules" in x for x in am.AG01.check({"sources": {}, "kpis": []}))
 
 
@@ -69,7 +73,8 @@ def test_fresh_data_passes_gate_and_results_unchanged():
     assert out["etapes"]["analyst"]["findings"][0]["value"] == 50
     ag01 = out["categories"]["AG01"]
     assert ag01["statut"] == "reussi" and list(ag01["fonctions"]) == list(am.AG01.functions)
-    assert set(out["categories"]) == {"AG01", "AG03", "AG06"}
+    assert set(out["categories"]) == {"AG01", "AG02", "AG03", "AG06"}
+    assert out["categories"]["AG02"]["statut"] == "reussi"
     assert r.steps(out["run_id"])[0]["agent"] == "perception"
 
 

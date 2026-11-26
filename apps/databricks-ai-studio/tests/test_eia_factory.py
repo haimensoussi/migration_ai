@@ -46,14 +46,13 @@ def cands():
 # ---------------------------------------------------------------- étape 2 : catalogue
 def test_catalog_is_derived_from_framework():
     s = ac.summary()
-    assert s["categories"] == 11 and s["modeles"] == 10
-    assert s["par_statut"] == {"disponible": 3, "partiel": 5, "squelette": 2, "fusionne": 1}
+    assert s["categories"] == 10 and s["modeles"] == 10
+    assert s["par_statut"] == {"disponible": 4, "partiel": 5, "squelette": 1}
     for code in am.CATEGORIES:
         c = ac.card(code)
-        if code == "AG02":
-            assert c["modele"] is None and c["fusionne_dans"] == "AG01"
-            continue
         assert c["modele"] == am.MODELS[code].describe() and c["capacites"] == list(am.MODELS[code].functions)
+    assert ac.card("AG02")["recoit_de"] == {"observations": ["AG01"]}
+    assert ac.card("AG03")["recoit_de"]["previsions"] == ["AG02"]
     assert ac.card("AG03")["recoit_de"]["alertes"] == ["AG01"]
     with pytest.raises(KeyError):
         ac.card("AG99")
@@ -99,7 +98,7 @@ def test_discovery_gate():
 def test_design_without_business_rules_is_a_monitoring_team():
     d = tb.design("ventes_pilote", "Ventes", "Pilote", ["Suivre les ventes"], cands(), owner=USER)
     cfg = d["config"]
-    assert d["modele_equipe"] == "equipe_surveillance" and cfg["models"] == ["AG01", "AG08"]
+    assert d["modele_equipe"] == "equipe_surveillance" and cfg["models"] == ["AG01", "AG02", "AG08"]
     assert cfg["rules"] == [] and cfg["playbooks"] == [] and "advisor" not in cfg["agents"]
     assert "max_lag_months" not in cfg["perception"] and cfg["perception"]["status"] == "a_valider"
     assert cfg["validation_policy"]["validators"] == [USER] and cfg["validation_policy"]["external_actions"] == "interdit"
@@ -145,7 +144,7 @@ def test_full_run_passes_three_gates_without_writing():
     assert all(g["reussi"] for g in out["controles"]), out["controles"]
     r = out["recette"]
     assert r["persistant"] is False and r["kpi_exploitables"] == 3 and r["kpi_ecartes"] == {} and src.calls >= 3
-    assert set(r["modeles"]) == {"AG01", "AG08"}
+    assert set(r["modeles"]) == {"AG01", "AG02", "AG08"}
     assert tb.run(discovery, src, upto="decouverte", today=TODAY)["phase_atteinte"] == "decouverte"
 
 
@@ -154,6 +153,7 @@ def test_recette_failure_blocks_and_adjustment_removes_bad_forecasts():
     a = out["architecture"]
     assert a["ajustements"] and a["ajustements"][0]["previsions_retirees"]
     assert "forecast" not in a["config"] and "prediction" not in a["config"]["agents"]
+    assert "AG02" not in a["config"]["models"]          # plus de prévision : plus de Predictive Intelligence
     assert len(a["config"]["kpis"]) == 3 and any("Ajustement AG09" in j for j in a["justification"])
     assert out["controles"][-1]["reussi"], out["controles"][-1]
     failing = tb.gate("deploiement", recette={"kpi_ecartes": {"x": "retard"}, "erreurs": [], "kpi_exploitables": 0})
@@ -176,7 +176,7 @@ def test_draft_service_and_retirement_are_human_decisions():
         repo.set_team_config_status(cid, "en_service", USER, ["Contrôle deploiement non réussi"])
     repo.set_team_config_status(cid, "en_service", USER)
     cfg = tb.resolve("ventes_pilote", repo, SCOPE)
-    assert isinstance(cfg, TeamConfig) and cfg.models == ["AG01", "AG08"]
+    assert isinstance(cfg, TeamConfig) and cfg.models == ["AG01", "AG02", "AG08"]
     assert "ventes_pilote" in tb.teams(repo) and "sales" in tb.teams(repo)
     row2 = copy.deepcopy(row)
     row2["config_id"] = "tc_v2"
@@ -216,4 +216,4 @@ def test_factory_tools_registered_with_confirmation_on_writes():
     from backend.tool_registry import ToolContext
     ctx = ToolContext(sql=None, workspace=None, user_email=USER)
     assert eia_catalogue_agents(ctx, "fiche", "AG10")["modele"]["statut"] == "partiel"
-    assert len(eia_catalogue_agents(ctx, "fiches")["fiches"]) == 11
+    assert len(eia_catalogue_agents(ctx, "fiches")["fiches"]) == 10
