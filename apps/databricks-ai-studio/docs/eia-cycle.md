@@ -112,11 +112,11 @@ avoir de sens métier, ex. score de satisfaction) ; pas de proposition de règle
 ## Organigramme d'agents d'entreprise (Team Builder, onglet 4)
 
 `backend/eia/org_designer.py` : après la découverte, `propose` construit un organigramme par domaine de données :
-HAKIM superviseur, un chef Team Manager (AG06) par équipe, un agent Data Intelligence (AG01) par objet de données, et
-des agents transverses Predictive (AG02, si des KPI sont prévisibles), Strategic (AG03), Execution & Automation (AG04),
-Learning & Improvement (AG05), Monitoring & Governance (AG08). Knowledge & Context (AG07) est affiché « à venir » ;
-AG09 et AG10 restent dans l'EIA Factory. Contraintes de la plateforme : un seul niveau de délégation, 8 membres au
-plus ; au-delà, équipes sœurs avec agents transverses partagés. Noms d'appel valides et libres (20 caractères).
+HAKIM superviseur, un chef Team Manager (AG06) et un seul agent par catégorie : Data Intelligence (AG01) regroupe
+tous les objets de données (tables et KPI), Predictive (AG02, si des KPI sont prévisibles), Strategic (AG03),
+Execution & Automation (AG04), Learning & Improvement (AG05), Monitoring & Governance (AG08). Knowledge & Context (AG07) est affiché « à venir » ;
+AG09 et AG10 restent dans l'EIA Factory. Une équipe par domaine (un chef, au plus 6 agents), dans les contraintes
+de la plateforme : un seul niveau de délégation, 8 membres au plus. Noms d'appel valides et libres (20 caractères).
 
 Affichage (schéma, fiches, instructions générées) sans écriture. `deploy`, sur décision de l'utilisateur
 (confirmation en deux temps), crée les agents choisis, leurs chefs et leurs équipes en brouillon, à son nom ;

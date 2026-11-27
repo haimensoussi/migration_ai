@@ -2,15 +2,14 @@
 
 Après la découverte des données, propose une organisation d'agents IA par domaine de données :
 - HAKIM supervise ; chaque équipe a un chef Team Manager (AG06) ;
-- un agent Data Intelligence (AG01) par objet de données (table découverte ayant des KPI candidats) ;
-- des agents transverses : Predictive Intelligence (AG02, si des KPI sont prévisibles), Strategic Intelligence (AG03),
-  Execution & Automation (AG04), Learning & Improvement (AG05), Monitoring & Governance (AG08) ;
+- un seul agent par catégorie : Data Intelligence (AG01) regroupe tous les objets de données (tables découvertes
+  ayant des KPI candidats) et leurs KPI ; Predictive Intelligence (AG02, si des KPI sont prévisibles), Strategic
+  Intelligence (AG03), Execution & Automation (AG04), Learning & Improvement (AG05), Monitoring & Governance (AG08) ;
 - Knowledge & Context (AG07) affiché « à venir » tant que son modèle est un squelette ;
 - Engineering & Builder (AG09) et Enterprise Architect (AG10) restent dans l'EIA Factory (hors équipes métier).
 
 Contraintes de la plateforme (backend.teams) : un seul niveau de délégation, MAX_MEMBERS membres par équipe.
-Au-delà, le domaine reçoit des équipes sœurs (objets liés regroupés) ; les agents transverses sont partagés
-(un membre peut appartenir à plusieurs équipes, un chef n'en dirige qu'une).
+Une équipe par domaine : un chef et au plus six agents (un par catégorie déployable).
 
 propose() et dot() ne lisent ni n'écrivent aucune table. deploy() crée, sur décision de l'utilisateur, les agents
 et les équipes en brouillon avec les dépôts de la plateforme ; la publication reste réservée aux administrateurs.
@@ -45,7 +44,7 @@ TOOLS = {   # outils de la plateforme ; les outils qui écrivent demandent une c
     "AG08": ["eia_apercu_cycle", "get_table_lineage", "describe_table", "get_table_profile"],
 }
 MISSION = {
-    "AG01": "Analyser l'objet {objet} : KPI, évolutions, ruptures et qualité des données",
+    "AG01": "Analyser les données ({objet}) : KPI, évolutions, ruptures, liens et qualité",
     "AG02": "Prévoir les KPI prévisibles avec une fiabilité mesurée",
     "AG03": "Proposer et prioriser des actions à partir des alertes et des prévisions",
     "AG04": "Préparer et suivre les missions validées, sans rien exécuter seul",
@@ -126,34 +125,6 @@ def _team_handle(base: str, used: set) -> tuple[str, str]:
     raise OrgError(f"Aucun nom d'appel d'équipe libre pour {base}.")
 
 
-def _groups(objects: list[str], links: list[dict], slots: int) -> list[list[str]]:
-    """Objets liés (liens probables de la découverte) dans la même équipe ; au plus `slots` objets par équipe."""
-    parent = {t: t for t in objects}
-
-    def find(x: str) -> str:
-        while parent[x] != x:
-            parent[x] = parent[parent[x]]
-            x = parent[x]
-        return x
-
-    for link in links:
-        a, b = (str(link.get(k) or "").rsplit(".", 1)[0] for k in ("de", "vers"))
-        if a in parent and b in parent:
-            parent[find(a)] = find(b)
-    comps: dict[str, list[str]] = {}
-    for t in objects:
-        comps.setdefault(find(t), []).append(t)
-    groups: list[list[str]] = []
-    for comp in sorted(comps.values(), key=lambda c: (-len(c), objects.index(c[0]))):
-        chunks = [comp[i:i + slots] for i in range(0, len(comp), slots)]
-        room = next((g for g in groups if len(g) + len(comp) <= slots), None) if len(chunks) == 1 else None
-        if room is not None:
-            room.extend(comp)
-        else:
-            groups.extend(list(c) for c in chunks)
-    return groups
-
-
 def _node(key: str, code: str, name: str, handle: str, mission: str, tables: list[str], kpis: list[str]) -> dict:
     model = am.MODELS.get(code)
     status = model.status if model else "inconnu"
@@ -185,28 +156,19 @@ def propose(discovery: dict, candidates: list[dict], *, domain: str, filiere: st
     dom = _fit(domain, 10) or "eia"
     previsibles = [k["id"] for k in candidates if k.get("previsible")]
     all_kpis = [k["id"] for k in candidates]
-    groups = _groups(objects, discovery.get("liens_probables") or [],
-                     T.MAX_MEMBERS - len([c for c in TRANSVERSE if c != "AG02" or previsibles]))
-    multi = len(groups) > 1
+    names = [_object_name(t, domain) for t in objects]
 
-    agents: dict[str, dict] = {}
-    equipes = []
-    for i, group in enumerate(groups, 1):
-        th, lead = _team_handle(dom if not multi else f"{dom}-{i}", used)
-        name = f"Équipe {domain}" + (f" {i}" if multi else "")
-        names = [_object_name(t, domain) for t in group]
-        keys = []
-        for t, n in zip(group, names):
-            key = f"ag01-{len([k for k in agents if k.startswith('ag01-')]) + 1}"
-            kp = [k["id"] for k in by_table[t]]
-            agents[key] = _node(key, "AG01", f"Analyse {n}", _unique(f"{dom}-{_fit(n, max(3, 19 - len(dom)))}", used),
-                                MISSION["AG01"].format(objet=n), [t], kp)
-            keys.append(key)
-        equipes.append({"cle": f"equipe-{i}", "nom": name[:T.MAX_NAME], "handle": th, "chef_handle": lead,
-                        "chef": {"categorie": "AG06", "categorie_nom": am.CATEGORIES["AG06"]["nom"],
-                                 "nom": f"Chef {name}"[:80], "handle": lead},
-                        "mission": f"Piloter les données {domain} : {', '.join(names)}"[:T.MAX_MISSION],
-                        "membres": keys})
+    # Un seul agent par catégorie : Data Intelligence regroupe tous les objets de données et leurs KPI.
+    th, lead = _team_handle(dom, used)
+    name = f"Équipe {domain}"
+    agents: dict[str, dict] = {"ag01": _node(
+        "ag01", "AG01", f"Analyse {domain}", _unique(f"{dom}-analyse", used),
+        MISSION["AG01"].format(objet=", ".join(names)), list(objects), all_kpis)}
+    equipe = {"cle": "equipe-1", "nom": name[:T.MAX_NAME], "handle": th, "chef_handle": lead,
+              "chef": {"categorie": "AG06", "categorie_nom": am.CATEGORIES["AG06"]["nom"],
+                       "nom": f"Chef {name}"[:80], "handle": lead},
+              "mission": f"Piloter les données {domain} : {', '.join(names)}"[:T.MAX_MISSION],
+              "membres": ["ag01"]}
     for code in TRANSVERSE:
         if code == "AG02" and not previsibles:
             continue
@@ -214,8 +176,10 @@ def propose(discovery: dict, candidates: list[dict], *, domain: str, filiere: st
         agents[key] = _node(key, code, f"{LABEL[code]} {domain}", _unique(f"{dom}-{SUFFIX[code]}" if len(dom) + 1 + len(SUFFIX[code]) <= 20
                                     else f"{dom}-{SHORT.get(code, SUFFIX[code])}", used),
                             MISSION[code], list(objects), previsibles if code == "AG02" else all_kpis)
-        for e in equipes:
-            e["membres"].append(key)
+        equipe["membres"].append(key)
+    if len(equipe["membres"]) > T.MAX_MEMBERS:
+        raise OrgError(f"{len(equipe['membres'])} membres : au plus {T.MAX_MEMBERS} par équipe.")
+    equipes = [equipe]
     for e in equipes:
         for k in e["membres"]:
             agents[k]["equipes"].append(e["cle"])
@@ -225,9 +189,9 @@ def propose(discovery: dict, candidates: list[dict], *, domain: str, filiere: st
              for c in FACTORY_ONLY]
     warn = ["KPI et périmètres déduits de la structure des données : à valider par le responsable métier.",
             "Agents et équipes créés en brouillon ; publication par un administrateur depuis la page Équipes."]
-    if multi:
-        warn.append(f"{len(equipes)} équipes sœurs : un seul niveau de délégation et {T.MAX_MEMBERS} membres au plus "
-                    "par équipe ; agents transverses partagés.")
+    if len(objects) > 1:
+        warn.append(f"Un seul agent Data Intelligence pour les {len(objects)} objets de données, qu'il analyse ensemble "
+                    "(tables et KPI regroupés).")
     if not previsibles:
         warn.append("Aucun KPI prévisible (historique insuffisant) : pas d'agent Prévision (AG02).")
     warn.append("Stratégie : recommandations possibles seulement après validation de règles et de plans d'action.")
