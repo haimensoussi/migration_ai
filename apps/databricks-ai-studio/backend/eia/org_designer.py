@@ -278,7 +278,8 @@ def deploy(org: dict, selected: Any, agents_repo: Any, teams_repo: Any, user: st
     agents, teams = agents_repo.list_agents(), teams_repo.list_teams()
     taken = set(personas.taken_keys(agents)) | {_key(t.get("handle") or "") for t in teams
                                                  if t.get("status") != "archive" and t.get("handle")}
-    handles = [org["agents"][k]["handle"] for k in needed] + [h for e, _ in plan for h in (e["handle"], e["chef_handle"])]
+    handles = [org["agents"][k]["handle"] for k in needed if not org["agents"][k].get("reutilise")] + \
+        [h for e, _ in plan for h in (e["handle"], e["chef_handle"])]
     clash = sorted({h for h in handles if _key(h) in taken})
     if clash or len({_key(h) for h in handles}) != len(handles):
         raise OrgError("Noms d'appel déjà utilisés : " + ", ".join("@" + h for h in clash)
@@ -289,6 +290,11 @@ def deploy(org: dict, selected: Any, agents_repo: Any, teams_repo: Any, user: st
     try:
         for k in needed:
             n = org["agents"][k]
+            if n.get("reutilise"):                 # agent publié existant : membre de l'équipe, non recréé
+                ids[k] = n["reutilise"]["agent_id"]
+                created.append({"cle": k, "agent_id": ids[k], "nom": n["reutilise"].get("nom") or n["nom"],
+                                "handle": n["reutilise"].get("handle") or n["handle"], "reutilise": True})
+                continue
             meta = {"name": n["nom"], "icon": ICON.get(n["categorie"], "smart_toy"), "category": n["categorie_nom"],
                     "description": (f"{n['mission']}. Généré par le Team Builder (EIA Factory) : {n['categorie']} "
                                     f"{n['categorie_nom']}, domaine {org['domaine']}.")[:300],

@@ -199,3 +199,20 @@ CREATE TABLE IF NOT EXISTS dataops_dev.ai_studio.eia_team_configs (
   decided_at TIMESTAMP,
   CONSTRAINT eia_team_configs_pk PRIMARY KEY (config_id)
 ) COMMENT 'EIA Factory : équipes conçues par le Team Builder (mise en service par décision humaine)';
+
+CREATE TABLE IF NOT EXISTS dataops_dev.ai_studio.eia_architectures (
+  arch_id STRING NOT NULL COMMENT 'Identifiant (ar_ + 12 hex)',
+  plan_id STRING NOT NULL COMMENT 'Plan du Transformation Center (découverte source)',
+  name STRING NOT NULL,
+  status STRING NOT NULL COMMENT 'brouillon | mesh_valide | eia_valide | deployee | retiree (décisions humaines)',
+  mesh STRING COMMENT 'JSON : Data Mesh (domaines, sous-domaines, data products, dépendances, justification)',
+  eia STRING COMMENT 'JSON : architecture EIA optimisée (équipes, agents, mutualisation, cycle, validations)',
+  deployment STRING COMMENT 'JSON : résultat du déploiement AG09, sélection et contrôles des interactions',
+  created_by STRING NOT NULL,
+  created_at TIMESTAMP NOT NULL,
+  updated_by STRING,
+  updated_at TIMESTAMP,
+  decided_by STRING COMMENT 'Dernier utilisateur ayant validé, rouvert, déployé ou retiré',
+  decided_at TIMESTAMP,
+  CONSTRAINT eia_architectures_pk PRIMARY KEY (arch_id)
+) COMMENT 'EIA Factory : architectures d''entreprise (Data Mesh et Agent Mesh) conçues par AG10, déployées par AG09';

@@ -58,6 +58,11 @@ TABLES: dict[str, tuple[tuple[str, ...], tuple[str, ...], dict[str, str]]] = {
                                          "decided_at"),
                          {"models": "j", "config": "j", "controls": "j", "recette": "j", "created_at": "ts",
                           "decided_at": "ts"}),
+    "eia_architectures": (("arch_id",), ("arch_id", "plan_id", "name", "status", "mesh", "eia", "deployment",
+                                         "created_by", "created_at", "updated_by", "updated_at", "decided_by",
+                                         "decided_at"),
+                          {"mesh": "j", "eia": "j", "deployment": "j", "created_at": "ts", "updated_at": "ts",
+                           "decided_at": "ts"}),
 }
 
 
@@ -517,3 +522,71 @@ class EiaRepository:
                 self.log("team_config", other["config_id"], "retiree", user, {"remplacee_par": config_id})
         self.s.update("eia_team_configs", {"config_id": config_id}, {"status": status, "decided_by": user, "decided_at": t})
         self.log("team_config", config_id, status, user, {"team_id": cur["team_id"]})
+
+    # ---- architectures d'entreprise (AG10 : Data Mesh + EIA ; AG09 : déploiement) ----
+    ARCH_TRANSITIONS = {"brouillon": ("mesh_valide", "retiree"), "mesh_valide": ("brouillon", "eia_valide", "retiree"),
+                        "eia_valide": ("mesh_valide", "deployee", "retiree"), "deployee": ("retiree",), "retiree": ()}
+    ARCH_EDITABLE = {"mesh": ("brouillon",), "eia": ("mesh_valide",), "deployment": ("eia_valide", "deployee")}
+
+    @staticmethod
+    def _human(user: str) -> None:
+        if not user or user.startswith("agent:"):
+            raise ContractError("Action réservée à un utilisateur identifié")
+
+    def _arch_row(self, r: dict) -> dict:
+        for k in ("mesh", "eia", "deployment"):
+            r[k] = _load(r.get(k), {})
+        return r
+
+    def save_architecture(self, plan_id: str, name: str, mesh: dict, user: str) -> str:
+        """Nouvelle architecture en brouillon (découpage Data Mesh proposé par AG10)."""
+        self._human(user)
+        aid, t = new_id("ar"), self.clock()
+        self.s.insert("eia_architectures", {"arch_id": aid, "plan_id": plan_id, "name": (name or plan_id)[:120],
+                                            "status": "brouillon", "mesh": _j(mesh), "eia": _j({}),
+                                            "deployment": _j({}), "created_by": user, "created_at": t,
+                                            "updated_by": user, "updated_at": t})
+        self.log("architecture", aid, "brouillon", user, {"plan_id": plan_id})
+        return aid
+
+    def architecture(self, arch_id: str) -> dict | None:
+        r = self.s.get("eia_architectures", {"arch_id": arch_id})
+        return self._arch_row(r) if r else None
+
+    def architectures(self, plan_id: str, limit: int = 20) -> list[dict]:
+        return [self._arch_row(r) for r in self.s.find("eia_architectures", {"plan_id": plan_id}, "created_at",
+                                                       limit=limit)]
+
+    def current_architecture(self, plan_id: str) -> dict | None:
+        return next((a for a in self.architectures(plan_id) if a["status"] != "retiree"), None)
+
+    def update_architecture(self, arch_id: str, part: str, value: dict, user: str) -> None:
+        """Modification d'une partie, seulement au statut qui la permet (découpage avant sa validation, etc.)."""
+        self._human(user)
+        cur = self.architecture(arch_id)
+        if not cur:
+            raise ContractError(f"Architecture inconnue : {arch_id}")
+        if part not in self.ARCH_EDITABLE:
+            raise ContractError(f"Partie inconnue : {part}")
+        if cur["status"] not in self.ARCH_EDITABLE[part]:
+            raise ContractError(f"{part} non modifiable au statut {cur['status']}")
+        self.s.update("eia_architectures", {"arch_id": arch_id},
+                      {part: _j(value), "updated_by": user, "updated_at": self.clock()})
+        self.log("architecture", arch_id, f"{part}_modifie", user, {})
+
+    def set_architecture_status(self, arch_id: str, status: str, user: str) -> None:
+        """Validation, réouverture, déploiement ou retrait : décision d'un humain identifié."""
+        self._human(user)
+        cur = self.architecture(arch_id)
+        if not cur:
+            raise ContractError(f"Architecture inconnue : {arch_id}")
+        if status not in self.ARCH_TRANSITIONS.get(cur["status"], ()):
+            raise ContractError(f"Transition interdite : {cur['status']} -> {status}")
+        if status == "eia_valide" and not cur["eia"].get("agents"):
+            raise ContractError("Aucune architecture EIA à valider")
+        if status == "deployee" and cur["deployment"].get("statut") != "brouillon":
+            raise ContractError("Déploiement non réussi : statut déployé impossible")
+        t = self.clock()
+        self.s.update("eia_architectures", {"arch_id": arch_id},
+                      {"status": status, "decided_by": user, "decided_at": t, "updated_by": user, "updated_at": t})
+        self.log("architecture", arch_id, status, user, {"plan_id": cur["plan_id"]})

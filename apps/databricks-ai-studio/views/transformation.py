@@ -3,6 +3,8 @@ import pandas as pd
 import streamlit as st
 
 from backend import transformation as T
+from backend.eia import mesh_architect as MA
+from ui import eia_architect_ui as EA
 from ui import state
 from ui.components import error_box
 
@@ -96,9 +98,12 @@ if not owner:
 catalog = T.platform_catalog(state.agents(), state.repository().list_tools(), state.teams())
 steps = svc.progress(plan, items, catalog)
 tracking = svc.tracking(items, catalog)
-phases = T.phases(steps)
-for col, (n, ph) in zip(st.columns(len(phases)), enumerate(phases, 1)):
-    col.metric(f"{n}. {ph['libelle']}", ST_LABEL[ph["statut"]])
+arch = EA.current(sql, plan_id)
+stages = MA.stages(plan, arch)
+for col, (n, ph) in zip(st.columns(len(stages)), enumerate(stages, 1)):
+    col.metric(f"{n} · {ph['libelle']}", ST_LABEL[ph["statut"]])
+st.caption("Démarche : Data Discovery → Data Mesh Architecture → EIA Architecture → Deployment. L'Enterprise "
+           "Architect (AG10) conçoit, l'Engineering & Builder (AG09) déploie, HAKIM supervise, vous validez.")
 pending = sum(1 for i in items if i["status"] == "propose")
 st.info("**Prochaine action** : " + T.next_action(steps)
         + (f" — {pending} élément(s) en attente de votre décision." if pending else ""))
@@ -111,11 +116,18 @@ if b2.button("Générer une équipe EIA (Team Builder)", use_container_width=Tru
              help="Réutilise la découverte de ce plan : architecture d'équipe, contrôles AG08 et recette"):
     st.switch_page("views/team_builder.py")
 
-t_disc, t_opp, t_arch, t_dep = st.tabs([f"{n}. {ph['libelle']}" for n, ph in enumerate(phases, 1)])
-t1 = t2 = t3 = t_disc
-t4 = t_opp
-t5 = t_gap = t_arch
-t6 = t7 = t_dep
+t_disc, t_mesh, t_eia, t_dep = st.tabs([f"{n} · {s['libelle']}" for n, s in enumerate(stages, 1)])
+t1 = t2 = t3 = t4 = t_disc          # cadrage, découverte, domaines et objectifs, AI Opportunities
+t5 = t_gap = t_eia                  # cible TO-BE et écarts, après l'architecture EIA
+t6 = t7 = t_dep                     # feuille de route et suivi, après le déploiement
+with t_disc:
+    EA.insights_section(plan)
+with t_mesh:
+    EA.mesh_tab(plan, me, owner, sql)
+with t_eia:
+    EA.eia_tab(plan, me, owner, sql)
+with t_dep:
+    EA.deploy_tab(plan, me, owner, sql)
 
 with t1:
     st.subheader("Cadrage")
