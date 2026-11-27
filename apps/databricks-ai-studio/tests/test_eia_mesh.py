@@ -237,6 +237,17 @@ def test_architecture_lifecycle_requires_human_validation_in_order():
     assert [s["statut"] for s in ma.stages({"discovery": d}, cur)] == ["fait"] * 4
 
 
+def test_verify_ignores_rendering_tools_added_to_the_lead():
+    d, c = sales()
+    a = ma.design_eia(ma.propose_mesh(d, c))
+    fa = t_org.FakeAgents()
+    ft = t_org.FakeTeams(fa)
+    r = od.deploy(a, list(a["agents"]), fa, ft, USER)
+    for x in fa.rows:                                    # l'application ajoute des outils de rendu au chef
+        x["tool_ids"] = list(x.get("tool_ids") or []) + ["render_chart", "render_kpi", "generate_report"]
+    assert all(x["ok"] for x in ma.verify(a, r, fa.rows, ft.rows))
+
+
 def test_verify_detects_broken_delegation():
     d, c = sales()
     a = ma.design_eia(ma.propose_mesh(d, c))

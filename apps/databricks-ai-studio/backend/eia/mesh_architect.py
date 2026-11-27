@@ -641,7 +641,8 @@ def verify(arch: dict, result: dict, agents_rows: list[dict], teams_rows: list[d
         lead = by_id.get(t.get("lead_agent_id") or chef)
         expected = [T.AGENT_PREFIX + m for m in members]
         checks.append({"controle": f"Chef de @{e['handle']} relie ses {len(members)} membres",
-                       "ok": bool(lead) and sorted(lead.get("tool_ids") or []) == sorted(expected),
+                       "ok": bool(lead) and sorted(x for x in lead.get("tool_ids") or [] if x.startswith(T.AGENT_PREFIX))
+                       == sorted(expected),
                        "detail": "délégation prête" if lead else "chef introuvable"})
         miss = [m for m in members if m not in by_id]
         checks.append({"controle": f"Membres de @{e['handle']} joignables", "ok": not miss,
